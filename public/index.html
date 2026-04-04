@@ -196,19 +196,20 @@
 
     let appData = { dwellTimeMs: 2000, questions: [initData()] };
     let user = null;
+    let isInitialLoadComplete = false;
 
     async function loadDataFromFirestore() {
        if (!user) return;
        try {
-           // We store a global config for now. In a multi-user shared app, 
-           // we can use "configs/main". If private, use "users/UID/config/main".
+           console.log("Attempting to load data from Firestore...");
            const docRef = doc(db, "configs", "main");
            const docSnap = await getDoc(docRef);
            
            if (docSnap.exists()) {
+               console.log("Data loaded from Firestore successfully.");
                appData = docSnap.data();
            } else {
-               // Initial migration from local storage or defaults
+               console.log("No data found in Firestore. Migrating from local storage or using defaults.");
                const stored = localStorage.getItem(STORAGE_KEY);
                if (stored) {
                   appData = JSON.parse(stored);
@@ -217,19 +218,26 @@
                }
                await saveDataToFirestore();
            }
+           isInitialLoadComplete = true;
        } catch (error) {
            console.error("Error loading data from Firestore:", error);
+           // Even if error, allow editing with what we have
+           isInitialLoadComplete = true;
        }
     }
 
     let saveTimer = null;
     async function saveDataToFirestore() {
-       if (!user) return;
+       if (!user || !isInitialLoadComplete) {
+          console.log("Skipping save: User not signed in or initial load in progress.");
+          return;
+       }
        try {
+           console.log("Saving data to Firestore...");
            const docRef = doc(db, "configs", "main");
            await setDoc(docRef, appData);
-           // Also keep a local backup
            localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
+           console.log("Data saved successfully.");
        } catch (error) {
            console.error("Error saving data to Firestore:", error);
        }
@@ -237,6 +245,7 @@
 
     // Proxy with debounce for original saveData
     function saveData() { 
+       if (!isInitialLoadComplete) return;
        if (saveTimer) clearTimeout(saveTimer);
        saveTimer = setTimeout(() => {
           saveDataToFirestore(); 
