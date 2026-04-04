@@ -56,9 +56,14 @@
 </head>
 <body class="min-h-screen flex flex-col items-center py-10 px-4">
   <header class="w-full max-w-4xl flex justify-between items-center mb-10 z-50">
-    <h1 class="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-emerald-400">
-      EduApp
-    </h1>
+    <div class="flex items-center gap-6">
+      <h1 id="logo" class="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-emerald-400 cursor-pointer hover:opacity-80 transition-opacity">
+        EduGaze
+      </h1>
+      <span id="display-user" class="text-sm font-medium text-slate-400 border-l border-slate-700 pl-6 h-5 flex items-center">
+        Guest
+      </span>
+    </div>
     <div class="flex gap-4">
       <button id="btn-education" class="flex items-center gap-2 px-4 py-2 rounded-lg transition-all bg-blue-600 text-white shadow-lg shadow-blue-500/30">
         Education Mode
@@ -76,9 +81,12 @@
          <button id="btn-prev-edu" class="w-12 h-12 rounded-full bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 flex flex-shrink-0 items-center justify-center transition-all disabled:opacity-30 disabled:pointer-events-none">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
          </button>
-         <h2 id="display-question" class="text-4xl md:text-5xl font-extrabold text-center text-slate-100 tracking-tight leading-tight flex-1">
-           What is the capital of France?
-         </h2>
+         <div class="flex flex-col flex-1 gap-2">
+           <span id="display-q-count-edu" class="text-xs font-bold uppercase tracking-[0.2em] text-blue-400 text-center">Question 1 of 1</span>
+           <h2 id="display-question" class="text-4xl md:text-5xl font-extrabold text-center text-slate-100 tracking-tight leading-tight">
+             What is the capital of France?
+           </h2>
+         </div>
          <button id="btn-next-edu" class="w-12 h-12 rounded-full bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 flex flex-shrink-0 items-center justify-center transition-all disabled:opacity-30 disabled:pointer-events-none">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
          </button>
@@ -300,14 +308,17 @@
        }
     };
 
+    const displayUser = document.getElementById('display-user');
     onAuthStateChanged(auth, async (u) => {
        user = u;
        if (user) {
           loginOverlay.classList.add('opacity-0');
           setTimeout(() => loginOverlay.classList.add('hidden'), 500);
+          displayUser.textContent = user.email || user.displayName || "User";
           await loadDataFromFirestore();
           renderEducationBoard();
        } else {
+          displayUser.textContent = "Guest";
           loginOverlay.classList.remove('hidden');
           setTimeout(() => loginOverlay.classList.remove('opacity-0'), 10);
        }
@@ -424,8 +435,21 @@
       }
     }
 
-    btnEducation.addEventListener('click', () => setMode('education'));
-    btnEdit.addEventListener('click', () => setMode('edit'));
+    // Logo refresh feature
+    document.getElementById('logo').onclick = () => {
+       if (mode === 'education') renderEducationBoard();
+       else renderEditBoard();
+    };
+
+    btnEducation.onclick = () => setMode('education');
+    btnEdit.ondblclick = () => setMode('edit');
+    
+    // Alert user about double click on the first try if they single click
+    btnEdit.onclick = () => {
+       if (mode !== 'edit') {
+           console.log("Double click required to enter Edit Mode");
+       }
+    };
 
     btnPrevEdu.addEventListener('click', () => {
        if (currentQuestionIndex > 0) {
@@ -473,13 +497,16 @@
        }
     });
 
+    const displayQCountEdu = document.getElementById('display-q-count-edu');
     function renderEducationBoard() {
-      renderGen++;
-      const currentGen = renderGen;
-      displayQuestion.textContent = getActiveQ().question;
-      
-      btnPrevEdu.disabled = currentQuestionIndex === 0;
-      btnNextEdu.disabled = currentQuestionIndex === appData.questions.length - 1;
+        renderGen++;
+        const currentGen = renderGen;
+        const q = getActiveQ();
+        displayQuestion.textContent = q.question;
+        displayQCountEdu.textContent = `Question ${currentQuestionIndex + 1} of ${appData.questions.length}`;
+        
+        btnPrevEdu.disabled = currentQuestionIndex === 0;
+        btnNextEdu.disabled = currentQuestionIndex === appData.questions.length - 1;
       
       const colClass = getActiveQ().cols === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2';
       answersGrid.className = `grid grid-cols-1 ${colClass} gap-6 w-full max-w-4xl`;
