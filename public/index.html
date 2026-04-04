@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Education App</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
+    body {
+      font-family: 'Inter', sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #0f172a; /* slate-900 */
+      color: #f1f5f9; /* slate-100 */
+      overflow-x: hidden;
+    }
+
+    @keyframes successBounce {
+      0%, 20%, 50%, 80%, 100% { transform: translateY(0) scale(1.02); }
+      40% { transform: translateY(-15px) scale(1.02); }
+      60% { transform: translateY(-7px) scale(1.02); }
+    }
+    .animate-success {
+      animation: successBounce 1s ease;
+      box-shadow: 0 0 30px rgba(16, 185, 129, 0.6) !important;
+      outline-color: #10b981 !important; /* emerald-500 */
+      background-color: #059669 !important; /* emerald-600 */
+    }
+
+    .wrong-cross::before, .wrong-cross::after {
+      content: ''; position: absolute; top: 50%; left: 50%; width: 60%; height: 12px;
+      background-color: rgba(239, 68, 68, 0.7); border-radius: 6px; transform-origin: center; z-index: 20;
+    }
+    .wrong-cross::before { transform: translate(-50%, -50%) rotate(45deg); }
+    .wrong-cross::after { transform: translate(-50%, -50%) rotate(-45deg); }
+
+    .wrong-ban::before {
+      content: ''; position: absolute; top: 50%; left: 50%; width: 80px; height: 80px;
+      border: 12px solid rgba(239, 68, 68, 0.7); border-radius: 50%; transform: translate(-50%, -50%); z-index: 20;
+    }
+    .wrong-ban::after {
+      content: ''; position: absolute; top: 50%; left: 50%; width: 80px; height: 12px;
+      background-color: rgba(239, 68, 68, 0.7); border-radius: 6px; transform: translate(-50%, -50%) rotate(-45deg); z-index: 20;
+    }
+
+    .wrong-question::before {
+      content: '?'; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      font-size: 100px; font-weight: 800; color: rgba(239, 68, 68, 0.7); z-index: 20; line-height: 1;
+    }
+
+    .wrong-dash::before {
+      content: ''; position: absolute; top: 50%; left: 50%; width: 60%; height: 12px;
+      background-color: rgba(239, 68, 68, 0.7); border-radius: 6px; transform: translate(-50%, -50%); z-index: 20;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col items-center py-10 px-4">
+  <header class="w-full max-w-4xl flex justify-between items-center mb-10 z-50">
+    <h1 class="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-emerald-400">
+      EduApp
+    </h1>
+    <div class="flex gap-4">
+      <button id="btn-education" class="flex items-center gap-2 px-4 py-2 rounded-lg transition-all bg-blue-600 text-white shadow-lg shadow-blue-500/30">
+        Education Mode
+      </button>
+      <button id="btn-edit" class="flex items-center gap-2 px-4 py-2 rounded-lg transition-all bg-slate-800 text-slate-400 hover:bg-slate-700">
+        Edit Mode
+      </button>
+    </div>
+  </header>
+
+  <main class="w-full max-w-4xl flex-1 flex flex-col items-center justify-center relative">
+    <!-- Education Board -->
+    <div id="view-education" class="w-full flex flex-col items-center gap-16 transition-opacity">
+      <div class="flex items-center justify-between w-full max-w-5xl px-4 gap-4">
+         <button id="btn-prev-edu" class="w-12 h-12 rounded-full bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 flex flex-shrink-0 items-center justify-center transition-all disabled:opacity-30 disabled:pointer-events-none">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
+         </button>
+         <h2 id="display-question" class="text-4xl md:text-5xl font-extrabold text-center text-slate-100 tracking-tight leading-tight flex-1">
+           What is the capital of France?
+         </h2>
+         <button id="btn-next-edu" class="w-12 h-12 rounded-full bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 flex flex-shrink-0 items-center justify-center transition-all disabled:opacity-30 disabled:pointer-events-none">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+         </button>
+      </div>
+      <div id="answers-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-8 w-full max-w-2xl">
+        <!-- Answers generated via JS -->
+      </div>
+    </div>
+
+    <!-- Edit Board -->
+    <div id="view-edit" class="w-full max-w-2xl bg-slate-800 p-8 rounded-2xl shadow-xl border border-slate-700/50 hidden transition-opacity">
+      <div class="flex items-center justify-between mb-6 border-b border-slate-700 pb-4">
+         <h2 class="text-2xl font-bold text-slate-100">Edit Configuration</h2>
+         <div class="flex items-center gap-4">
+            <button id="btn-add-q" class="text-sm px-3 py-1.5 bg-emerald-600/20 text-emerald-400 rounded hover:bg-emerald-600/30 transition-colors">+ New Question</button>
+            <div class="flex items-center gap-2 bg-slate-900 rounded-lg p-1">
+               <button id="btn-prev-edit" class="px-3 py-1 rounded text-slate-400 hover:text-white hover:bg-slate-700 disabled:opacity-30 transition-all">&larr;</button>
+               <span id="display-q-count" class="text-sm font-medium text-slate-300 min-w-[50px] text-center">1 / 1</span>
+               <button id="btn-next-edit" class="px-3 py-1 rounded text-slate-400 hover:text-white hover:bg-slate-700 disabled:opacity-30 transition-all">&rarr;</button>
+            </div>
+         </div>
+      </div>
+      <div class="space-y-6">
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <label class="block text-sm font-medium text-slate-400">Question</label>
+            <button id="btn-delete-q" class="text-xs text-red-500 hover:text-red-400 transition-colors hidden font-semibold">Delete this Question</button>
+          </div>
+          <input type="text" id="input-question" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-slate-100 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all font-medium">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-400 mb-2">Grid Layout</label>
+          <select id="input-layout" class="w-full sm:w-1/2 bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-slate-100 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all">
+             <option value="1x2">1 Row, 2 Columns</option>
+             <option value="1x3">1 Row, 3 Columns</option>
+             <option value="2x2">2 Rows, 2 Columns</option>
+             <option value="2x3">2 Rows, 3 Columns</option>
+             <option value="3x3">3 Rows, 3 Columns</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-400 mb-2">Answers Mode</label>
+          <select id="input-selection-type" class="w-full sm:w-1/2 bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-slate-100 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all">
+             <option value="single">One correct answer</option>
+             <option value="multi">Zero or more correct answers</option>
+          </select>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-6" id="edit-answers-container">
+          <!-- Inputs generated via JS -->
+        </div>
+        <div class="pt-4 border-t border-slate-700/50">
+          <label class="block text-sm font-medium text-slate-400 mb-2">Dwell Time to Select (ms)</label>
+          <input type="number" id="input-dwell" min="500" step="100" class="w-full sm:w-1/2 bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-slate-100 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all">
+          <p class="text-sm text-slate-500 mt-2">Duration the mouse needs to hover over an answer before it gets selected.</p>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const STORAGE_KEY = 'eduApp_data_v2';
+    const initData = () => ({
+      id: Date.now().toString(),
+      question: 'What is the capital of France?',
+      rows: 2, cols: 2,
+      selectionType: 'single',
+      answers: [
+        { id: '1', text: 'London' }, { id: '2', text: 'Berlin' },
+        { id: '3', text: 'Paris' }, { id: '4', text: 'Madrid' }
+      ],
+      correctAnswerIds: ['3'],
+      correctAnswerId: '3'
+    });
+
+    let appData = { dwellTimeMs: 2000, questions: [initData()] };
+
+    try {
+       const stored = localStorage.getItem(STORAGE_KEY);
+       if (stored) appData = JSON.parse(stored);
+    } catch(e) {}
+
+    function saveData() { localStorage.setItem(STORAGE_KEY, JSON.stringify(appData)); }
+
+    let currentQuestionIndex = 0;
+    const getActiveQ = () => {
+        const q = appData.questions[currentQuestionIndex];
+        if (!q.selectionType) q.selectionType = 'single';
+        if (!q.correctAnswerIds) {
+           q.correctAnswerIds = q.correctAnswerId ? [q.correctAnswerId] : [];
+        }
+        return q;
+    };
+
+    let mode = 'education'; // 'education' or 'edit'
+    let selectedId = null;
+    let wrongSelectionsCount = {};
+    let renderGen = 0;
+
+    const btnEducation = document.getElementById('btn-education');
+    const btnEdit = document.getElementById('btn-edit');
+    const viewEducation = document.getElementById('view-education');
+    const viewEdit = document.getElementById('view-edit');
+    const displayQuestion = document.getElementById('display-question');
+    const answersGrid = document.getElementById('answers-grid');
+
+    const inputQuestion = document.getElementById('input-question');
+    const inputDwell = document.getElementById('input-dwell');
+    const inputLayout = document.getElementById('input-layout');
+    const inputSelectionType = document.getElementById('input-selection-type');
+    const editAnswersContainer = document.getElementById('edit-answers-container');
+    
+    const btnPrevEdu = document.getElementById('btn-prev-edu');
+    const btnNextEdu = document.getElementById('btn-next-edu');
+    const btnPrevEdit = document.getElementById('btn-prev-edit');
+    const btnNextEdit = document.getElementById('btn-next-edit');
+    const displayQCount = document.getElementById('display-q-count');
+    const btnAddQ = document.getElementById('btn-add-q');
+    const btnDeleteQ = document.getElementById('btn-delete-q');
+
+    function playSuccessSound() {
+      try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) return;
+        const ctx = new AudioContext();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(523.25, ctx.currentTime); // C5
+        osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.1); // E5
+        osc.frequency.setValueAtTime(783.99, ctx.currentTime + 0.2); // G5
+        osc.frequency.setValueAtTime(1046.50, ctx.currentTime + 0.3); // C6
+        
+        gain.gain.setValueAtTime(0, ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.3, ctx.currentTime + 0.05);
+        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.5);
+        
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.6);
+      } catch(e) {
+        console.error("Audio playback error", e);
+      }
+    }
+
+    function playWrongSound() {
+      try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) return;
+        const ctx = new AudioContext();
+        
+        const osc1 = ctx.createOscillator();
+        const osc2 = ctx.createOscillator();
+        const gain = ctx.createGain();
+        
+        osc1.type = 'sawtooth';
+        osc1.frequency.setValueAtTime(120, ctx.currentTime);
+        
+        osc2.type = 'square';
+        osc2.frequency.setValueAtTime(126, ctx.currentTime);
+        
+        gain.gain.setValueAtTime(0, ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.15, ctx.currentTime + 0.02);
+        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.3);
+        
+        osc1.connect(gain);
+        osc2.connect(gain);
+        gain.connect(ctx.destination);
+        
+        osc1.start(ctx.currentTime);
+        osc2.start(ctx.currentTime);
+        osc1.stop(ctx.currentTime + 0.3);
+        osc2.stop(ctx.currentTime + 0.3);
+      } catch(e) {
+        console.error("Audio playback error", e);
+      }
+    }
+
+    function resizeImageFileToDataURL(file, maxSize = 400) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const img = new Image();
+          img.onload = () => {
+             const canvas = document.createElement('canvas');
+             let w = img.width;
+             let h = img.height;
+             if (w > maxSize || h > maxSize) {
+                if (w > h) { h = (h / w) * maxSize; w = maxSize; }
+                else { w = (w / h) * maxSize; h = maxSize; }
+             }
+             canvas.width = w; canvas.height = h;
+             const ctx = canvas.getContext('2d');
+             ctx.drawImage(img, 0, 0, w, h);
+             resolve(canvas.toDataURL('image/jpeg', 0.8));
+          };
+          img.onerror = reject;
+          img.src = e.target.result;
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    // Switch modes
+    function setMode(newMode) {
+      mode = newMode;
+      if (mode === 'education') {
+        btnEducation.className = "flex items-center gap-2 px-4 py-2 rounded-lg transition-all bg-blue-600 text-white shadow-lg shadow-blue-500/30";
+        btnEdit.className = "flex items-center gap-2 px-4 py-2 rounded-lg transition-all bg-slate-800 text-slate-400 hover:bg-slate-700";
+        viewEducation.classList.remove('hidden');
+        viewEdit.classList.add('hidden');
+        selectedId = null; // Reset selection on mode change
+        wrongSelectionsCount = {};
+        renderEducationBoard();
+      } else {
+        btnEdit.className = "flex items-center gap-2 px-4 py-2 rounded-lg transition-all bg-emerald-600 text-white shadow-lg shadow-emerald-500/30";
+        btnEducation.className = "flex items-center gap-2 px-4 py-2 rounded-lg transition-all bg-slate-800 text-slate-400 hover:bg-slate-700";
+        viewEdit.classList.remove('hidden');
+        viewEducation.classList.add('hidden');
+        renderEditBoard();
+      }
+    }
+
+    btnEducation.addEventListener('click', () => setMode('education'));
+    btnEdit.addEventListener('click', () => setMode('edit'));
+
+    btnPrevEdu.addEventListener('click', () => {
+       if (currentQuestionIndex > 0) {
+          currentQuestionIndex--;
+          selectedId = null; wrongSelectionsCount = {};
+          renderEducationBoard();
+       }
+    });
+
+    btnNextEdu.addEventListener('click', () => {
+       if (currentQuestionIndex < appData.questions.length - 1) {
+          currentQuestionIndex++;
+          selectedId = null; wrongSelectionsCount = {};
+          renderEducationBoard();
+       }
+    });
+
+    // Edit nav
+    btnPrevEdit.addEventListener('click', () => {
+       if (currentQuestionIndex > 0) {
+          currentQuestionIndex--;
+          renderEditBoard();
+       }
+    });
+    btnNextEdit.addEventListener('click', () => {
+       if (currentQuestionIndex < appData.questions.length - 1) {
+          currentQuestionIndex++;
+          renderEditBoard();
+       }
+    });
+    btnAddQ.addEventListener('click', () => {
+       appData.questions.push(initData());
+       currentQuestionIndex = appData.questions.length - 1;
+       saveData();
+       renderEditBoard();
+    });
+    btnDeleteQ.addEventListener('click', () => {
+       if (appData.questions.length > 1) {
+          appData.questions.splice(currentQuestionIndex, 1);
+          if (currentQuestionIndex >= appData.questions.length) {
+             currentQuestionIndex = appData.questions.length - 1;
+          }
+          saveData();
+          renderEditBoard();
+       }
+    });
+
+    function renderEducationBoard() {
+      renderGen++;
+      const currentGen = renderGen;
+      displayQuestion.textContent = getActiveQ().question;
+      
+      btnPrevEdu.disabled = currentQuestionIndex === 0;
+      btnNextEdu.disabled = currentQuestionIndex === appData.questions.length - 1;
+      
+      const colClass = getActiveQ().cols === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2';
+      answersGrid.className = `grid grid-cols-1 ${colClass} gap-6 w-full max-w-4xl`;
+      answersGrid.innerHTML = '';
+      getActiveQ().answers.forEach(answer => {
+        const isSelected = selectedId === answer.id;
+        const isCorrect = getActiveQ().correctAnswerIds.includes(answer.id);
+        
+        const card = document.createElement('div');
+        let hClass = "h-56";
+        if (getActiveQ().rows === 3) hClass = "h-32";
+        else if (getActiveQ().rows === 2 && getActiveQ().cols === 3) hClass = "h-40";
+        else if (getActiveQ().rows === 1) hClass = "h-64";
+        
+        let basePin = answer.image ? 'p-0' : 'p-6';
+        let baseClasses = `relative overflow-hidden rounded-2xl ${basePin} ${hClass} flex items-center justify-center cursor-pointer transition-all duration-300 transform outline outline-2 outline-offset-4 select-none `;
+        
+        if (isSelected) {
+          if (isCorrect) {
+            baseClasses += "text-white animate-success ";
+          } else {
+             // Selected but wrong
+             const count = wrongSelectionsCount[answer.id] || 1;
+             let symbolClass = "wrong-cross";
+             if (count % 4 === 2) symbolClass = "wrong-ban";
+             else if (count % 4 === 3) symbolClass = "wrong-question";
+             else if (count % 4 === 0) symbolClass = "wrong-dash";
+             
+             baseClasses += `bg-slate-700 outline-red-500/50 ${symbolClass} text-slate-300 `;
+          }
+        } else {
+          baseClasses += "bg-slate-800 outline-transparent hover:bg-slate-700 hover:shadow-xl ";
+        }
+        
+        card.className = baseClasses;
+
+        const innerContainer = document.createElement('div');
+        innerContainer.className = 'flex flex-col items-center justify-center gap-3 w-full h-full z-10 pointer-events-none' + (answer.image ? '' : ' p-2');
+        
+        let textClass = 'text-3xl font-semibold text-center transition-colors ';
+        if (answer.image) {
+            const imgEl = document.createElement('img');
+            imgEl.src = answer.image;
+            imgEl.className = 'absolute inset-0 w-full h-full object-cover transition-opacity z-0 ';
+            if (isSelected) {
+               imgEl.classList.add(isCorrect ? 'opacity-100' : 'opacity-40');
+            }
+            card.appendChild(imgEl);
+            
+            textClass = 'text-xl md:text-2xl font-bold text-center transition-colors drop-shadow-md py-2 px-3 block w-full bg-slate-900/80 backdrop-blur-sm shadow-xl mt-auto ';
+            innerContainer.className = 'absolute inset-0 flex flex-col items-center justify-end w-full h-full z-10 pointer-events-none';
+        }
+        
+        const textSpan = document.createElement('span');
+        textSpan.className = textClass + (isSelected ? (isCorrect ? 'text-white' : 'text-slate-100 opacity-50') : 'text-slate-100');
+        textSpan.textContent = answer.text;
+        
+        if (answer.text.trim().length > 0) {
+            innerContainer.appendChild(textSpan);
+        }
+        
+        card.appendChild(innerContainer);
+
+        const allowDwell = !isSelected || (isSelected && !isCorrect);
+        if (allowDwell) {
+          // Progress bar base
+          const progressBar = document.createElement('div');
+          progressBar.className = "absolute bottom-0 left-0 h-1.5 bg-blue-500/30 transition-none z-10";
+          progressBar.style.width = "0%";
+          card.appendChild(progressBar);
+
+          // SVG Overlay definition
+          let timer = null;
+          let startTime = null;
+          let svgOverlay = null;
+
+          const removeOverlay = () => {
+             if (svgOverlay && svgOverlay.parentNode === card) {
+                 card.removeChild(svgOverlay);
+                 svgOverlay = null;
+             }
+          };
+
+          const addOverlay = () => {
+             if (!svgOverlay) {
+                 svgOverlay = document.createElement('div');
+                 // Made background transparent and removed backdrop blur
+                 svgOverlay.className = "absolute inset-0 flex items-center justify-center z-20 pointer-events-none";
+                 svgOverlay.innerHTML = `<svg class="w-32 h-32 transform -rotate-90">
+                      <circle cx="64" cy="64" r="48" class="text-slate-700/80" stroke-width="8" stroke="currentColor" fill="transparent" />
+                      <circle cx="64" cy="64" r="48" class="text-emerald-400 drop-shadow-md progress-circle" stroke-width="8" stroke-dasharray="301.59" stroke-dashoffset="301.59" stroke-linecap="round" stroke="currentColor" fill="transparent" />
+                   </svg>`;
+                 card.appendChild(svgOverlay);
+             }
+          };
+
+          const doSelect = () => {
+             selectedId = answer.id;
+             if (getActiveQ().correctAnswerIds.includes(answer.id)) {
+                playSuccessSound();
+             } else {
+                playWrongSound();
+                wrongSelectionsCount[answer.id] = (wrongSelectionsCount[answer.id] || 0) + 1;
+             }
+             renderEducationBoard();
+          };
+
+          const startDwell = () => {
+            let start = null;
+            
+            const animate = (time) => {
+              if (currentGen !== renderGen) return; // Prevent ghost timers
+              if (start === null) start = time;
+              const elapsed = time - start;
+              const progress = Math.min((elapsed / appData.dwellTimeMs) * 100, 100);
+              
+              progressBar.style.width = `${progress}%`;
+              if (progress > 0) {
+                 addOverlay();
+                 const circle = svgOverlay.querySelector('.progress-circle');
+                 if (circle) {
+                    const circumference = 48 * 2 * Math.PI;
+                    const offset = circumference - (progress / 100) * circumference;
+                    circle.style.strokeDashoffset = offset;
+                 }
+              }
+
+              if (progress >= 100) {
+                doSelect();
+              } else {
+                timer = requestAnimationFrame(animate);
+              }
+            };
+            timer = requestAnimationFrame(animate);
+          };
+
+          const stopDwell = () => {
+            if (timer) cancelAnimationFrame(timer);
+            progressBar.style.width = "0%";
+            removeOverlay();
+          };
+
+          card.addEventListener('mouseenter', startDwell);
+          card.addEventListener('mouseleave', stopDwell);
+          card.addEventListener('click', doSelect);
+          
+          // touch support
+          card.addEventListener('touchstart', (e) => { e.preventDefault(); startDwell() });
+          card.addEventListener('touchend', (e) => { e.preventDefault(); stopDwell(); doSelect(); });
+          card.addEventListener('touchcancel', (e) => { e.preventDefault(); stopDwell() });
+        }
+
+        answersGrid.appendChild(card);
+      });
+    }
+
+    function renderEditBoard() {
+      const q = getActiveQ();
+      
+      displayQCount.textContent = `${currentQuestionIndex + 1} / ${appData.questions.length}`;
+      btnPrevEdit.disabled = currentQuestionIndex === 0;
+      btnNextEdit.disabled = currentQuestionIndex === appData.questions.length - 1;
+      
+      if (appData.questions.length > 1) {
+         btnDeleteQ.classList.remove('hidden');
+      } else {
+         btnDeleteQ.classList.add('hidden');
+      }
+
+      inputQuestion.value = q.question;
+      inputDwell.value = appData.dwellTimeMs;
+      inputLayout.value = `${q.rows}x${q.cols}`;
+      inputSelectionType.value = q.selectionType;
+      
+      inputQuestion.oninput = (e) => { q.question = e.target.value; saveData(); };
+      inputDwell.oninput = (e) => { appData.dwellTimeMs = Number(e.target.value); saveData(); };
+      inputSelectionType.onchange = (e) => {
+         q.selectionType = e.target.value;
+         if (q.selectionType === 'single' && q.correctAnswerIds.length > 1) {
+            q.correctAnswerIds = [q.correctAnswerIds[0]];
+            q.correctAnswerId = q.correctAnswerIds[0];
+         }
+         saveData();
+         renderEditBoard();
+      };
+      inputLayout.onchange = (e) => {
+         const [r, c] = e.target.value.split('x').map(Number);
+         q.rows = r;
+         q.cols = c;
+         const total = r * c;
+         while(q.answers.length < total) {
+            q.answers.push({ id: Date.now().toString() + Math.random(), text: 'New Answer' });
+         }
+         if(q.answers.length > total) {
+            q.answers = q.answers.slice(0, total);
+         }
+         // Ensure correctAnswerId is valid if we truncated it
+         q.correctAnswerIds = q.correctAnswerIds.filter(id => q.answers.find(a => a.id === id));
+         if (q.selectionType === 'single' && q.correctAnswerIds.length === 0 && q.answers.length > 0) {
+            q.correctAnswerIds = [q.answers[0].id];
+         }
+         q.correctAnswerId = q.correctAnswerIds[0] || '';
+         saveData();
+         renderEditBoard();
+      };
+
+      editAnswersContainer.innerHTML = '';
+      q.answers.forEach((answer, index) => {
+        const div = document.createElement('div');
+        div.className = "flex flex-col gap-2 p-4 bg-slate-900 border border-slate-700 rounded-lg relative overflow-hidden";
+        
+        const isCorrect = q.correctAnswerIds.includes(answer.id);
+        const inputType = q.selectionType === 'multi' ? 'checkbox' : 'radio';
+        
+        div.innerHTML = `
+          <div class="flex items-center justify-between mb-1">
+             <label class="text-sm font-medium text-slate-400">Answer ${index + 1}</label>
+             <label class="flex items-center gap-2 text-sm text-emerald-400 cursor-pointer">
+                <input type="${inputType}" name="correctAnswer" value="${answer.id}" ${isCorrect ? 'checked' : ''} class="w-4 h-4 text-emerald-500 bg-slate-800 border-slate-600 focus:ring-emerald-500 focus:ring-offset-slate-900">
+                Correct
+             </label>
+          </div>
+          <input type="text" value="${answer.text}" placeholder="Answer wording..." class="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-2 text-slate-100 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all">
+          <div class="flex items-center gap-3 mt-1">
+             <button class="btn-upload text-xs px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-600 transition-colors">
+                ${answer.image ? 'Change Image' : 'Add Image'}
+             </button>
+             <input type="file" accept="image/*" class="file-input hidden">
+             ${answer.image ? `
+                <img src="${answer.image}" class="h-8 w-8 object-cover rounded shadow-sm border border-slate-600">
+                <button class="btn-remove-img text-xs text-red-400 hover:text-red-300 ml-auto">Remove</button>
+             ` : ''}
+          </div>
+        `;
+        
+        const textInput = div.querySelector('input[type="text"]');
+        textInput.oninput = (e) => { answer.text = e.target.value; saveData(); };
+        
+        const fileInput = div.querySelector('.file-input');
+        const btnUpload = div.querySelector('.btn-upload');
+        const btnRemove = div.querySelector('.btn-remove-img');
+        
+        btnUpload.onclick = () => fileInput.click();
+        
+        fileInput.onchange = async (e) => {
+           const file = e.target.files?.[0];
+           if (!file) return;
+           try {
+              btnUpload.textContent = "Processing...";
+              const dataUrl = await resizeImageFileToDataURL(file, 400);
+              answer.image = dataUrl;
+              saveData();
+              renderEditBoard();
+           } catch(err) {
+              console.error(err);
+              alert("Failed to read image");
+              btnUpload.textContent = "Try Again";
+           }
+        };
+
+        if (btnRemove) {
+           btnRemove.onclick = () => {
+              delete answer.image;
+              saveData();
+              renderEditBoard();
+           };
+        }
+
+        const checkRadioInput = div.querySelector(`input[type="${inputType}"]`);
+        checkRadioInput.onchange = (e) => {
+           if (q.selectionType === 'multi') {
+              if (e.target.checked) {
+                 if(!q.correctAnswerIds.includes(e.target.value)) q.correctAnswerIds.push(e.target.value);
+              } else {
+                 q.correctAnswerIds = q.correctAnswerIds.filter(id => id !== e.target.value);
+              }
+           } else {
+              if(e.target.checked) { 
+                 q.correctAnswerIds = [e.target.value];
+                 q.correctAnswerId = e.target.value;
+              }
+           }
+           saveData();
+        }
+
+        editAnswersContainer.appendChild(div);
+      });
+    }
+
+    // Initialize
+    renderEducationBoard();
+  </script>
+</body>
+</html>
