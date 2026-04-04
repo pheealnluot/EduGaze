@@ -139,8 +139,12 @@
         </div>
         <div class="pt-4 border-t border-slate-700/50">
           <label class="block text-sm font-medium text-slate-400 mb-2">Dwell Time to Select (ms)</label>
-          <input type="number" id="input-dwell" min="500" step="100" class="w-full sm:w-1/2 bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-slate-100 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all">
-          <p class="text-sm text-slate-500 mt-2">Duration the mouse needs to hover over an answer before it gets selected.</p>
+          <div class="flex flex-col sm:flex-row items-center gap-4">
+            <input type="number" id="input-dwell" min="0" max="6000" step="100" class="w-full sm:w-24 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-blue-500 transition-all font-mono">
+            <input type="range" id="input-dwell-slider" min="0" max="6000" step="100" class="flex-1 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500">
+            <button id="btn-apply-all-dwell" class="whitespace-nowrap text-xs px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded border border-slate-600 transition-colors">Apply to all</button>
+          </div>
+          <p class="text-sm text-slate-500 mt-2">How long the mouse must stay over an answer to select it. (0-6000ms)</p>
         </div>
       </div>
     </div>
@@ -194,6 +198,7 @@
       question: 'What is the capital of France?',
       rows: 2, cols: 2,
       selectionType: 'single',
+      dwellTimeMs: 2000,
       answers: [
         { id: '1', text: 'London' }, { id: '2', text: 'Berlin' },
         { id: '3', text: 'Paris' }, { id: '4', text: 'Madrid' }
@@ -215,7 +220,14 @@
            
            if (docSnap.exists()) {
                console.log("Data loaded from Firestore successfully.");
-               appData = docSnap.data();
+               const cloudData = docSnap.data();
+               
+               // Migration: Ensure all questions have dwellTimeMs
+               const globalDwell = cloudData.dwellTimeMs || 2000;
+               cloudData.questions.forEach(q => {
+                  if (q.dwellTimeMs === undefined) q.dwellTimeMs = globalDwell;
+               });
+               appData = cloudData;
            } else {
                console.log("No data found in Firestore. Migrating from local storage or using defaults.");
                const stored = localStorage.getItem(STORAGE_KEY);
@@ -287,6 +299,8 @@
     const inputLayout = document.getElementById('input-layout');
     const inputSelectionType = document.getElementById('input-selection-type');
     const editAnswersContainer = document.getElementById('edit-answers-container');
+    const inputDwellSlider = document.getElementById('input-dwell-slider');
+    const btnApplyAllDwell = document.getElementById('btn-apply-all-dwell');
     
     const btnPrevEdu = document.getElementById('btn-prev-edu');
     const btnNextEdu = document.getElementById('btn-next-edu');
@@ -620,7 +634,7 @@
               if (currentGen !== renderGen) return; // Prevent ghost timers
               if (start === null) start = time;
               const elapsed = time - start;
-              const progress = Math.min((elapsed / appData.dwellTimeMs) * 100, 100);
+              const progress = Math.min((elapsed / getActiveQ().dwellTimeMs) * 100, 100);
               
               progressBar.style.width = `${progress}%`;
               if (progress > 0) {
@@ -669,19 +683,33 @@
       btnPrevEdit.disabled = currentQuestionIndex === 0;
       btnNextEdit.disabled = currentQuestionIndex === appData.questions.length - 1;
       
-      if (appData.questions.length > 1) {
-         btnDeleteQ.classList.remove('hidden');
-      } else {
-         btnDeleteQ.classList.add('hidden');
-      }
-
       inputQuestion.value = q.question;
-      inputDwell.value = appData.dwellTimeMs;
+      inputDwell.value = q.dwellTimeMs;
+      inputDwellSlider.value = q.dwellTimeMs;
       inputLayout.value = `${q.rows}x${q.cols}`;
       inputSelectionType.value = q.selectionType;
       
       inputQuestion.oninput = (e) => { q.question = e.target.value; saveData(); };
-      inputDwell.oninput = (e) => { appData.dwellTimeMs = Number(e.target.value); saveData(); };
+      
+      const syncDwell = (val) => {
+         q.dwellTimeMs = Number(val);
+         inputDwell.value = val;
+         inputDwellSlider.value = val;
+         saveData();
+      };
+      
+      inputDwell.oninput = (e) => syncDwell(e.target.value);
+      inputDwellSlider.oninput = (e) => syncDwell(e.target.value);
+      
+      btnApplyAllDwell.onclick = () => {
+         const currentDwell = q.dwellTimeMs;
+         appData.questions.forEach(question => {
+            question.dwellTimeMs = currentDwell;
+         });
+         saveData();
+         alert(`Applied ${currentDwell}ms dwell time to all ${appData.questions.length} questions!`);
+      };
+
       inputSelectionType.onchange = (e) => {
          q.selectionType = e.target.value;
          if (q.selectionType === 'single' && q.correctAnswerIds.length > 1) {
