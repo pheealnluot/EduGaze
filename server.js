@@ -1,6 +1,10 @@
-const express = require('express');
-const compression = require('compression');
-const path = require('path');
+import express from 'express';
+import compression from 'compression';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const port = process.env.PORT || 8080;
@@ -15,7 +19,7 @@ app.use(express.static(path.join(__dirname, 'public'), {
 }));
 
 // Route everything else directly to the SPA entry point
-app.get('*', (req, res) => {
+app.use((req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
