@@ -604,6 +604,7 @@
         viewEducation.classList.remove('hidden');
         viewEdit.classList.add('hidden');
         btnLogout.classList.add('hidden');
+        categoryTabs.classList.add('hidden');
         selectedId = null; // Reset selection on mode change
         wrongSelectionsCount = {};
         renderEducationBoard();
@@ -613,6 +614,7 @@
         viewEdit.classList.remove('hidden');
         viewEducation.classList.add('hidden');
         btnLogout.classList.remove('hidden');
+        categoryTabs.classList.remove('hidden');
         renderEditBoard();
       }
     }
@@ -935,10 +937,6 @@
             renderEditBoard();
          };
          navList.appendChild(item);
-         
-         if (isActive) {
-            item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-         }
       });
 
       // Event Handlers
