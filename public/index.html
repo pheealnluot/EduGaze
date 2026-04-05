@@ -571,7 +571,7 @@
        }
     };
 
-    btnPrevEdu.addEventListener('click', () => {
+    btnPrevEdu.addEventListener('dblclick', () => {
        if (currentQuestionIndex > 0) {
           currentQuestionIndex--;
           selectedId = null; wrongSelectionsCount = {};
@@ -579,7 +579,7 @@
        }
     });
 
-    btnNextEdu.addEventListener('click', () => {
+    btnNextEdu.addEventListener('dblclick', () => {
        if (currentQuestionIndex < appData.questions.length - 1) {
           currentQuestionIndex++;
           selectedId = null; wrongSelectionsCount = {};
@@ -724,7 +724,7 @@
                  svgOverlay.className = "absolute inset-0 flex items-center justify-center z-20 pointer-events-none";
                  svgOverlay.innerHTML = `<svg class="w-32 h-32 transform -rotate-90">
                        <circle cx="64" cy="64" r="48" class="text-slate-700/80" stroke-width="8" stroke="currentColor" fill="transparent" />
-                       <circle cx="64" cy="64" r="48" class="text-emerald-400 drop-shadow-md progress-circle" stroke-width="8" stroke-dasharray="301.59" stroke-dashoffset="301.59" stroke-linecap="round" stroke="currentColor" fill="transparent" />
+                       <circle cx="64" cy="64" r="48" class="text-orange-400 drop-shadow-md progress-circle" style="opacity: 0.5" stroke-width="8" stroke-dasharray="301.59" stroke-dashoffset="301.59" stroke-linecap="round" stroke="currentColor" fill="transparent" />
                     </svg>`;
                  card.appendChild(svgOverlay);
              }
