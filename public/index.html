@@ -235,11 +235,40 @@
     </div>
   </div>
 
+  <div id="profile-overlay" class="fixed inset-0 bg-slate-950/90 backdrop-blur-sm flex flex-col items-center justify-center z-[150] hidden transition-opacity duration-300 opacity-0">
+    <div class="text-center space-y-6 p-8 bg-slate-900 rounded-3xl shadow-2xl border border-slate-700 max-w-md w-full mx-4 transform transition-all scale-95 duration-300">
+      <div class="w-16 h-16 bg-blue-500/10 rounded-2xl flex items-center justify-center mx-auto mb-2 text-blue-400">
+        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+      </div>
+      <h2 class="text-2xl font-bold text-white">User Profile</h2>
+      <p id="profile-email-display" class="text-slate-400 font-medium"></p>
+      
+      <div id="profile-password-form" class="space-y-4 border-t border-slate-800 pt-6 text-left">
+        <h3 class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Change Password</h3>
+        <div class="space-y-3">
+          <input type="password" id="input-profile-old-pass" placeholder="Current Password" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-200 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-sm">
+          <input type="password" id="input-profile-new-pass" placeholder="New Password" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-200 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-sm">
+          <input type="password" id="input-profile-confirm-pass" placeholder="Confirm New Password" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-200 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-sm">
+        </div>
+        <button id="btn-save-password" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-6 rounded-xl transition-all shadow-lg shadow-blue-500/20 active:scale-[0.98] mt-2">
+          Update Password
+        </button>
+      </div>
+
+      <div id="profile-google-msg" class="hidden space-y-4 border-t border-slate-800 pt-6">
+        <p class="text-slate-400 text-sm">Your account is managed by Google.</p>
+        <a href="https://myaccount.google.com/security" target="_blank" class="inline-block text-blue-400 hover:text-blue-300 text-sm font-medium underline">Manage account on Google</a>
+      </div>
+
+      <button id="btn-close-profile" class="text-slate-500 hover:text-slate-300 transition-colors text-sm pt-4 font-medium">Close Profile</button>
+    </div>
+  </div>
+
   <div id="toast-container"></div>
 
   <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-app.js';
-    import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, linkWithCredential, EmailAuthProvider } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-auth.js';
+    import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, linkWithCredential, EmailAuthProvider, updatePassword, reauthenticateWithCredential } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-auth.js';
     import { getFirestore, doc, getDoc, setDoc } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore.js';
 
     // Firebase configuration
@@ -574,24 +603,122 @@
     };
 
     const displayUser = document.getElementById('display-user');
-     onAuthStateChanged(auth, async (u) => {
-        if (u) {
-           user = u;
-           loginOverlay.classList.add('opacity-0');
-           setTimeout(() => loginOverlay.classList.add('hidden'), 500);
-           displayUser.textContent = user.email || user.displayName || "User";
-           await loadDataFromFirestore();
-           renderEducationBoard();
-        } else {
-           // If we're already a Guest, don't revert to login screen automatically
-           if (user && user.isGuest) return;
+    onAuthStateChanged(auth, handleAuthStateChanged);
 
-           user = null;
-           displayUser.textContent = "Guest";
-           loginOverlay.classList.remove('hidden');
-           setTimeout(() => loginOverlay.classList.remove('opacity-0'), 10);
-        }
-     });
+    // Profile Management Logic
+    const profileOverlay = document.getElementById('profile-overlay');
+    const profileEmailDisplay = document.getElementById('profile-email-display');
+    const profilePasswordForm = document.getElementById('profile-password-form');
+    const profileGoogleMsg = document.getElementById('profile-google-msg');
+    const btnCloseProfile = document.getElementById('btn-close-profile');
+    const btnSavePassword = document.getElementById('btn-save-password');
+
+    function showProfile() {
+       if (!user || user.isAnonymous) return;
+       profileEmailDisplay.textContent = user.email;
+       
+       // Check if user has password provider
+       const hasPassword = user.providerData.some(p => p.providerId === 'password');
+       if (hasPassword) {
+          profilePasswordForm.classList.remove('hidden');
+          profileGoogleMsg.classList.add('hidden');
+       } else {
+          profilePasswordForm.classList.add('hidden');
+          profileGoogleMsg.classList.remove('hidden');
+       }
+
+       profileOverlay.classList.remove('hidden');
+       setTimeout(() => {
+          profileOverlay.classList.remove('opacity-0');
+          profileOverlay.firstElementChild.classList.remove('scale-95');
+       }, 10);
+    }
+
+    function hideProfile() {
+       profileOverlay.classList.add('opacity-0');
+       profileOverlay.firstElementChild.classList.add('scale-95');
+       setTimeout(() => profileOverlay.classList.add('hidden'), 300);
+       // Clear fields
+       document.getElementById('input-profile-old-pass').value = '';
+       document.getElementById('input-profile-new-pass').value = '';
+       document.getElementById('input-profile-confirm-pass').value = '';
+    }
+
+    displayUser.onclick = () => {
+       if (isEditMode) showProfile();
+    };
+    btnCloseProfile.onclick = hideProfile;
+
+    btnSavePassword.onclick = async () => {
+       const oldPass = document.getElementById('input-profile-old-pass').value;
+       const newPass = document.getElementById('input-profile-new-pass').value;
+       const confirmPass = document.getElementById('input-profile-confirm-pass').value;
+
+       if (!oldPass || !newPass || !confirmPass) {
+          showToast("All fields are required.", "error");
+          return;
+       }
+       if (newPass !== confirmPass) {
+          showToast("Passwords do not match.", "error");
+          return;
+       }
+       if (newPass.length < 6) {
+          showToast("New password must be at least 6 characters.", "error");
+          return;
+       }
+
+       try {
+          btnSavePassword.disabled = true;
+          btnSavePassword.textContent = "Updating...";
+          
+          // Re-authenticate
+          const credential = EmailAuthProvider.credential(user.email, oldPass);
+          await reauthenticateWithCredential(user, credential);
+          
+          // Update password
+          await updatePassword(user, newPass);
+          
+          showToast("Password updated successfully!", "success");
+          hideProfile();
+       } catch (err) {
+          console.error("Password update failed", err);
+          showToast("Update failed: " + err.message, "error");
+       } finally {
+          btnSavePassword.disabled = false;
+          btnSavePassword.textContent = "Update Password";
+       }
+    };
+
+    async function handleAuthStateChanged(u) {
+       user = u;
+       if (user) {
+          loginOverlay.classList.add('hidden');
+          const isGuest = user.isAnonymous || user.email === 'guest@edugaze.com';
+          displayUser.textContent = isGuest ? 'Guest' : (user.email || 'User');
+          btnLogout.classList.toggle('hidden', isGuest);
+          
+          if (!isGuest) {
+             displayUser.classList.add('hover:text-blue-400', 'cursor-pointer', 'transition-colors');
+             if (isEditMode) {
+               displayUser.classList.add('underline', 'decoration-blue-500/30', 'underline-offset-4');
+             }
+          } else {
+             displayUser.classList.remove('hover:text-blue-400', 'cursor-pointer', 'underline', 'decoration-blue-500/30', 'underline-offset-4');
+          }
+
+          if (isInitialLoadComplete) {
+             await loadDataFromFirestore();
+          }
+       } else {
+          // If we're already a Guest, don't revert to login screen automatically
+          if (user && user.isGuest) return;
+
+          user = null;
+          displayUser.textContent = "Guest";
+          loginOverlay.classList.remove('hidden');
+          setTimeout(() => loginOverlay.classList.remove('opacity-0'), 10);
+       }
+    }
 
     function playSuccessSound() {
       try {
@@ -681,6 +808,35 @@
     }
 
     // Switch modes
+    function setEducationMode() {
+       isEditMode = false;
+       viewEducation.classList.remove('hidden');
+       viewEdit.classList.add('hidden');
+       btnEdit.classList.replace('bg-blue-600', 'bg-slate-800');
+       btnEdit.classList.replace('text-white', 'text-slate-400');
+       btnEducation.classList.replace('bg-slate-800', 'bg-blue-600');
+       btnEducation.classList.replace('text-white', 'text-slate-400'); // wait text-white
+       btnEducation.classList.add('text-white');
+       categoryTabs.classList.add('hidden');
+       displayUser.classList.remove('underline', 'decoration-blue-500/30', 'underline-offset-4');
+       renderEducationBoard();
+    }
+
+    function setEditMode() {
+       isEditMode = true;
+       viewEducation.classList.add('hidden');
+       viewEdit.classList.remove('hidden');
+       btnEducation.classList.replace('bg-blue-600', 'bg-slate-800');
+       btnEducation.classList.replace('text-white', 'text-slate-400');
+       btnEdit.classList.replace('bg-slate-800', 'bg-blue-600');
+       btnEdit.classList.add('text-white');
+       categoryTabs.classList.remove('hidden');
+       if (user && !user.isAnonymous && user.email !== 'guest@edugaze.com') {
+          displayUser.classList.add('underline', 'decoration-blue-500/30', 'underline-offset-4');
+       }
+       renderEditBoard();
+    }
+
     function setMode(newMode) {
       if (newMode === 'edit' && !user) {
          showToast("You must be signed in to edit.", "error");
@@ -688,23 +844,9 @@
       }
       mode = newMode;
       if (mode === 'education') {
-        btnEducation.className = "flex items-center gap-2 px-4 py-2 rounded-lg transition-all bg-blue-600 text-white shadow-lg shadow-blue-500/30";
-        btnEdit.className = "flex items-center gap-2 px-4 py-2 rounded-lg transition-all bg-slate-800 text-slate-400 hover:bg-slate-700";
-        viewEducation.classList.remove('hidden');
-        viewEdit.classList.add('hidden');
-        btnLogout.classList.add('hidden');
-        categoryTabs.classList.add('hidden');
-        selectedId = null; // Reset selection on mode change
-        wrongSelectionsCount = {};
-        renderEducationBoard();
+        setEducationMode();
       } else {
-        btnEdit.className = "flex items-center gap-2 px-4 py-2 rounded-lg transition-all bg-emerald-600 text-white shadow-lg shadow-emerald-500/30";
-        btnEducation.className = "flex items-center gap-2 px-4 py-2 rounded-lg transition-all bg-slate-800 text-slate-400 hover:bg-slate-700";
-        viewEdit.classList.remove('hidden');
-        viewEducation.classList.add('hidden');
-        btnLogout.classList.remove('hidden');
-        categoryTabs.classList.remove('hidden');
-        renderEditBoard();
+        setEditMode();
       }
     }
 
