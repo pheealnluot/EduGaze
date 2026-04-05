@@ -14,7 +14,7 @@ app.use(compression());
 
 // Serve strictly static assets from the public directory
 app.use(express.static(path.join(__dirname, 'public'), {
-   maxAge: '1d', // Cache static assets
+   maxAge: 0, // Disable caching for development
    etag: true
 }));
 
