@@ -101,6 +101,8 @@
     </div>
   </header>
 
+  <nav id="category-tabs" class="w-full max-w-6xl flex justify-center gap-2 mb-8 flex-wrap"></nav>
+
   <main class="w-full max-w-4xl flex-1 flex flex-col items-center justify-center relative">
     <!-- Education Board -->
     <div id="view-education" class="w-full flex flex-col items-center gap-16 transition-opacity">
@@ -259,11 +261,19 @@
         { id: '1', text: 'London' }, { id: '2', text: 'Berlin' },
         { id: '3', text: 'Paris' }, { id: '4', text: 'Madrid' }
       ],
-      correctAnswerIds: ['3'],
-      correctAnswerId: '3'
+      correctAnswerIds: ['3']
     });
 
-    let appData = { dwellTimeMs: 2000, questions: [initData()] };
+    const CATEGORIES = ['Activity', 'Feelings', 'Things', 'English', 'Chinese', 'Math', 'Science', 'TBC'];
+    let appData = { 
+      dwellTimeMs: 2000, 
+      selectedCategory: 'Activity',
+      categories: { 'Activity': [initData()] } 
+    };
+    // Initialize other categories
+    CATEGORIES.forEach(cat => {
+       if (!appData.categories[cat]) appData.categories[cat] = [];
+    });
     let user = null;
     let isInitialLoadComplete = false;
 
@@ -285,24 +295,53 @@
            
            if (docSnap.exists()) {
                console.log("Data loaded from Firestore successfully.");
-               const cloudData = docSnap.data();
-               
-               // Migration: Ensure all questions have dwellTimeMs
-               const globalDwell = cloudData.dwellTimeMs || 2000;
-               cloudData.questions.forEach(q => {
-                  if (q.dwellTimeMs === undefined) q.dwellTimeMs = globalDwell;
-               });
-               appData = cloudData;
-           } else {
-               console.log("No data found in Firestore. Migrating from local storage or using defaults.");
-               const stored = localStorage.getItem(STORAGE_KEY);
-               if (stored) {
-                  appData = JSON.parse(stored);
-               } else {
-                  appData = { dwellTimeMs: 2000, questions: [initData()] };
-               }
-               await saveDataToFirestore();
-           }
+                const cloudData = docSnap.data();
+                // Migration from legacy single list
+                if (cloudData.questions && !cloudData.categories) {
+                   const oldQuestions = cloudData.questions;
+                   cloudData.categories = { 'Activity': oldQuestions };
+                   CATEGORIES.forEach(cat => {
+                      if (!cloudData.categories[cat]) cloudData.categories[cat] = [];
+                   });
+                   cloudData.selectedCategory = 'Activity';
+                   delete cloudData.questions;
+                }
+                
+                // Ensure all categories exist
+                CATEGORIES.forEach(cat => {
+                   if (!cloudData.categories[cat]) cloudData.categories[cat] = [];
+                   
+                   // Ensure all questions have dwellTimeMs
+                   const globalDwell = cloudData.dwellTimeMs || 2000;
+                   cloudData.categories[cat].forEach(q => {
+                      if (q.dwellTimeMs === undefined) q.dwellTimeMs = globalDwell;
+                   });
+                });
+                
+                appData = cloudData;
+            } else {
+                console.log("No data found in Firestore. Migrating from local storage or using defaults.");
+                const stored = localStorage.getItem(STORAGE_KEY);
+                if (stored) {
+                   const localData = JSON.parse(stored);
+                   // Migration if needed
+                   if (localData.questions && !localData.categories) {
+                      localData.categories = { 'Activity': localData.questions };
+                      CATEGORIES.forEach(cat => { if (!localData.categories[cat]) localData.categories[cat] = []; });
+                      localData.selectedCategory = 'Activity';
+                      delete localData.questions;
+                   }
+                   appData = localData;
+                } else {
+                   appData = { 
+                     dwellTimeMs: 2000, 
+                     selectedCategory: 'Activity',
+                     categories: { 'Activity': [initData()] } 
+                   };
+                   CATEGORIES.forEach(cat => { if (!appData.categories[cat]) appData.categories[cat] = []; });
+                }
+                await saveDataToFirestore();
+            }
            isInitialLoadComplete = true;
        } catch (error) {
            console.error("Error loading data from Firestore:", error);
@@ -341,7 +380,11 @@
 
     let currentQuestionIndex = 0;
     const getActiveQ = () => {
-        const q = appData.questions[currentQuestionIndex];
+        const list = appData.categories[appData.selectedCategory || 'Activity'];
+        if (currentQuestionIndex >= list.length) currentQuestionIndex = Math.max(0, list.length - 1);
+        if (list.length === 0) return null;
+        
+        const q = list[currentQuestionIndex];
         if (!q.selectionType) q.selectionType = 'single';
         if (!q.correctAnswerIds) {
            q.correctAnswerIds = q.correctAnswerId ? [q.correctAnswerId] : [];
@@ -381,6 +424,7 @@
     const viewEdit = document.getElementById('view-edit');
     const displayQuestion = document.getElementById('display-question');
     const answersGrid = document.getElementById('answers-grid');
+    const categoryTabs = document.getElementById('category-tabs');
 
     const inputQuestion = document.getElementById('input-question');
     const inputDwell = document.getElementById('input-dwell');
@@ -409,7 +453,8 @@
        }
        // Reset local state regardless of Guest or Google
        user = null;
-       appData = { dwellTimeMs: 2000, questions: [initData()] }; // Reset to defaults
+       appData = { dwellTimeMs: 2000, selectedCategory: 'Activity', categories: { 'Activity': [initData()] } };
+       CATEGORIES.forEach(cat => { if (!appData.categories[cat]) appData.categories[cat] = []; });
        currentQuestionIndex = 0;
        isInitialLoadComplete = false;
        setMode('education');
@@ -597,7 +642,8 @@
     });
 
     btnNextEdu.addEventListener('dblclick', () => {
-       if (currentQuestionIndex < appData.questions.length - 1) {
+       const list = appData.categories[appData.selectedCategory || 'Activity'];
+       if (currentQuestionIndex < list.length - 1) {
           currentQuestionIndex++;
           selectedId = null; wrongSelectionsCount = {};
           renderEducationBoard();
@@ -612,27 +658,30 @@
        }
     });
     btnNextEdit.addEventListener('click', () => {
-       if (currentQuestionIndex < appData.questions.length - 1) {
+       const list = appData.categories[appData.selectedCategory || 'Activity'];
+       if (currentQuestionIndex < list.length - 1) {
           currentQuestionIndex++;
           renderEditBoard();
        }
     });
      btnAddQ.addEventListener('click', () => {
         const limit = (user && user.isGuest) ? 50 : 100;
-        if (appData.questions.length >= limit) {
-           showToast(`Limit reached: ${limit} questions max for ${user.isGuest ? 'Guest' : 'Pro'} accounts.`, 'error');
+        const list = appData.categories[appData.selectedCategory || 'Activity'];
+        if (list.length >= limit) {
+           showToast(`Limit reached: ${limit} questions max per category.`, 'error');
            return;
         }
-        appData.questions.push(initData());
-        currentQuestionIndex = appData.questions.length - 1;
+        list.push(initData());
+        currentQuestionIndex = list.length - 1;
         saveData();
         renderEditBoard();
      });
     btnDeleteQ.addEventListener('click', () => {
-       if (appData.questions.length > 1) {
-          appData.questions.splice(currentQuestionIndex, 1);
-          if (currentQuestionIndex >= appData.questions.length) {
-             currentQuestionIndex = appData.questions.length - 1;
+       const list = appData.categories[appData.selectedCategory || 'Activity'];
+       if (list.length > 0) {
+          list.splice(currentQuestionIndex, 1);
+          if (currentQuestionIndex >= list.length) {
+             currentQuestionIndex = Math.max(0, list.length - 1);
           }
           saveData();
           renderEditBoard();
@@ -644,11 +693,25 @@
         renderGen++;
         const currentGen = renderGen;
          const q = getActiveQ();
+         const list = appData.categories[appData.selectedCategory || 'Activity'];
+         
+         const noQuestions = list.length === 0;
+         viewEducation.classList.toggle('hidden', noQuestions && mode==='education');
+         
+         if (noQuestions) {
+            displayQuestion.textContent = "No questions in this category.";
+            displayQCountEdu.textContent = "Empty";
+            answersGrid.innerHTML = '';
+            return;
+         }
+
          displayQuestion.textContent = q.question;
-         displayQCountEdu.textContent = `Question ${currentQuestionIndex + 1} of ${appData.questions.length}`;
+         displayQCountEdu.textContent = `Question ${currentQuestionIndex + 1} of ${list.length}`;
          
          btnPrevEdu.disabled = currentQuestionIndex === 0;
-         btnNextEdu.disabled = currentQuestionIndex === appData.questions.length - 1;
+         btnNextEdu.disabled = currentQuestionIndex === list.length - 1;
+         
+         renderCategoryTabs();
        
        const colClass = getActiveQ().cols === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2';
        const gapClass = getActiveQ().maximizeSpacing ? 'gap-16 sm:gap-24' : 'gap-6';
@@ -822,11 +885,24 @@
 
     function renderEditBoard() {
       const q = getActiveQ();
+      const list = appData.categories[appData.selectedCategory || 'Activity'];
       
-      displayQCount.textContent = `${currentQuestionIndex + 1} / ${appData.questions.length}`;
-      btnPrevEdit.disabled = currentQuestionIndex === 0;
-      btnNextEdit.disabled = currentQuestionIndex === appData.questions.length - 1;
+      displayQCount.textContent = `${list.length > 0 ? (currentQuestionIndex + 1) : 0} / ${list.length}`;
+      btnPrevEdit.disabled = currentQuestionIndex === 0 || list.length === 0;
+      btnNextEdit.disabled = currentQuestionIndex === (list.length - 1) || list.length === 0;
       
+      renderCategoryTabs();
+
+      if (!q) {
+         inputQuestion.value = "";
+         editAnswersContainer.innerHTML = '<div class="col-span-full p-10 text-center text-slate-500">Add a question to start editing.</div>';
+         btnDeleteQ.classList.add('hidden');
+         // Clear sidebar anyway
+         const navList = document.getElementById('edit-nav-list');
+         if (navList) navList.innerHTML = '';
+         return;
+      }
+
       inputQuestion.value = q.question;
       inputLayout.value = `${q.rows || 2}x${q.cols || 2}`;
       inputSelectionType.value = q.selectionType || 'single';
@@ -834,25 +910,25 @@
       inputDwellSlider.value = q.dwellTimeMs || appData.dwellTimeMs || 2000;
       inputMaxSpacing.checked = !!q.maximizeSpacing;
 
-      btnDeleteQ.classList.toggle('hidden', appData.questions.length <= 1);
+      btnDeleteQ.classList.toggle('hidden', list.length <= 1);
 
       // Render Sidebar
       const navList = document.getElementById('edit-nav-list');
       navList.innerHTML = '';
-      appData.questions.forEach((question, idx) => {
+      list.forEach((question, idx) => {
          const item = document.createElement('button');
          const isActive = idx === currentQuestionIndex;
-         item.className = `flex flex-col items-start p-3 rounded-lg text-left transition-all ${isActive ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-900 text-slate-400 hover:bg-slate-700'}`;
+         item.className = `flex gap-3 items-center p-3 rounded-lg text-left transition-all group ${isActive ? 'bg-blue-600 shadow-lg' : 'bg-slate-900 hover:bg-slate-700'}`;
          
-         const numSpan = document.createElement('span');
-         numSpan.className = `text-[10px] font-bold uppercase tracking-widest mb-1 ${isActive ? 'text-blue-200' : 'text-slate-500'}`;
-         numSpan.textContent = `Question ${idx + 1}`;
+         const idxSpan = document.createElement('span');
+         idxSpan.className = `flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-md font-bold text-xs ${isActive ? 'bg-blue-400 text-white' : 'bg-slate-800 text-slate-500 group-hover:text-slate-300'}`;
+         idxSpan.textContent = `#${idx + 1}`;
          
          const textSpan = document.createElement('span');
-         textSpan.className = 'text-xs font-medium truncate w-full';
-         textSpan.textContent = question.question || '(New Question)';
+         textSpan.className = `text-xs font-semibold truncate flex-1 ${isActive ? 'text-white' : 'text-slate-400'}`;
+         textSpan.textContent = question.question || '(Untitled)';
          
-         item.appendChild(numSpan);
+         item.appendChild(idxSpan);
          item.appendChild(textSpan);
          item.onclick = () => {
             currentQuestionIndex = idx;
@@ -864,19 +940,8 @@
             item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
          }
       });
-      inputDwell.value = q.dwellTimeMs;
-      inputDwellSlider.value = q.dwellTimeMs;
-      inputMaxSpacing.checked = !!q.maximizeSpacing;
-      inputLayout.value = `${q.rows}x${q.cols}`;
-      inputSelectionType.value = q.selectionType;
-      
-      // Update Delete button visibility
-      if (appData.questions.length > 1) {
-         btnDeleteQ.classList.remove('hidden');
-      } else {
-         btnDeleteQ.classList.add('hidden');
-      }
-      
+
+      // Event Handlers
       inputQuestion.oninput = (e) => { q.question = e.target.value; saveData(); };
       inputMaxSpacing.onchange = (e) => { q.maximizeSpacing = e.target.checked; saveData(); };
       
@@ -892,22 +957,22 @@
       
       btnApplyAllDwell.onclick = () => {
          const currentDwell = q.dwellTimeMs;
-         appData.questions.forEach(question => {
+         list.forEach(question => {
             question.dwellTimeMs = currentDwell;
          });
          saveData();
-         showToast(`Applied ${currentDwell}ms dwell time to all ${appData.questions.length} questions!`);
+         showToast(`Applied ${currentDwell}ms dwell time to all ${list.length} questions in this category!`);
       };
 
       inputSelectionType.onchange = (e) => {
          q.selectionType = e.target.value;
          if (q.selectionType === 'single' && q.correctAnswerIds.length > 1) {
             q.correctAnswerIds = [q.correctAnswerIds[0]];
-            q.correctAnswerId = q.correctAnswerIds[0];
          }
          saveData();
          renderEditBoard();
       };
+
       inputLayout.onchange = (e) => {
          const [r, c] = e.target.value.split('x').map(Number);
          q.rows = r;
@@ -919,96 +984,90 @@
          if(q.answers.length > total) {
             q.answers = q.answers.slice(0, total);
          }
-         // Ensure correctAnswerId is valid if we truncated it
          q.correctAnswerIds = q.correctAnswerIds.filter(id => q.answers.find(a => a.id === id));
          if (q.selectionType === 'single' && q.correctAnswerIds.length === 0 && q.answers.length > 0) {
             q.correctAnswerIds = [q.answers[0].id];
          }
-         q.correctAnswerId = q.correctAnswerIds[0] || '';
          saveData();
          renderEditBoard();
       };
 
       editAnswersContainer.innerHTML = '';
       q.answers.forEach((answer, index) => {
-        const div = document.createElement('div');
-        div.className = "flex flex-col gap-2 p-4 bg-slate-900 border border-slate-700 rounded-lg relative overflow-hidden";
-        
-        const isCorrect = q.correctAnswerIds.includes(answer.id);
-        const inputType = q.selectionType === 'multi' ? 'checkbox' : 'radio';
-        
-        div.innerHTML = `
-          <div class="flex items-center justify-between mb-1">
-             <label class="text-sm font-medium text-slate-400">Answer ${index + 1}</label>
-             <label class="flex items-center gap-2 text-sm text-emerald-400 cursor-pointer">
-                <input type="${inputType}" name="correctAnswer" value="${answer.id}" ${isCorrect ? 'checked' : ''} class="w-4 h-4 text-emerald-500 bg-slate-800 border-slate-600 focus:ring-emerald-500 focus:ring-offset-slate-900">
-                Correct
-             </label>
-          </div>
-          <input type="text" value="${answer.text}" placeholder="Answer wording..." class="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-2 text-slate-100 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all">
-          <div class="flex items-center gap-3 mt-1">
-             <button class="btn-upload text-xs px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-600 transition-colors">
-                ${answer.image ? 'Change Image' : 'Add Image'}
-             </button>
-             <input type="file" accept="image/*" class="file-input hidden">
-             ${answer.image ? `
-                <img src="${answer.image}" class="h-8 w-8 object-cover rounded shadow-sm border border-slate-600">
-                <button class="btn-remove-img text-xs text-red-400 hover:text-red-300 ml-auto">Remove</button>
-             ` : ''}
-          </div>
-        `;
-        
-        const textInput = div.querySelector('input[type="text"]');
-        textInput.oninput = (e) => { answer.text = e.target.value; saveData(); };
-        
-        const fileInput = div.querySelector('.file-input');
-        const btnUpload = div.querySelector('.btn-upload');
-        const btnRemove = div.querySelector('.btn-remove-img');
-        
-        btnUpload.onclick = () => fileInput.click();
-        
-        fileInput.onchange = async (e) => {
-           const file = e.target.files?.[0];
-           if (!file) return;
-           try {
-              btnUpload.textContent = "Processing...";
-              const dataUrl = await resizeImageFileToDataURL(file, 400);
-              answer.image = dataUrl;
-              saveData();
-              renderEditBoard();
-           } catch(err) {
-              console.error(err);
-              showToast("Failed to read image", "error");
-              btnUpload.textContent = "Try Again";
-           }
-        };
+         const div = document.createElement('div');
+         div.className = "flex flex-col gap-2 p-4 bg-slate-900 border border-slate-700 rounded-lg relative overflow-hidden";
+         
+         const isCorrect = q.correctAnswerIds.includes(answer.id);
+         const inputType = q.selectionType === 'multi' ? 'checkbox' : 'radio';
+         
+         div.innerHTML = `
+           <div class="flex items-center justify-between mb-1">
+              <label class="text-sm font-medium text-slate-400">Answer ${index + 1}</label>
+              <label class="flex items-center gap-2 text-sm text-emerald-400 cursor-pointer">
+                 <input type="${inputType}" name="correctAnswer" value="${answer.id}" ${isCorrect ? 'checked' : ''} class="w-4 h-4 text-emerald-500 bg-slate-800 border-slate-600 focus:ring-emerald-500">
+                 Correct
+              </label>
+           </div>
+           <input type="text" value="${answer.text}" class="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-2 text-slate-100 focus:outline-none focus:border-blue-500 transition-all">
+           <div class="flex items-center gap-3 mt-1">
+              <button class="btn-upload text-xs px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-600 transition-colors">
+                 ${answer.image ? 'Change Image' : 'Add Image'}
+              </button>
+              <input type="file" accept="image/*" class="file-input hidden">
+              ${answer.image ? `
+                 <img src="${answer.image}" class="h-8 w-8 object-cover rounded shadow-sm border border-slate-600">
+                 <button class="btn-remove-img text-xs text-red-400 hover:text-red-300 ml-auto">Remove</button>
+              ` : ''}
+           </div>
+         `;
+         
+         const textInput = div.querySelector('input[type="text"]');
+         textInput.oninput = (e) => { answer.text = e.target.value; saveData(); };
+         
+         const fileInput = div.querySelector('.file-input');
+         const btnUpload = div.querySelector('.btn-upload');
+         const btnRemove = div.querySelector('.btn-remove-img');
+         
+         btnUpload.onclick = () => fileInput.click();
+         fileInput.onchange = async (e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            try {
+               btnUpload.textContent = "Processing...";
+               const dataUrl = await resizeImageFileToDataURL(file, 400);
+               answer.image = dataUrl;
+               saveData();
+               renderEditBoard();
+            } catch(err) {
+               console.error(err);
+               showToast("Failed to read image", "error");
+               btnUpload.textContent = "Try Again";
+            }
+         };
 
-        if (btnRemove) {
-           btnRemove.onclick = () => {
-              delete answer.image;
-              saveData();
-              renderEditBoard();
-           };
-        }
+         if (btnRemove) {
+            btnRemove.onclick = () => {
+               delete answer.image;
+               saveData();
+               renderEditBoard();
+            };
+         }
 
-        const checkRadioInput = div.querySelector(`input[type="${inputType}"]`);
-        checkRadioInput.onchange = (e) => {
-           if (q.selectionType === 'multi') {
-              if (e.target.checked) {
-                 if(!q.correctAnswerIds.includes(e.target.value)) q.correctAnswerIds.push(e.target.value);
-              } else {
-                 q.correctAnswerIds = q.correctAnswerIds.filter(id => id !== e.target.value);
-              }
-           } else {
-              if(e.target.checked) { 
-                 q.correctAnswerIds = [e.target.value];
-                 q.correctAnswerId = e.target.value;
-              }
-           }
-           saveData();
-        }
+         const checkInput = div.querySelector(`input[type="${inputType}"]`);
+         checkInput.onchange = (e) => {
+            if (q.selectionType === 'multi') {
+               if (e.target.checked) {
+                  if(!q.correctAnswerIds.includes(e.target.value)) q.correctAnswerIds.push(e.target.value);
+               } else {
+                  q.correctAnswerIds = q.correctAnswerIds.filter(id => id !== e.target.value);
+               }
+            } else {
+               if(e.target.checked) q.correctAnswerIds = [e.target.value];
+            }
+            saveData();
+         }
 
-        editAnswersContainer.appendChild(div);
+         editAnswersContainer.appendChild(div);
       });
     }
 
@@ -1026,7 +1085,8 @@
        // Navigation
        if (mode === 'education') {
           if (e.key === 'ArrowRight') {
-             if (currentQuestionIndex < appData.questions.length - 1) {
+             const list = appData.categories[appData.selectedCategory || 'Activity'];
+             if (currentQuestionIndex < list.length - 1) {
                 currentQuestionIndex++;
                 selectedId = null; wrongSelectionsCount = {};
                 renderEducationBoard();
@@ -1044,7 +1104,8 @@
              return;
           }
           if (e.key === 'ArrowRight') {
-             if (currentQuestionIndex < appData.questions.length - 1) {
+             const list = appData.categories[appData.selectedCategory || 'Activity'];
+             if (currentQuestionIndex < list.length - 1) {
                 currentQuestionIndex++;
                 renderEditBoard();
              }
@@ -1056,6 +1117,25 @@
           }
        }
     });
+
+    const categoryTabsContainer = document.getElementById('category-tabs');
+    function renderCategoryTabs() {
+       categoryTabsContainer.innerHTML = '';
+       CATEGORIES.forEach(cat => {
+          const btn = document.createElement('button');
+          const isActive = appData.selectedCategory === cat;
+          btn.className = `px-4 py-2 rounded-full text-xs font-bold transition-all uppercase tracking-widest ${isActive ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-800 text-slate-500 hover:bg-slate-700'}`;
+          btn.textContent = cat;
+          btn.onclick = () => {
+             appData.selectedCategory = cat;
+             currentQuestionIndex = 0;
+             if (mode === 'education') renderEducationBoard();
+             else renderEditBoard();
+             saveData();
+          };
+          categoryTabsContainer.appendChild(btn);
+       });
+    }
   </script>
 </body>
 </html>
