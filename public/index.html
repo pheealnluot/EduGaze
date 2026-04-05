@@ -86,9 +86,12 @@
       <button id="btn-education" class="flex items-center gap-2 px-4 py-2 rounded-lg transition-all bg-blue-600 text-white shadow-lg shadow-blue-500/30">
         Education Mode
       </button>
-      <button id="btn-edit" class="flex items-center gap-2 px-4 py-2 rounded-lg transition-all bg-slate-800 text-slate-400 hover:bg-slate-700">
-        Edit Mode
-      </button>
+      <div class="flex items-center gap-2">
+        <button id="btn-edit" class="flex items-center gap-2 px-4 py-2 rounded-lg transition-all bg-slate-800 text-slate-400 hover:bg-slate-700">
+          Edit Mode
+        </button>
+        <span class="text-[10px] text-slate-500 whitespace-nowrap opacity-60 hidden sm:block">Double-click or Ctrl-e to enter Edit Mode</span>
+      </div>
     </div>
   </header>
 
@@ -637,7 +640,8 @@
        const gapClass = getActiveQ().maximizeSpacing ? 'gap-16 sm:gap-24' : 'gap-6';
        
        // Ensure one-page visibility
-       answersGrid.className = `grid grid-cols-1 ${colClass} ${gapClass} w-full max-w-5xl flex-1 min-h-0 py-4`;
+       const isMaxSpacing = getActiveQ().maximizeSpacing;
+       answersGrid.className = `grid grid-cols-1 ${colClass} ${gapClass} w-full max-w-5xl flex-1 min-h-0 py-4 ${isMaxSpacing ? 'h-[calc(100vh-280px)] overflow-hidden' : ''}`;
        answersGrid.innerHTML = '';
       getActiveQ().answers.forEach(answer => {
         const isSelected = selectedId === answer.id;
@@ -645,9 +649,21 @@
         
         const card = document.createElement('div');
         let hClass = "h-56";
-        if (getActiveQ().rows === 3) hClass = "h-32";
-        else if (getActiveQ().rows === 2 && getActiveQ().cols === 3) hClass = "h-40";
-        else if (getActiveQ().rows === 1) hClass = "h-64";
+        if (isMaxSpacing) {
+           // Proportional heights for no-scroll
+           const rowCount = getActiveQ().rows;
+           if (rowCount === 3) hClass = "h-1/4";
+           else if (rowCount === 2) hClass = "h-2/5";
+           else hClass = "h-4/5";
+           
+           // Ensure it uses height flex
+           card.style.height = "auto";
+           card.style.flex = "1";
+        } else {
+           if (getActiveQ().rows === 3) hClass = "h-32";
+           else if (getActiveQ().rows === 2 && getActiveQ().cols === 3) hClass = "h-40";
+           else if (getActiveQ().rows === 1) hClass = "h-64";
+        }
         
         let basePin = answer.image ? 'p-0' : 'p-6';
         let baseClasses = `relative overflow-hidden rounded-2xl ${basePin} ${hClass} flex items-center justify-center cursor-pointer transition-all duration-300 transform outline outline-2 outline-offset-4 select-none `;
@@ -948,6 +964,32 @@
 
     // Export for debugging if needed
     window.logout = () => signOut(auth);
+
+    // Keyboard Shortcuts
+    window.addEventListener('keydown', (e) => {
+       // Mode Toggle Ctrl+E
+       if (e.ctrlKey && (e.key === 'e' || e.key === 'E')) {
+          e.preventDefault();
+          setMode(mode === 'education' ? 'edit' : 'education');
+       }
+       
+       // Navigation (only in Education Mode)
+       if (mode === 'education') {
+          if (e.key === 'ArrowRight') {
+             if (currentQuestionIndex < appData.questions.length - 1) {
+                currentQuestionIndex++;
+                selectedId = null; wrongSelectionsCount = {};
+                renderEducationBoard();
+             }
+          } else if (e.key === 'ArrowLeft') {
+             if (currentQuestionIndex > 0) {
+                currentQuestionIndex--;
+                selectedId = null; wrongSelectionsCount = {};
+                renderEducationBoard();
+             }
+          }
+       }
+    });
   </script>
 </body>
 </html>
