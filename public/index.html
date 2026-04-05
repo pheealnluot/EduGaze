@@ -239,7 +239,7 @@
 
   <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-app.js';
-    import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-auth.js';
+    import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, linkWithCredential, EmailAuthProvider } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-auth.js';
     import { getFirestore, doc, getDoc, setDoc } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore.js';
 
     // Firebase configuration
@@ -285,6 +285,7 @@
        if (!appData.categories[cat]) appData.categories[cat] = [];
     });
     let user = null;
+    let pendingPassword = null;
     let isInitialLoadComplete = false;
 
     async function loadDataFromFirestore() {
@@ -491,7 +492,25 @@
     // Auth events
     btnLogin.onclick = async () => {
        try {
-          await signInWithPopup(auth, googleProvider);
+          const result = await signInWithPopup(auth, googleProvider);
+          const currentUser = result.user;
+          
+          if (pendingPassword && currentUser) {
+             try {
+                const credential = EmailAuthProvider.credential(currentUser.email, pendingPassword);
+                await linkWithCredential(currentUser, credential);
+                showToast("Alternate login successfully linked!", "success");
+                pendingPassword = null;
+             } catch (linkErr) {
+                console.error("Linking failed", linkErr);
+                if (linkErr.code === 'auth/credential-already-in-use') {
+                   // This means the password was already set up correctly, proceed.
+                   pendingPassword = null;
+                } else {
+                   showToast("Failed to link password: " + linkErr.message, "error");
+                }
+             }
+          }
        } catch (err) {
           console.error("Login failed", err);
           showToast("Login failed: " + err.message, "error");
@@ -511,7 +530,14 @@
           await signInWithEmailAndPassword(auth, email, password);
        } catch (err) {
           console.error("Login failed", err);
-          showToast("Login failed: " + err.message, "error");
+          if (err.code === 'auth/account-exists-with-different-credential') {
+             pendingPassword = password;
+             showToast("This email is linked to Google. Please sign in with Google now to set a password for this account.", "info");
+             btnLogin.classList.add('animate-pulse', 'ring-4', 'ring-blue-500/50');
+             setTimeout(() => btnLogin.classList.remove('animate-pulse', 'ring-4', 'ring-blue-500/50'), 6000);
+          } else {
+             showToast("Login failed: " + err.message, "error");
+          }
        } finally {
           btnEmailSignin.disabled = false;
           btnEmailSignin.textContent = "Sign In";
@@ -532,7 +558,15 @@
           showToast("Account created successfully!");
        } catch (err) {
           console.error("Registration failed", err);
-          showToast("Registration failed: " + err.message, "error");
+          if (err.code === 'auth/email-already-in-use') {
+             // In some Firebase configs, account-exists-with-different-credential is thrown as email-already-in-use
+             pendingPassword = password;
+             showToast("This email is already in use. If it's your Google account, sign in with Google to link your password.", "info");
+             btnLogin.classList.add('animate-pulse', 'ring-4', 'ring-blue-500/50');
+             setTimeout(() => btnLogin.classList.remove('animate-pulse', 'ring-4', 'ring-blue-500/50'), 6000);
+          } else {
+             showToast("Registration failed: " + err.message, "error");
+          }
        } finally {
           btnEmailRegister.disabled = false;
           btnEmailRegister.textContent = "Register";
