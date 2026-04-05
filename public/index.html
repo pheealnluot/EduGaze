@@ -123,63 +123,73 @@
       </div>
     </div>
 
-    <!-- Edit Board -->
-    <div id="view-edit" class="w-full max-w-2xl bg-slate-800 p-8 rounded-2xl shadow-xl border border-slate-700/50 hidden transition-opacity">
-      <div class="flex items-center justify-between mb-6 border-b border-slate-700 pb-4">
-         <div class="flex flex-col">
-            <h2 class="text-2xl font-bold text-slate-100">Edit Configuration</h2>
-         </div>
-         <div class="flex items-center gap-4">
-            <button id="btn-add-q" class="text-sm px-3 py-1.5 bg-emerald-600/20 text-emerald-400 rounded hover:bg-emerald-600/30 transition-colors">+ New Question</button>
-            <div class="flex items-center gap-2 bg-slate-900 rounded-lg p-1">
-               <button id="btn-prev-edit" class="px-3 py-1 rounded text-slate-400 hover:text-white hover:bg-slate-700 disabled:opacity-30 transition-all">&larr;</button>
-               <span id="display-q-count" class="text-sm font-medium text-slate-300 min-w-[50px] text-center">1 / 1</span>
-               <button id="btn-next-edit" class="px-3 py-1 rounded text-slate-400 hover:text-white hover:bg-slate-700 disabled:opacity-30 transition-all">&rarr;</button>
-            </div>
+    <div id="view-edit" class="w-full max-w-6xl flex flex-col md:flex-row gap-8 hidden transition-opacity items-start">
+      <!-- Navigation Sidebar -->
+      <div id="edit-nav-panel" class="w-full md:w-64 bg-slate-800 p-6 rounded-2xl shadow-xl border border-slate-700/50 flex flex-col max-h-[80vh]">
+         <h3 class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Questions</h3>
+         <div id="edit-nav-list" class="flex flex-col gap-2 overflow-y-auto pr-2 custom-scrollbar">
+            <!-- List items generated via JS -->
          </div>
       </div>
-      <div class="space-y-6">
-        <div>
-          <div class="flex items-center justify-between mb-2">
-            <label class="block text-sm font-medium text-slate-400">Question</label>
-            <button id="btn-delete-q" class="text-[10px] text-red-400 hover:text-red-300 transition-all hidden font-bold uppercase tracking-wider border border-red-500/30 rounded px-2 py-1 bg-red-500/5">Delete this Question</button>
-          </div>
-          <input type="text" id="input-question" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-slate-100 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all font-medium">
+
+      <!-- Main Edit Config -->
+      <div class="flex-1 bg-slate-800 p-8 rounded-2xl shadow-xl border border-slate-700/50 w-full min-w-0">
+        <div class="flex items-center justify-between mb-6 border-b border-slate-700 pb-4">
+           <div class="flex flex-col">
+              <h2 class="text-2xl font-bold text-slate-100">Edit Configuration</h2>
+           </div>
+           <div class="flex items-center gap-4">
+              <button id="btn-add-q" class="text-sm px-3 py-1.5 bg-emerald-600/20 text-emerald-400 rounded hover:bg-emerald-600/30 transition-colors">+ New Question</button>
+              <div class="flex items-center gap-2 bg-slate-900 rounded-lg p-1">
+                 <button id="btn-prev-edit" class="px-3 py-1 rounded text-slate-400 hover:text-white hover:bg-slate-700 disabled:opacity-30 transition-all">&larr;</button>
+                 <span id="display-q-count" class="text-sm font-medium text-slate-300 min-w-[50px] text-center">1 / 1</span>
+                 <button id="btn-next-edit" class="px-3 py-1 rounded text-slate-400 hover:text-white hover:bg-slate-700 disabled:opacity-30 transition-all">&rarr;</button>
+              </div>
+           </div>
         </div>
-        <div class="flex flex-col sm:flex-row gap-6">
-          <div class="flex-1">
-            <label class="block text-sm font-medium text-slate-400 mb-2">Grid Layout</label>
-            <select id="input-layout" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-slate-100 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all">
-               <option value="1x2">1 Row, 2 Columns</option>
-               <option value="1x3">1 Row, 3 Columns</option>
-               <option value="2x2">2 Rows, 2 Columns</option>
-               <option value="2x3">2 Rows, 3 Columns</option>
-               <option value="3x3">3 Rows, 3 Columns</option>
-            </select>
+        <div class="space-y-6">
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <label class="block text-sm font-medium text-slate-400">Question</label>
+              <button id="btn-delete-q" class="text-[10px] text-red-400 hover:text-red-300 transition-all hidden font-bold uppercase tracking-wider border border-red-500/30 rounded px-2 py-1 bg-red-500/5">Delete this Question</button>
+            </div>
+            <input type="text" id="input-question" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-slate-100 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all font-medium">
           </div>
-          <div class="flex-1">
-            <label class="block text-sm font-medium text-slate-400 mb-2">Answers Mode</label>
-            <select id="input-selection-type" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-slate-100 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all">
-               <option value="single">One correct answer</option>
-               <option value="multi">Zero or more correct answers</option>
-            </select>
+          <div class="flex flex-col sm:flex-row gap-6">
+            <div class="flex-1">
+              <label class="block text-sm font-medium text-slate-400 mb-2">Grid Layout</label>
+              <select id="input-layout" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-slate-100 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all">
+                 <option value="1x2">1 Row, 2 Columns</option>
+                 <option value="1x3">1 Row, 3 Columns</option>
+                 <option value="2x2">2 Rows, 2 Columns</option>
+                 <option value="2x3">2 Rows, 3 Columns</option>
+                 <option value="3x3">3 Rows, 3 Columns</option>
+              </select>
+            </div>
+            <div class="flex-1">
+              <label class="block text-sm font-medium text-slate-400 mb-2">Answers Mode</label>
+              <select id="input-selection-type" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-slate-100 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all">
+                 <option value="single">One correct answer</option>
+                 <option value="multi">Zero or more correct answers</option>
+              </select>
+            </div>
           </div>
-        </div>
-        <div class="flex items-center gap-3">
-          <input type="checkbox" id="input-max-spacing" class="w-5 h-5 text-blue-500 bg-slate-900 border-slate-700 rounded focus:ring-blue-500 focus:ring-offset-slate-900">
-          <label for="input-max-spacing" class="text-sm font-medium text-slate-300 cursor-pointer select-none">Maximize Spacing (Education Mode)</label>
-        </div>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-6" id="edit-answers-container">
-          <!-- Inputs generated via JS -->
-        </div>
-        <div class="pt-4 border-t border-slate-700/50">
-          <label class="block text-sm font-medium text-slate-400 mb-2">Dwell Time to Select (ms)</label>
-          <div class="flex flex-col sm:flex-row items-center gap-4">
-            <input type="number" id="input-dwell" min="0" max="6000" step="100" class="w-full sm:w-24 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-blue-500 transition-all font-mono">
-            <input type="range" id="input-dwell-slider" min="0" max="6000" step="100" class="flex-1 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500">
-            <button id="btn-apply-all-dwell" class="whitespace-nowrap text-xs px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded border border-slate-600 transition-colors">Apply to all</button>
+          <div class="flex items-center gap-3">
+            <input type="checkbox" id="input-max-spacing" class="w-5 h-5 text-blue-500 bg-slate-900 border-slate-700 rounded focus:ring-blue-500 focus:ring-offset-slate-900">
+            <label for="input-max-spacing" class="text-sm font-medium text-slate-300 cursor-pointer select-none">Maximize Spacing (Education Mode)</label>
           </div>
-          <p class="text-sm text-slate-500 mt-2">How long the mouse must stay over an answer to select it. (0-6000ms)</p>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-6" id="edit-answers-container">
+            <!-- Inputs generated via JS -->
+          </div>
+          <div class="pt-4 border-t border-slate-700/50">
+            <label class="block text-sm font-medium text-slate-400 mb-2">Dwell Time to Select (ms)</label>
+            <div class="flex flex-col sm:flex-row items-center gap-4">
+              <input type="number" id="input-dwell" min="0" max="6000" step="100" class="w-full sm:w-24 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-blue-500 transition-all font-mono">
+              <input type="range" id="input-dwell-slider" min="0" max="6000" step="100" class="flex-1 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500">
+              <button id="btn-apply-all-dwell" class="whitespace-nowrap text-xs px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded border border-slate-600 transition-colors">Apply to all</button>
+            </div>
+            <p class="text-sm text-slate-500 mt-2">How long the mouse must stay over an answer to select it. (0-6000ms)</p>
+          </div>
         </div>
       </div>
     </div>
@@ -818,6 +828,42 @@
       btnNextEdit.disabled = currentQuestionIndex === appData.questions.length - 1;
       
       inputQuestion.value = q.question;
+      inputLayout.value = `${q.rows || 2}x${q.cols || 2}`;
+      inputSelectionType.value = q.selectionType || 'single';
+      inputDwell.value = q.dwellTimeMs || appData.dwellTimeMs || 2000;
+      inputDwellSlider.value = q.dwellTimeMs || appData.dwellTimeMs || 2000;
+      inputMaxSpacing.checked = !!q.maximizeSpacing;
+
+      btnDeleteQ.classList.toggle('hidden', appData.questions.length <= 1);
+
+      // Render Sidebar
+      const navList = document.getElementById('edit-nav-list');
+      navList.innerHTML = '';
+      appData.questions.forEach((question, idx) => {
+         const item = document.createElement('button');
+         const isActive = idx === currentQuestionIndex;
+         item.className = `flex flex-col items-start p-3 rounded-lg text-left transition-all ${isActive ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-900 text-slate-400 hover:bg-slate-700'}`;
+         
+         const numSpan = document.createElement('span');
+         numSpan.className = `text-[10px] font-bold uppercase tracking-widest mb-1 ${isActive ? 'text-blue-200' : 'text-slate-500'}`;
+         numSpan.textContent = `Question ${idx + 1}`;
+         
+         const textSpan = document.createElement('span');
+         textSpan.className = 'text-xs font-medium truncate w-full';
+         textSpan.textContent = question.question || '(New Question)';
+         
+         item.appendChild(numSpan);
+         item.appendChild(textSpan);
+         item.onclick = () => {
+            currentQuestionIndex = idx;
+            renderEditBoard();
+         };
+         navList.appendChild(item);
+         
+         if (isActive) {
+            item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+         }
+      });
       inputDwell.value = q.dwellTimeMs;
       inputDwellSlider.value = q.dwellTimeMs;
       inputMaxSpacing.checked = !!q.maximizeSpacing;
@@ -977,7 +1023,7 @@
           setMode(mode === 'education' ? 'edit' : 'education');
        }
        
-       // Navigation (only in Education Mode)
+       // Navigation
        if (mode === 'education') {
           if (e.key === 'ArrowRight') {
              if (currentQuestionIndex < appData.questions.length - 1) {
@@ -990,6 +1036,22 @@
                 currentQuestionIndex--;
                 selectedId = null; wrongSelectionsCount = {};
                 renderEducationBoard();
+             }
+          }
+       } else if (mode === 'edit') {
+          // Check if typing in a text field
+          if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA' || document.activeElement.tagName === 'SELECT') {
+             return;
+          }
+          if (e.key === 'ArrowRight') {
+             if (currentQuestionIndex < appData.questions.length - 1) {
+                currentQuestionIndex++;
+                renderEditBoard();
+             }
+          } else if (e.key === 'ArrowLeft') {
+             if (currentQuestionIndex > 0) {
+                currentQuestionIndex--;
+                renderEditBoard();
              }
           }
        }
