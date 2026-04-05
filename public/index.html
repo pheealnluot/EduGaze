@@ -268,7 +268,7 @@
 
   <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-app.js';
-    import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, linkWithCredential, EmailAuthProvider, updatePassword, reauthenticateWithCredential } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-auth.js';
+    import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, linkWithCredential, EmailAuthProvider, updatePassword, reauthenticateWithCredential, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-auth.js';
     import { getFirestore, doc, getDoc, setDoc } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore.js';
 
     // Firebase configuration
@@ -316,11 +316,15 @@
     let user = null;
     let pendingPassword = null;
     let isInitialLoadComplete = false;
+    let isEditMode = false;
 
     async function loadDataFromFirestore() {
        if (!user) return;
-       // Skip if Guest - but ensure isInitialLoadComplete is true
-       if (user.isGuest) {
+       // Proper guest check: handle both manual guest object and Firebase anonymous auth
+       const isGuestAccount = user.isGuest || user.isAnonymous || user.email === 'guest@edugaze.com';
+       
+       if (isGuestAccount) {
+          console.log("Loading guest data from LocalStorage...");
           const stored = localStorage.getItem(STORAGE_KEY);
           if (stored) {
              appData = JSON.parse(stored);
@@ -329,37 +333,42 @@
           return;
        }
        try {
-           console.log("Attempting to load data from Firestore...");
-           const docRef = doc(db, "configs", "main");
+           console.log("Attempting to load data from Firestore for user:", user.uid);
+           const docRef = doc(db, "configs", user.uid);
            const docSnap = await getDoc(docRef);
            
            if (docSnap.exists()) {
                console.log("Data loaded from Firestore successfully.");
-                const cloudData = docSnap.data();
-                // Migration from legacy single list
-                if (cloudData.questions && !cloudData.categories) {
-                   const oldQuestions = cloudData.questions;
-                   cloudData.categories = { 'Activity': oldQuestions };
-                   CATEGORIES.forEach(cat => {
-                      if (!cloudData.categories[cat]) cloudData.categories[cat] = [];
-                   });
-                   cloudData.selectedCategory = 'Activity';
-                   delete cloudData.questions;
-                }
-                
-                // Ensure all categories exist
-                CATEGORIES.forEach(cat => {
-                   if (!cloudData.categories[cat]) cloudData.categories[cat] = [];
-                   
-                   // Ensure all questions have dwellTimeMs
-                   const globalDwell = cloudData.dwellTimeMs || 2000;
-                   cloudData.categories[cat].forEach(q => {
-                      if (q.dwellTimeMs === undefined) q.dwellTimeMs = globalDwell;
-                   });
-                });
-                
-                appData = cloudData;
-            } else {
+                 const cloudData = docSnap.data();
+                 if (!cloudData.categories) cloudData.categories = {};
+                 
+                 // Migration from legacy single list
+                 if (cloudData.questions && Object.keys(cloudData.categories).length === 0) {
+                    const oldQuestions = cloudData.questions;
+                    cloudData.categories = { 'Activity': oldQuestions };
+                    CATEGORIES.forEach(cat => {
+                       if (!cloudData.categories[cat]) cloudData.categories[cat] = [];
+                    });
+                    cloudData.selectedCategory = 'Activity';
+                    delete cloudData.questions;
+                 }
+                 
+                 // Ensure all categories exist and questions are valid
+                 CATEGORIES.forEach(cat => {
+                    if (!cloudData.categories[cat]) cloudData.categories[cat] = [];
+                    
+                    // Ensure all questions have dwellTimeMs
+                    const globalDwell = cloudData.dwellTimeMs || 2000;
+                    if (Array.isArray(cloudData.categories[cat])) {
+                       cloudData.categories[cat].forEach(q => {
+                          if (q.dwellTimeMs === undefined) q.dwellTimeMs = globalDwell;
+                       });
+                    }
+                 });
+                 
+                 appData = cloudData;
+                 isInitialLoadComplete = true;
+             } else {
                 console.log("No data found in Firestore. Migrating from local storage or using defaults.");
                 const stored = localStorage.getItem(STORAGE_KEY);
                 if (stored) {
@@ -380,9 +389,10 @@
                    };
                    CATEGORIES.forEach(cat => { if (!appData.categories[cat]) appData.categories[cat] = []; });
                 }
+                isInitialLoadComplete = true; // Set flag BEFORE saving defaults
                 await saveDataToFirestore();
             }
-           isInitialLoadComplete = true;
+            isInitialLoadComplete = true;
        } catch (error) {
            console.error("Error loading data from Firestore:", error);
            // Even if error, allow editing with what we have
@@ -392,16 +402,13 @@
 
     let saveTimer = null;
     async function saveDataToFirestore() {
-       if (!user || !isInitialLoadComplete) {
-          console.log("Skipping save: User not signed in or initial load in progress.");
-          return;
-       }
-       localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
-       if (user.isGuest) return; // Only local save for guest
-       
-       try {
-           console.log("Saving data to Firestore...");
-           const docRef = doc(db, "configs", "main");
+       if (!user || !isInitialLoadComplete) return;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
+        if (user.uid === 'guest-local') return; // Don't try to save to Firestore with dummy UID
+        
+        try {
+           console.log("Saving data to Firestore for user:", user.uid);
+           const docRef = doc(db, "configs", user.uid);
            await setDoc(docRef, appData);
            console.log("Data saved successfully.");
        } catch (error) {
@@ -508,15 +515,22 @@
        showToast("Logged out successfully.");
     };
 
-    btnGuest.onclick = () => {
-       user = { isGuest: true, displayName: "Guest User" };
-       displayUser.textContent = "Guest";
-       loginOverlay.classList.add('opacity-0');
-       setTimeout(() => loginOverlay.classList.add('hidden'), 500);
-       loadDataFromFirestore().then(() => {
-          renderEducationBoard();
-       });
-    };
+     btnGuest.onclick = async () => {
+        try {
+           btnGuest.disabled = true;
+           btnGuest.textContent = "Connecting...";
+           await signInAnonymously(auth);
+           // onAuthStateChanged will handle hiding overlay and loading
+        } catch (err) {
+           console.warn("Guest login failed (Anonymous Auth likely disabled in Console):", err);
+           showToast("Cloud sync disabled for guest. Using local storage.", "info");
+           // Fallback to local guest mode manually
+           handleAuthStateChanged({ isAnonymous: true, isGuest: true, uid: 'guest-local', displayName: 'Guest' });
+        } finally {
+           btnGuest.disabled = false;
+           btnGuest.textContent = "Continue as Guest";
+        }
+     };
     
     // Auth events
     btnLogin.onclick = async () => {
@@ -692,10 +706,13 @@
     async function handleAuthStateChanged(u) {
        user = u;
        if (user) {
-          loginOverlay.classList.add('hidden');
-          const isGuest = user.isAnonymous || user.email === 'guest@edugaze.com';
+          // Hide overlay INSTANTLY and DEFINITIVELY
+          loginOverlay.classList.add('hidden', 'opacity-0', 'pointer-events-none');
+          console.log("Auth state change: User detected.", user.isAnonymous ? "Anonymous" : (user.email || "User"));
+          
+          const isGuest = user.isAnonymous || user.isGuest;
           displayUser.textContent = isGuest ? 'Guest' : (user.email || 'User');
-          btnLogout.classList.toggle('hidden', isGuest);
+          btnLogout.classList.remove('hidden');
           
           if (!isGuest) {
              displayUser.classList.add('hover:text-blue-400', 'cursor-pointer', 'transition-colors');
@@ -706,18 +723,50 @@
              displayUser.classList.remove('hover:text-blue-400', 'cursor-pointer', 'underline', 'decoration-blue-500/30', 'underline-offset-4');
           }
 
-          if (isInitialLoadComplete) {
-             await loadDataFromFirestore();
+          // Trigger initial load and render if not already complete
+          if (!isInitialLoadComplete) {
+             // Let the background UI render defaults first so it doesn't look like it's "hanging"
+             if (mode === 'education') renderEducationBoard();
+             else renderEditBoard();
+
+             // Now load cloud data in the background (if not local-only guest)
+             if (user.uid !== 'guest-local') {
+                await loadDataFromFirestore();
+             } else {
+                // For local guest, just load from localStorage
+                const stored = localStorage.getItem(STORAGE_KEY);
+                if (stored) appData = JSON.parse(stored);
+                isInitialLoadComplete = true;
+             }
+             
+             // Refresh UI with loaded data
+             if (mode === 'education') renderEducationBoard();
+             else renderEditBoard();
+          } else {
+             // Already initialized, but auth changed (e.g. login/out)
+             if (user.uid !== 'guest-local') {
+                await loadDataFromFirestore();
+             }
+             if (mode === 'education') renderEducationBoard();
+             else renderEditBoard();
           }
        } else {
-          // If we're already a Guest, don't revert to login screen automatically
-          if (user && user.isGuest) return;
-
-          user = null;
-          displayUser.textContent = "Guest";
-          loginOverlay.classList.remove('hidden');
-          setTimeout(() => loginOverlay.classList.remove('opacity-0'), 10);
-       }
+           // User is null - clear app state and show login
+           user = null;
+           displayUser.textContent = "Guest";
+           btnLogout.classList.add('hidden');
+           loginOverlay.classList.remove('hidden', 'opacity-0', 'pointer-events-none');
+           setTimeout(() => loginOverlay.classList.remove('opacity-0'), 10);
+           
+           // Clear education board
+           if (isInitialLoadComplete) {
+              appData = { dwellTimeMs: 2000, selectedCategory: 'Activity', categories: { 'Activity': [initData()] } };
+              CATEGORIES.forEach(cat => { if (!appData.categories[cat]) appData.categories[cat] = []; });
+              currentQuestionIndex = 0;
+              isInitialLoadComplete = false;
+              renderEducationBoard();
+           }
+        }
     }
 
     function playSuccessSound() {
@@ -819,6 +868,7 @@
        btnEducation.classList.add('text-white');
        categoryTabs.classList.add('hidden');
        displayUser.classList.remove('underline', 'decoration-blue-500/30', 'underline-offset-4');
+       btnLogout.classList.add('hidden');
        renderEducationBoard();
     }
 
@@ -831,17 +881,19 @@
        btnEdit.classList.replace('bg-slate-800', 'bg-blue-600');
        btnEdit.classList.add('text-white');
        categoryTabs.classList.remove('hidden');
-       if (user && !user.isAnonymous && user.email !== 'guest@edugaze.com') {
+       btnLogout.classList.remove('hidden');
+       if (user) {
           displayUser.classList.add('underline', 'decoration-blue-500/30', 'underline-offset-4');
        }
        renderEditBoard();
     }
 
     function setMode(newMode) {
-      if (newMode === 'edit' && !user) {
-         showToast("You must be signed in to edit.", "error");
-         return;
-      }
+       // Allow any authenticated user (including anonymous quests) to edit
+       if (newMode === 'edit' && !user) {
+          showToast("You must be signed in to edit.", "error");
+          return;
+       }
       mode = newMode;
       if (mode === 'education') {
         setEducationMode();
@@ -858,13 +910,6 @@
 
     btnEducation.onclick = () => setMode('education');
     btnEdit.ondblclick = () => setMode('edit');
-    
-    // Alert user about double click on the first try if they single click
-    btnEdit.onclick = () => {
-       if (mode !== 'edit') {
-           console.log("Double click required to enter Edit Mode");
-       }
-    };
 
     btnPrevEdu.addEventListener('dblclick', () => {
        if (currentQuestionIndex > 0) {
@@ -1365,6 +1410,8 @@
           categoryTabsContainer.appendChild(btn);
        });
     }
+    renderCategoryTabs();
+    onAuthStateChanged(auth, handleAuthStateChanged);
   </script>
 </body>
 </html>
