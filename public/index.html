@@ -135,22 +135,28 @@
           </div>
           <input type="text" id="input-question" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-slate-100 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all font-medium">
         </div>
-        <div>
-          <label class="block text-sm font-medium text-slate-400 mb-2">Grid Layout</label>
-          <select id="input-layout" class="w-full sm:w-1/2 bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-slate-100 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all">
-             <option value="1x2">1 Row, 2 Columns</option>
-             <option value="1x3">1 Row, 3 Columns</option>
-             <option value="2x2">2 Rows, 2 Columns</option>
-             <option value="2x3">2 Rows, 3 Columns</option>
-             <option value="3x3">3 Rows, 3 Columns</option>
-          </select>
+        <div class="flex flex-col sm:flex-row gap-6">
+          <div class="flex-1">
+            <label class="block text-sm font-medium text-slate-400 mb-2">Grid Layout</label>
+            <select id="input-layout" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-slate-100 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all">
+               <option value="1x2">1 Row, 2 Columns</option>
+               <option value="1x3">1 Row, 3 Columns</option>
+               <option value="2x2">2 Rows, 2 Columns</option>
+               <option value="2x3">2 Rows, 3 Columns</option>
+               <option value="3x3">3 Rows, 3 Columns</option>
+            </select>
+          </div>
+          <div class="flex-1">
+            <label class="block text-sm font-medium text-slate-400 mb-2">Answers Mode</label>
+            <select id="input-selection-type" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-slate-100 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all">
+               <option value="single">One correct answer</option>
+               <option value="multi">Zero or more correct answers</option>
+            </select>
+          </div>
         </div>
-        <div>
-          <label class="block text-sm font-medium text-slate-400 mb-2">Answers Mode</label>
-          <select id="input-selection-type" class="w-full sm:w-1/2 bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-slate-100 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all">
-             <option value="single">One correct answer</option>
-             <option value="multi">Zero or more correct answers</option>
-          </select>
+        <div class="flex items-center gap-3">
+          <input type="checkbox" id="input-max-spacing" class="w-5 h-5 text-blue-500 bg-slate-900 border-slate-700 rounded focus:ring-blue-500 focus:ring-offset-slate-900">
+          <label for="input-max-spacing" class="text-sm font-medium text-slate-300 cursor-pointer select-none">Maximize Spacing (Education Mode)</label>
         </div>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-6" id="edit-answers-container">
           <!-- Inputs generated via JS -->
@@ -184,7 +190,15 @@
         </svg>
         Sign in with Google
       </button>
-      <p class="text-xs text-slate-500 pt-4 font-mono uppercase tracking-widest">v1.0.0 Alpha</p>
+      <div class="flex items-center gap-4 my-2">
+        <div class="flex-1 h-px bg-slate-800"></div>
+        <span class="text-slate-600 text-xs font-bold uppercase tracking-widest">Or</span>
+        <div class="flex-1 h-px bg-slate-800"></div>
+      </div>
+      <button id="btn-guest" class="w-full flex items-center justify-center gap-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-4 px-6 rounded-xl transition-all border border-slate-700 active:scale-95 shadow-lg">
+        Continue as Guest
+      </button>
+      <p class="text-xs text-slate-500 pt-4 font-mono uppercase tracking-widest">v1.1.0 Alpha</p>
     </div>
   </div>
 
@@ -219,6 +233,7 @@
       rows: 2, cols: 2,
       selectionType: 'single',
       dwellTimeMs: 2000,
+      maximizeSpacing: false,
       answers: [
         { id: '1', text: 'London' }, { id: '2', text: 'Berlin' },
         { id: '3', text: 'Paris' }, { id: '4', text: 'Madrid' }
@@ -233,6 +248,15 @@
 
     async function loadDataFromFirestore() {
        if (!user) return;
+       // Skip if Guest - but ensure isInitialLoadComplete is true
+       if (user.isGuest) {
+          const stored = localStorage.getItem(STORAGE_KEY);
+          if (stored) {
+             appData = JSON.parse(stored);
+          }
+          isInitialLoadComplete = true;
+          return;
+       }
        try {
            console.log("Attempting to load data from Firestore...");
            const docRef = doc(db, "configs", "main");
@@ -272,11 +296,13 @@
           console.log("Skipping save: User not signed in or initial load in progress.");
           return;
        }
+       localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
+       if (user.isGuest) return; // Only local save for guest
+       
        try {
            console.log("Saving data to Firestore...");
            const docRef = doc(db, "configs", "main");
            await setDoc(docRef, appData);
-           localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
            console.log("Data saved successfully.");
        } catch (error) {
            console.error("Error saving data to Firestore:", error);
@@ -342,6 +368,7 @@
     const editAnswersContainer = document.getElementById('edit-answers-container');
     const inputDwellSlider = document.getElementById('input-dwell-slider');
     const btnApplyAllDwell = document.getElementById('btn-apply-all-dwell');
+    const inputMaxSpacing = document.getElementById('input-max-spacing');
     
     const btnPrevEdu = document.getElementById('btn-prev-edu');
     const btnNextEdu = document.getElementById('btn-next-edu');
@@ -353,6 +380,17 @@
     const loginOverlay = document.getElementById('login-overlay');
     const btnLogin = document.getElementById('btn-login');
 
+    const btnGuest = document.getElementById('btn-guest');
+    btnGuest.onclick = () => {
+       user = { isGuest: true, displayName: "Guest User" };
+       displayUser.textContent = "Guest";
+       loginOverlay.classList.add('opacity-0');
+       setTimeout(() => loginOverlay.classList.add('hidden'), 500);
+       loadDataFromFirestore().then(() => {
+          renderEducationBoard();
+       });
+    };
+    
     // Auth events
     btnLogin.onclick = async () => {
        try {
@@ -364,20 +402,24 @@
     };
 
     const displayUser = document.getElementById('display-user');
-    onAuthStateChanged(auth, async (u) => {
-       user = u;
-       if (user) {
-          loginOverlay.classList.add('opacity-0');
-          setTimeout(() => loginOverlay.classList.add('hidden'), 500);
-          displayUser.textContent = user.email || user.displayName || "User";
-          await loadDataFromFirestore();
-          renderEducationBoard();
-       } else {
-          displayUser.textContent = "Guest";
-          loginOverlay.classList.remove('hidden');
-          setTimeout(() => loginOverlay.classList.remove('opacity-0'), 10);
-       }
-    });
+     onAuthStateChanged(auth, async (u) => {
+        if (u) {
+           user = u;
+           loginOverlay.classList.add('opacity-0');
+           setTimeout(() => loginOverlay.classList.add('hidden'), 500);
+           displayUser.textContent = user.email || user.displayName || "User";
+           await loadDataFromFirestore();
+           renderEducationBoard();
+        } else {
+           // If we're already a Guest, don't revert to login screen automatically
+           if (user && user.isGuest) return;
+
+           user = null;
+           displayUser.textContent = "Guest";
+           loginOverlay.classList.remove('hidden');
+           setTimeout(() => loginOverlay.classList.remove('opacity-0'), 10);
+        }
+     });
 
     function playSuccessSound() {
       try {
@@ -535,12 +577,17 @@
           renderEditBoard();
        }
     });
-    btnAddQ.addEventListener('click', () => {
-       appData.questions.push(initData());
-       currentQuestionIndex = appData.questions.length - 1;
-       saveData();
-       renderEditBoard();
-    });
+     btnAddQ.addEventListener('click', () => {
+        const limit = (user && user.isGuest) ? 50 : 100;
+        if (appData.questions.length >= limit) {
+           showToast(`Limit reached: ${limit} questions max for ${user.isGuest ? 'Guest' : 'Pro'} accounts.`, 'error');
+           return;
+        }
+        appData.questions.push(initData());
+        currentQuestionIndex = appData.questions.length - 1;
+        saveData();
+        renderEditBoard();
+     });
     btnDeleteQ.addEventListener('click', () => {
        if (appData.questions.length > 1) {
           appData.questions.splice(currentQuestionIndex, 1);
@@ -556,16 +603,19 @@
     function renderEducationBoard() {
         renderGen++;
         const currentGen = renderGen;
-        const q = getActiveQ();
-        displayQuestion.textContent = q.question;
-        displayQCountEdu.textContent = `Question ${currentQuestionIndex + 1} of ${appData.questions.length}`;
-        
-        btnPrevEdu.disabled = currentQuestionIndex === 0;
-        btnNextEdu.disabled = currentQuestionIndex === appData.questions.length - 1;
-      
-      const colClass = getActiveQ().cols === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2';
-      answersGrid.className = `grid grid-cols-1 ${colClass} gap-6 w-full max-w-4xl`;
-      answersGrid.innerHTML = '';
+         const q = getActiveQ();
+         displayQuestion.textContent = q.question;
+         displayQCountEdu.textContent = `Question ${currentQuestionIndex + 1} of ${appData.questions.length}`;
+         
+         btnPrevEdu.disabled = currentQuestionIndex === 0;
+         btnNextEdu.disabled = currentQuestionIndex === appData.questions.length - 1;
+       
+       const colClass = getActiveQ().cols === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2';
+       const gapClass = getActiveQ().maximizeSpacing ? 'gap-16 sm:gap-24' : 'gap-6';
+       
+       // Ensure one-page visibility
+       answersGrid.className = `grid grid-cols-1 ${colClass} ${gapClass} w-full max-w-5xl flex-1 min-h-0 py-4`;
+       answersGrid.innerHTML = '';
       getActiveQ().answers.forEach(answer => {
         const isSelected = selectedId === answer.id;
         const isCorrect = getActiveQ().correctAnswerIds.includes(answer.id);
@@ -727,10 +777,12 @@
       inputQuestion.value = q.question;
       inputDwell.value = q.dwellTimeMs;
       inputDwellSlider.value = q.dwellTimeMs;
+      inputMaxSpacing.checked = !!q.maximizeSpacing;
       inputLayout.value = `${q.rows}x${q.cols}`;
       inputSelectionType.value = q.selectionType;
       
       inputQuestion.oninput = (e) => { q.question = e.target.value; saveData(); };
+      inputMaxSpacing.onchange = (e) => { q.maximizeSpacing = e.target.checked; saveData(); };
       
       const syncDwell = (val) => {
          q.dwellTimeMs = Number(val);
