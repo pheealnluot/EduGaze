@@ -52,6 +52,24 @@
       content: ''; position: absolute; top: 50%; left: 50%; width: 60%; height: 12px;
       background-color: rgba(239, 68, 68, 0.7); border-radius: 6px; transform: translate(-50%, -50%); z-index: 20;
     }
+
+    #toast-container {
+      position: fixed; bottom: 2rem; right: 2rem; z-index: 1000;
+      display: flex; flex-direction: column; gap: 0.75rem;
+    }
+    .toast {
+      background: rgba(15, 23, 42, 0.9);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(51, 65, 85, 0.5);
+      color: #f1f5f9;
+      padding: 1rem 1.5rem;
+      border-radius: 1rem;
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+      display: flex; align-items: center; gap: 0.75rem;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      transform: translateX(100%); opacity: 0;
+    }
+    .toast.show { transform: translateX(0); opacity: 1; }
   </style>
 </head>
 <body class="min-h-screen flex flex-col items-center py-10 px-4">
@@ -170,6 +188,8 @@
     </div>
   </div>
 
+  <div id="toast-container"></div>
+
   <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-app.js';
     import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-auth.js';
@@ -282,6 +302,27 @@
         return q;
     };
 
+    const toastContainer = document.getElementById('toast-container');
+    function showToast(message, type = 'success') {
+       const toast = document.createElement('div');
+       toast.className = 'toast';
+       const icon = type === 'success' 
+          ? '<svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>'
+          : '<svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>';
+       
+       toast.innerHTML = `${icon} <span class="text-sm font-medium">${message}</span>`;
+       toastContainer.appendChild(toast);
+       
+       // Trigger animation
+       requestAnimationFrame(() => toast.classList.add('show'));
+       
+       // Remove after duration
+       setTimeout(() => {
+          toast.classList.remove('show');
+          setTimeout(() => toast.remove(), 300);
+       }, 3000);
+    }
+
     let mode = 'education'; // 'education' or 'edit'
     let selectedId = null;
     let wrongSelectionsCount = {};
@@ -318,7 +359,7 @@
           await signInWithPopup(auth, googleProvider);
        } catch (err) {
           console.error("Login failed", err);
-          alert("Login failed: " + err.message);
+          showToast("Login failed: " + err.message, "error");
        }
     };
 
@@ -428,7 +469,7 @@
     // Switch modes
     function setMode(newMode) {
       if (newMode === 'edit' && !user) {
-         alert("You must be signed in to edit.");
+         showToast("You must be signed in to edit.", "error");
          return;
       }
       mode = newMode;
@@ -707,7 +748,7 @@
             question.dwellTimeMs = currentDwell;
          });
          saveData();
-         alert(`Applied ${currentDwell}ms dwell time to all ${appData.questions.length} questions!`);
+         showToast(`Applied ${currentDwell}ms dwell time to all ${appData.questions.length} questions!`);
       };
 
       inputSelectionType.onchange = (e) => {
@@ -789,7 +830,7 @@
               renderEditBoard();
            } catch(err) {
               console.error(err);
-              alert("Failed to read image");
+              showToast("Failed to read image", "error");
               btnUpload.textContent = "Try Again";
            }
         };
