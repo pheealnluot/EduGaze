@@ -192,6 +192,18 @@
             </div>
             <p class="text-sm text-slate-500 mt-2">How long the mouse must stay over an answer to select it. (0-6000ms)</p>
           </div>
+          <div class="pt-4 border-t border-slate-700/50">
+            <div class="flex items-center gap-3 mb-2">
+              <input type="checkbox" id="input-qread-enabled" class="w-5 h-5 text-blue-500 bg-slate-900 border-slate-700 rounded focus:ring-blue-500 focus:ring-offset-slate-900">
+              <label for="input-qread-enabled" class="block text-sm font-medium text-slate-300 cursor-pointer select-none">Question read time before showing answers</label>
+            </div>
+            <div id="qread-controls" class="flex flex-col sm:flex-row items-center gap-4 opacity-40 pointer-events-none transition-opacity">
+              <input type="number" id="input-qread" min="0" max="10000" step="100" class="w-full sm:w-24 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-blue-500 transition-all font-mono">
+              <input type="range" id="input-qread-slider" min="0" max="10000" step="100" class="flex-1 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-amber-500">
+              <button id="btn-apply-all-qread" class="whitespace-nowrap text-xs px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded border border-slate-600 transition-colors">Apply to all</button>
+            </div>
+            <p class="text-sm text-slate-500 mt-2">Delay before answers appear, giving time to read the question. (0-10000ms)</p>
+          </div>
         </div>
       </div>
     </div>
@@ -296,6 +308,8 @@
       selectionType: 'single',
       dwellTimeMs: 2000,
       maximizeSpacing: false,
+      qReadEnabled: false,
+      qReadTimeMs: 1000,
       answers: [
         { id: '1', text: 'London' }, { id: '2', text: 'Berlin' },
         { id: '3', text: 'Paris' }, { id: '4', text: 'Madrid' }
@@ -436,6 +450,8 @@
         if (!q.correctAnswerIds) {
            q.correctAnswerIds = q.correctAnswerId ? [q.correctAnswerId] : [];
         }
+        if (q.qReadEnabled === undefined) q.qReadEnabled = false;
+        if (q.qReadTimeMs === undefined) q.qReadTimeMs = 1000;
         return q;
     };
 
@@ -481,6 +497,11 @@
     const inputDwellSlider = document.getElementById('input-dwell-slider');
     const btnApplyAllDwell = document.getElementById('btn-apply-all-dwell');
     const inputMaxSpacing = document.getElementById('input-max-spacing');
+    const inputQReadEnabled = document.getElementById('input-qread-enabled');
+    const inputQRead = document.getElementById('input-qread');
+    const inputQReadSlider = document.getElementById('input-qread-slider');
+    const btnApplyAllQRead = document.getElementById('btn-apply-all-qread');
+    const qreadControls = document.getElementById('qread-controls');
     
     const btnPrevEdu = document.getElementById('btn-prev-edu');
     const btnNextEdu = document.getElementById('btn-next-edu');
@@ -866,7 +887,7 @@
        btnEducation.classList.replace('bg-slate-800', 'bg-blue-600');
        btnEducation.classList.replace('text-white', 'text-slate-400'); // wait text-white
        btnEducation.classList.add('text-white');
-       categoryTabs.classList.add('hidden');
+       categoryTabs.classList.remove('hidden');
        displayUser.classList.remove('underline', 'decoration-blue-500/30', 'underline-offset-4');
        btnLogout.classList.add('hidden');
        renderEducationBoard();
@@ -967,6 +988,12 @@
     });
 
     const displayQCountEdu = document.getElementById('display-q-count-edu');
+    // Track question read timer state
+    let qReadTimerId = null;
+    let _qReadOnEnter = null;
+    let _qReadOnLeave = null;
+    let _qReadOnClick = null;
+
     function renderEducationBoard() {
         renderGen++;
         const currentGen = renderGen;
@@ -990,6 +1017,25 @@
          btnNextEdu.disabled = currentQuestionIndex === list.length - 1;
          
          renderCategoryTabs();
+
+         // Question read time: add border & progress around question area
+         const questionContainer = displayQuestion.parentElement;
+         questionContainer.style.border = '1px solid rgba(148, 163, 184, 0.25)';
+         questionContainer.style.borderRadius = '1rem';
+         questionContainer.style.padding = '1.5rem';
+         questionContainer.style.position = 'relative';
+         questionContainer.style.overflow = 'hidden';
+
+         // Remove any existing progress bar from question container
+         const existingBar = questionContainer.querySelector('.qread-progress-bar');
+         if (existingBar) existingBar.remove();
+
+         // Clear any previous read timer and hover/click listeners
+         if (qReadTimerId) { cancelAnimationFrame(qReadTimerId); qReadTimerId = null; }
+         if (_qReadOnEnter) { questionContainer.removeEventListener('mouseenter', _qReadOnEnter); _qReadOnEnter = null; }
+         if (_qReadOnLeave) { questionContainer.removeEventListener('mouseleave', _qReadOnLeave); _qReadOnLeave = null; }
+         if (_qReadOnClick) { questionContainer.removeEventListener('click', _qReadOnClick); _qReadOnClick = null; }
+         questionContainer.style.cursor = '';
        
        const colClass = getActiveQ().cols === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2';
        const gapClass = getActiveQ().maximizeSpacing ? 'gap-16 sm:gap-24' : 'gap-6';
@@ -998,6 +1044,79 @@
        const isMaxSpacing = getActiveQ().maximizeSpacing;
        answersGrid.className = `grid grid-cols-1 ${colClass} ${gapClass} w-full max-w-5xl flex-1 min-h-0 py-4 ${isMaxSpacing ? 'h-[calc(100vh-280px)] overflow-hidden' : ''}`;
        answersGrid.innerHTML = '';
+
+       // Check if question read time is enabled
+       const shouldDelayAnswers = q.qReadEnabled && q.qReadTimeMs > 0 && !selectedId;
+       if (shouldDelayAnswers) {
+          // Hide answers initially
+          answersGrid.style.opacity = '0';
+          answersGrid.style.pointerEvents = 'none';
+          answersGrid.style.transition = 'opacity 0.4s ease';
+
+          // Add progress bar to question container
+          const qProgressBar = document.createElement('div');
+          qProgressBar.className = 'qread-progress-bar';
+          qProgressBar.style.cssText = 'position:absolute;bottom:0;left:0;height:3px;background:linear-gradient(90deg,#3b82f6,#06b6d4);width:0%;transition:none;z-index:10;border-radius:0 2px 2px 0;';
+          questionContainer.appendChild(qProgressBar);
+
+          // Hover-driven timer: only progresses while mouse is over the question
+          let qReadElapsed = 0;
+          let qReadHovering = false;
+          let qReadLastTime = null;
+          let qReadDone = false;
+
+          const animateQRead = (time) => {
+             if (currentGen !== renderGen) return;
+             if (qReadDone) return;
+
+             if (qReadHovering) {
+                if (qReadLastTime === null) qReadLastTime = time;
+                qReadElapsed += (time - qReadLastTime);
+                qReadLastTime = time;
+             } else {
+                qReadLastTime = null;
+             }
+
+             const progress = Math.min((qReadElapsed / q.qReadTimeMs) * 100, 100);
+             qProgressBar.style.width = `${progress}%`;
+
+             if (progress >= 100) {
+                qReadDone = true;
+                answersGrid.style.opacity = '1';
+                answersGrid.style.pointerEvents = '';
+                qProgressBar.style.background = 'linear-gradient(90deg,#10b981,#06b6d4)';
+                setTimeout(() => { if (qProgressBar.parentNode) qProgressBar.style.opacity = '0'; }, 600);
+                qReadTimerId = null;
+                // Clean up hover/click listeners
+                questionContainer.removeEventListener('mouseenter', onQEnter);
+                questionContainer.removeEventListener('mouseleave', onQLeave);
+                questionContainer.removeEventListener('click', onQClick);
+                questionContainer.style.cursor = '';
+                return;
+             }
+             qReadTimerId = requestAnimationFrame(animateQRead);
+          };
+
+          const onQEnter = () => { qReadHovering = true; };
+          const onQLeave = () => { qReadHovering = false; qReadLastTime = null; };
+          const onQClick = () => { qReadElapsed = q.qReadTimeMs; };
+
+          // Store refs for cleanup on next render
+          _qReadOnEnter = onQEnter;
+          _qReadOnLeave = onQLeave;
+          _qReadOnClick = onQClick;
+
+          questionContainer.addEventListener('mouseenter', onQEnter);
+          questionContainer.addEventListener('mouseleave', onQLeave);
+          questionContainer.addEventListener('click', onQClick);
+          questionContainer.style.cursor = 'pointer';
+
+          qReadTimerId = requestAnimationFrame(animateQRead);
+       } else {
+          answersGrid.style.opacity = '1';
+          answersGrid.style.pointerEvents = '';
+          answersGrid.style.transition = '';
+       }
       getActiveQ().answers.forEach(answer => {
         const isSelected = selectedId === answer.id;
         const isCorrect = getActiveQ().correctAnswerIds.includes(answer.id);
@@ -1238,6 +1357,47 @@
          showToast(`Applied ${currentDwell}ms dwell time to all ${list.length} questions in this category!`);
       };
 
+      // Question Read Time controls
+      inputQReadEnabled.checked = !!q.qReadEnabled;
+      inputQRead.value = q.qReadTimeMs !== undefined ? q.qReadTimeMs : 1000;
+      inputQReadSlider.value = q.qReadTimeMs !== undefined ? q.qReadTimeMs : 1000;
+      
+      // Toggle enabled/disabled state of controls
+      const updateQReadControlsState = () => {
+         if (inputQReadEnabled.checked) {
+            qreadControls.classList.remove('opacity-40', 'pointer-events-none');
+         } else {
+            qreadControls.classList.add('opacity-40', 'pointer-events-none');
+         }
+      };
+      updateQReadControlsState();
+
+      inputQReadEnabled.onchange = (e) => {
+         q.qReadEnabled = e.target.checked;
+         updateQReadControlsState();
+         saveData();
+      };
+
+      const syncQRead = (val) => {
+         q.qReadTimeMs = Number(val);
+         inputQRead.value = val;
+         inputQReadSlider.value = val;
+         saveData();
+      };
+      inputQRead.oninput = (e) => syncQRead(e.target.value);
+      inputQReadSlider.oninput = (e) => syncQRead(e.target.value);
+
+      btnApplyAllQRead.onclick = () => {
+         const currentQRead = q.qReadTimeMs;
+         const currentEnabled = q.qReadEnabled;
+         list.forEach(question => {
+            question.qReadTimeMs = currentQRead;
+            question.qReadEnabled = currentEnabled;
+         });
+         saveData();
+         showToast(`Applied ${currentQRead}ms question read time to all ${list.length} questions in this category!`);
+      };
+
       inputSelectionType.onchange = (e) => {
          q.selectionType = e.target.value;
          if (q.selectionType === 'single' && q.correctAnswerIds.length > 1) {
@@ -1395,18 +1555,24 @@
     const categoryTabsContainer = document.getElementById('category-tabs');
     function renderCategoryTabs() {
        categoryTabsContainer.innerHTML = '';
+       const inEducation = mode === 'education';
        CATEGORIES.forEach(cat => {
           const btn = document.createElement('button');
           const isActive = appData.selectedCategory === cat;
-          btn.className = `px-4 py-2 rounded-full text-xs font-bold transition-all uppercase tracking-widest ${isActive ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-800 text-slate-500 hover:bg-slate-700'}`;
+          btn.className = `px-4 py-2 rounded-full text-xs font-bold transition-all uppercase tracking-widest ${isActive ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-800 text-slate-500' + (inEducation ? '' : ' hover:bg-slate-700')}`;
           btn.textContent = cat;
-          btn.onclick = () => {
-             appData.selectedCategory = cat;
-             currentQuestionIndex = 0;
-             if (mode === 'education') renderEducationBoard();
-             else renderEditBoard();
-             saveData();
-          };
+          if (inEducation) {
+             btn.style.pointerEvents = 'none';
+             if (!isActive) btn.style.opacity = '0.5';
+          } else {
+             btn.onclick = () => {
+                appData.selectedCategory = cat;
+                currentQuestionIndex = 0;
+                if (mode === 'education') renderEducationBoard();
+                else renderEditBoard();
+                saveData();
+             };
+          }
           categoryTabsContainer.appendChild(btn);
        });
     }
