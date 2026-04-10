@@ -330,10 +330,10 @@
 
     @keyframes busShake {
        0%, 100% { transform: translate(-50%, -100%) rotateX(-45deg) translateZ(50px) translate(0,0); }
-       10%, 30%, 50%, 70%, 90% { transform: translate(-50%, -100%) rotateX(-45deg) translateZ(50px) translate(-5px, 2px); }
-       20%, 40%, 60%, 80% { transform: translate(-50%, -100%) rotateX(-45deg) translateZ(50px) translate(5px, -2px); }
+       10%, 30%, 50%, 70%, 90% { transform: translate(-50%, -100%) rotateX(-45deg) translateZ(50px) translate(-15px, 6px); }
+       20%, 40%, 60%, 80% { transform: translate(-50%, -100%) rotateX(-45deg) translateZ(50px) translate(15px, -6px); }
     }
-    .animate-bus-shake { animation: busShake 0.4s linear 3; }
+    .animate-bus-shake { animation: busShake 0.4s linear 3 !important; }
 
     /* Screen Mud Splash (Periphery focus) */
     .mud-edge-splat {
