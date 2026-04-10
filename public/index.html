@@ -173,34 +173,36 @@
     .peppa-bus {
        position: absolute;
        top: 50%; /* Initial pos, JS will override */
-       left: 48%; /* Calibrated to road width: Hit 1/3 viewport target exactly */
-       width: 125px; /* Shrink to 1/4 of 500px */
-       height: 125px;
-       background-image: url('assets/peppa/bus2.png');
-       background-size: contain;
+       left: 35%; /* Re-calibrated starting position: middle at 35% */
+       width: 240px; /* 80% of 300px */
+       height: 176px;
+       background-image: url('assets/peppa/bus3.jpg');
+       background-size: cover;
+       background-position: center;
        background-repeat: no-repeat;
-       background-color: white; /* Clean card base */
-       z-index: 1000; /* Always on foreground */
+       background-color: white; 
+       z-index: 1000;
        animation: busDrive 0.6s ease-in-out infinite alternate;
-       transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+       /* Transition vertical moves (lane changes) but not horizontal (which is handled by loop) */
+       transition: top 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
        transform-style: preserve-3d;
-       /* Scaled perspective positioning */
-       transform: translate(-50%, -50%) rotateX(-45deg) translateY(-30%) translateZ(50px);
+       /* Position bottom-center of bus at top/left, facing right (no flip) */
+       transform: translate(-50%, -100%) rotateX(-45deg) translateY(0) translateZ(50px);
        pointer-events: none;
        transform-origin: bottom center;
-       /* Premium Sticker Finish: Scaled down */
-       border: 3px solid white;
-       border-radius: 10px;
-       box-shadow: 0 10px 25px rgba(0,0,0,0.6);
-       clip-path: inset(22% 5% 10% 5% round 8px);
+       /* Premium Sticker Finish: Trim white space */
+       border: 4px solid white;
+       border-radius: 20px;
+       box-shadow: 0 15px 35px rgba(0,0,0,0.6);
+       clip-path: inset(2% 2% 8% 2% round 15px);
     }
     @keyframes busDrive {
-      from { transform: translate(-50%, -50%) rotateX(-45deg) translateZ(50px) translateY(0) scale(1.0); }
-      to { transform: translate(-50%, -50%) rotateX(-45deg) translateZ(50px) translateY(-2px) scale(1.02); }
+      from { transform: translate(-50%, -100%) rotateX(-45deg) translateZ(50px) translateY(0) scale(1.0); }
+      to { transform: translate(-50%, -100%) rotateX(-45deg) translateZ(50px) translateY(-5px) scale(1.02); }
     }
     @keyframes busJump {
-      0%, 100% { transform: translate(-50%, -50%) rotateX(-45deg) translateZ(50px) scale(1.0); }
-      50% { transform: translate(-50%, -50%) rotateX(-45deg) translateZ(100px) scale(1.1, 0.9) translateY(-20px); }
+      0%, 100% { transform: translate(-50%, -100%) rotateX(-45deg) translateZ(50px) scale(1.0); }
+      50% { transform: translate(-50%, -100%) rotateX(-45deg) translateZ(60px) scale(1.05, 0.95) translateY(-40px); }
     }
     .animate-bus-jump {
       animation: busJump 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
@@ -264,18 +266,41 @@
     .peppa-lane-1 { top: 27.4%; height: 31.4% !important; border-bottom: none; }
     .peppa-lane-2 { top: 58.8% !important; height: 41.2% !important; border-bottom: none; } 
 
+    .peppa-decoration {
+       position: absolute;
+       bottom: 0;
+       width: 120px;
+       height: 240px;
+       transform-style: flat; /* Break out of road's 3D context */
+       transform: none; /* No rotation — truly vertical on screen */
+       pointer-events: none;
+       z-index: 5;
+    }
+    .peppa-tree {
+       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 120'%3E%3Cpath d='M25 120h10V80H25z' fill='%235D4037'/%3E%3Ccircle cx='30' cy='50' r='40' fill='%234CAF50'/%3E%3Ccircle cx='45' cy='35' r='20' fill='%2366BB6A'/%3E%3C/svg%3E");
+       background-size: contain;
+       background-repeat: no-repeat;
+    }
+    .peppa-lamp {
+       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 120'%3E%3Cpath d='M28 120h4V30h-4z' fill='%23424242'/%3E%3Ccircle cx='30' cy='25' r='10' fill='%23FFF176'/%3E%3Cpath d='M20 30h20l-5-10h-10z' fill='%23212121'/%3E%3C/svg%3E");
+       background-size: contain;
+       background-repeat: no-repeat;
+    }
+ 
     .peppa-friend {
       position: absolute;
-      width: 80px; height: 80px; /* Scaled relative to new bus size */
-      background-size: contain;
+      width: 100px; height: 140px; /* Adjusted for friends.png aspect ratio */
+      background-image: url('assets/peppa/friends.png');
+      background-size: 500% 200%;
       background-repeat: no-repeat;
+      background-color: #152036; /* Match road asphalt color */
+      border-radius: 8px;
       z-index: 400; /* Behind bus but on road */
-      /* Hinge transform: standing upright silhouettes */
-      transform: rotateX(-45deg) translateY(-25%) translateZ(30px);
-      transform-origin: bottom center;
+      /* Hinge transform: standing upright silhouettes, centered vertically in lane */
+      transform: rotateX(-45deg) translateY(-50%) translateZ(30px);
+      transform-origin: center center;
       pointer-events: none;
-      /* Character Silhouette Effect: Solid dark shape without white bubble */
-      filter: brightness(0) contrast(1.2) drop-shadow(0 5px 10px rgba(0,0,0,0.4));
+      filter: drop-shadow(0 5px 10px rgba(0,0,0,0.4));
     }
     /* Counter-rotate bubbles to be parallel to screen */
     .peppa-bubble {
@@ -294,10 +319,16 @@
         #94a3b8 60px,
         #94a3b8 64px
       );
+      background-size: 600px 100%;
       transform: skewX(-41deg);
       border-bottom: 4px solid #475569;
       box-shadow: inset 0 -5px 10px rgba(0,0,0,0.1);
       z-index: 1;
+      animation: sidewalkScroll calc(0.8s / var(--peppa-speed-factor, 0.8)) linear infinite;
+    }
+    @keyframes sidewalkScroll {
+      from { background-position: 0 0; }
+      to { background-position: -600px 0; }
     }
 
     .friends-count {
@@ -409,10 +440,10 @@
        opacity: 1;
        background: rgba(59, 130, 246, 0.15);
     }
-    #hover-zone-0 { height: 32%; border: none; } /* Gap shifted to 32% */
-    #hover-zone-1 { height: 15%; } /* Lane 1 visual boundary (15%) */
-    #hover-zone-2 { height: 20%; } /* Lane 2 visual boundary (20%) */
-    #hover-zone-3 { height: 33%; } /* Lane 3 (Full 33% depth) */
+    #hover-zone-0 { border: none; } /* Gap above road - height set dynamically */
+    #hover-zone-1 { } /* Lane 0 - height set dynamically */
+    #hover-zone-2 { } /* Lane 1 - height set dynamically */
+    #hover-zone-3 { } /* Lane 2 - height set dynamically */
     
     /* Math Game Styles */
     #math-game-viewport {
@@ -566,6 +597,9 @@
           <div id="peppa-friends-layer" style="position: absolute; inset: 0; transform-style: preserve-3d;"></div>
         </div>
         
+        <!-- Decorations Layer (Outside road's 3D context — no perspective) -->
+        <div id="peppa-decorations-layer" style="position: absolute; top: 28%; left: 0; width: 100%; height: 40px; pointer-events: none; z-index: 9; overflow: visible;"></div>
+        
         <!-- UI Elements (Floating Layer) -->
         <div id="peppa-hover-visualizer">
            <div id="hover-zone-0"></div>
@@ -575,7 +609,7 @@
         </div>
 
         <div class="friends-count">
-           <svg class="w-8 h-8 text-red-500" fill="currentColor" viewBox="0 0 20 20"><path d="M8 8a3 3 0 100-6 3 3 0 000 6zm2 11H8v-4h2v4zm2-11a3 3 0 100-6 3 3 0 000 6zm-2 11h2v-4h-2v4zm4-5l1 4h-2l-1-4h2zM4 14l-1 4h2l1-4H4zm5-6h2v2H9V8z" /></svg>
+           <img src="assets/peppa/peppa.png" class="w-10 h-10 object-contain" alt="Peppa">
            <span id="peppa-score">0</span>
         </div>
         
@@ -601,9 +635,44 @@
                   <span>Game Speed</span>
                   <span id="speed-value-display">0.8x</span>
                 </div>
-                <input type="range" id="input-peppa-speed" min="0.4" max="2.0" step="0.1" value="0.8" class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-orange-500">
+                <input type="range" id="input-peppa-speed" min="0.1" max="2.0" step="0.1" value="0.8" class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-orange-500">
                 <p class="text-[10px] text-slate-500 font-medium">Lower values make the game easier for gaze interaction.</p>
               </div>
+
+              <div class="space-y-4">
+                <div class="flex justify-between items-center text-slate-400 font-bold uppercase tracking-wider text-xs">
+                  <span>Music Style</span>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                  <button id="btn-music-vocal" onclick="window.setPeppaMusicStyle('vocal')" class="py-3 bg-slate-800 border-2 border-slate-700 text-slate-400 font-bold rounded-xl transition-all hover:bg-slate-750 music-style-btn">Vocal</button>
+                  <button id="btn-music-instrumental" onclick="window.setPeppaMusicStyle('instrumental')" class="py-3 bg-slate-800 border-2 border-slate-700 text-slate-400 font-bold rounded-xl transition-all hover:bg-slate-750 music-style-btn">Instrumental</button>
+                </div>
+              </div>
+
+              <div class="space-y-4">
+                <div class="flex justify-between items-center text-slate-400 font-bold uppercase tracking-wider text-xs">
+                  <span>Bus Move Speed</span>
+                </div>
+                <div class="grid grid-cols-5 gap-2">
+                  <button onclick="window.setPeppaBusMoveSpeed('very-slow')" class="py-2 bg-slate-800 border-2 border-slate-700 text-slate-400 font-bold rounded-xl transition-all text-[10px] bus-speed-btn" id="btn-bus-speed-very-slow">Very Slow</button>
+                  <button onclick="window.setPeppaBusMoveSpeed('slow')" class="py-2 bg-slate-800 border-2 border-slate-700 text-slate-400 font-bold rounded-xl transition-all text-[10px] bus-speed-btn" id="btn-bus-speed-slow">Slow</button>
+                  <button onclick="window.setPeppaBusMoveSpeed('normal')" class="py-2 bg-slate-800 border-2 border-slate-700 text-slate-400 font-bold rounded-xl transition-all text-[10px] bus-speed-btn" id="btn-bus-speed-normal">Normal</button>
+                  <button onclick="window.setPeppaBusMoveSpeed('fast')" class="py-2 bg-slate-800 border-2 border-slate-700 text-slate-400 font-bold rounded-xl transition-all text-[10px] bus-speed-btn" id="btn-bus-speed-fast">Fast</button>
+                  <button onclick="window.setPeppaBusMoveSpeed('very-fast')" class="py-2 bg-slate-800 border-2 border-slate-700 text-slate-400 font-bold rounded-xl transition-all text-[10px] bus-speed-btn" id="btn-bus-speed-very-fast">Very Fast</button>
+                </div>
+              </div>
+
+              <div class="space-y-4">
+                <div class="flex justify-between items-center text-slate-400 font-bold uppercase tracking-wider text-xs">
+                  <span>Character Frequency</span>
+                </div>
+                <div class="grid grid-cols-3 gap-4">
+                  <button onclick="window.setPeppaCharFreq('low')" class="py-3 bg-slate-800 border-2 border-slate-700 text-slate-400 font-bold rounded-xl transition-all char-freq-btn" id="btn-char-freq-low">Low</button>
+                  <button onclick="window.setPeppaCharFreq('medium')" class="py-3 bg-slate-800 border-2 border-slate-700 text-slate-400 font-bold rounded-xl transition-all char-freq-btn" id="btn-char-freq-medium">Medium</button>
+                  <button onclick="window.setPeppaCharFreq('high')" class="py-3 bg-slate-800 border-2 border-slate-700 text-slate-400 font-bold rounded-xl transition-all char-freq-btn" id="btn-char-freq-high">High</button>
+                </div>
+              </div>
+
               <button onclick="window.togglePeppaSettings()" class="w-full py-4 bg-orange-600 hover:bg-orange-500 text-white font-black rounded-2xl transition-all shadow-lg active:scale-95">
                 Close & Save
               </button>
@@ -1309,6 +1378,7 @@
     }
 
     function playSuccessSound() {
+      if (peppaMuted) return;
       try {
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         if (!AudioContext) return;
@@ -1336,6 +1406,7 @@
     window.playSuccessSound = playSuccessSound;
     
     function playJoySound() {
+      if (peppaMuted) return;
       try {
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         if (!AudioContext) return;
@@ -1366,6 +1437,7 @@
     window.playJoySound = playJoySound;
 
     function playWrongSound() {
+      if (peppaMuted) return;
       try {
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         if (!AudioContext) return;
@@ -1587,12 +1659,23 @@
     let busLane = 1;
     let peppaMuted = false;
     let peppaAudio = null;
+    // Merge peppa defaults into existing appData (declared earlier)
+    if (!appData.peppaSpeed) appData.peppaSpeed = 0.8;
+    if (!appData.peppaMusicStyle) appData.peppaMusicStyle = 'instrumental'; // Default: instrumental
+    if (!appData.peppaBusMoveSpeed) appData.peppaBusMoveSpeed = 'normal';
+    if (!appData.peppaCharFreq) appData.peppaCharFreq = 'medium';
+    let peppaBusX = window.innerWidth * 0.45; // Starting position: midpoint of 25%-60%
+    let targetMouseX = window.innerWidth * 0.45;
 
     function startPeppaTheme() {
-       if (!peppaAudio) {
-          peppaAudio = new Audio('assets/peppa/thememusic.mp3');
-          peppaAudio.loop = true;
+       if (peppaAudio) {
+          peppaAudio.pause();
+          peppaAudio = null;
        }
+       const style = appData.peppaMusicStyle || 'vocal';
+       const src = style === 'instrumental' ? 'assets/peppa/theme_nolyrics.mp3' : 'assets/peppa/thememusic.mp3';
+       peppaAudio = new Audio(src);
+       peppaAudio.loop = true;
        peppaAudio.muted = peppaMuted;
        peppaAudio.play().catch(e => console.log("Audio play deferred", e));
     }
@@ -1616,11 +1699,57 @@
        busLane = lane;
        const bus = document.getElementById('peppa-bus');
         if (bus) {
-           // Center bus visually in each segment (verified midlines)
-           const laneTops = ['13.7%', '43.1%', '79.4%'];
+           // Wheels sit just above the bottom edge of each lane
+           const laneTops = ['22%', '52%', '90%'];
            bus.style.top = laneTops[lane];
            bus.style.zIndex = 50 + lane;
         }
+    };
+
+    window.setPeppaMusicStyle = (style) => {
+       appData.peppaMusicStyle = style;
+       document.querySelectorAll('.music-style-btn').forEach(btn => {
+          btn.classList.remove('border-orange-500', 'text-orange-500');
+          btn.classList.add('border-slate-700', 'text-slate-400');
+       });
+       const activeBtn = document.getElementById(`btn-music-${style}`);
+       if (activeBtn) {
+          activeBtn.classList.add('border-orange-500', 'text-orange-500');
+          activeBtn.classList.remove('border-slate-700', 'text-slate-400');
+       }
+       if (mode === 'peppa-game') startPeppaTheme();
+    };
+
+    function getBusMoveSpeedMultiplier() {
+       const speeds = { 'very-slow': 1, 'slow': 2, 'normal': 4, 'fast': 8, 'very-fast': 14 };
+       return speeds[appData.peppaBusMoveSpeed] || 4;
+    }
+
+    function getCharSpawnInterval() {
+       const intervals = { 'low': 4000, 'medium': 2000, 'high': 1000 };
+       return intervals[appData.peppaCharFreq] || 2000;
+    }
+
+    function highlightSettingBtn(groupClass, activeId) {
+       document.querySelectorAll('.' + groupClass).forEach(btn => {
+          btn.classList.remove('border-orange-500', 'text-orange-500');
+          btn.classList.add('border-slate-700', 'text-slate-400');
+       });
+       const active = document.getElementById(activeId);
+       if (active) {
+          active.classList.add('border-orange-500', 'text-orange-500');
+          active.classList.remove('border-slate-700', 'text-slate-400');
+       }
+    }
+
+    window.setPeppaBusMoveSpeed = (speed) => {
+       appData.peppaBusMoveSpeed = speed;
+       highlightSettingBtn('bus-speed-btn', 'btn-bus-speed-' + speed);
+    };
+
+    window.setPeppaCharFreq = (freq) => {
+       appData.peppaCharFreq = freq;
+       highlightSettingBtn('char-freq-btn', 'btn-char-freq-' + freq);
     };
 
     function updatePeppaSpeedFactor() {
@@ -1644,11 +1773,13 @@
        const isShowing = overlay.classList.contains('show');
        if (!isShowing) {
           overlay.classList.add('show');
-          // Update inputs
           updatePeppaSpeedFactor();
+          window.setPeppaMusicStyle(appData.peppaMusicStyle || 'instrumental');
+          window.setPeppaBusMoveSpeed(appData.peppaBusMoveSpeed || 'normal');
+          window.setPeppaCharFreq(appData.peppaCharFreq || 'medium');
        } else {
           overlay.classList.remove('show');
-          saveData(); // Save new speed setting
+          saveData(); 
        }
     };
 
@@ -1670,6 +1801,33 @@
         // Production Ready: Standard Asset Paths
     }
 
+    // Cache lane screen positions (recomputed on resize and game start)
+    let laneScreenBounds = []; // [{top, bottom}, ...]
+    function computeLaneScreenBounds() {
+       const lanes = document.querySelectorAll('.peppa-lane');
+       const viewport = document.getElementById('peppa-game-viewport');
+       if (!viewport || lanes.length === 0) return;
+       const vpRect = viewport.getBoundingClientRect();
+       laneScreenBounds = [];
+       lanes.forEach(lane => {
+          const r = lane.getBoundingClientRect();
+          laneScreenBounds.push({
+             top: r.top - vpRect.top,
+             bottom: r.bottom - vpRect.top
+          });
+       });
+       // Update hover zone heights to match
+       const hz0 = document.getElementById('hover-zone-0');
+       const hz1 = document.getElementById('hover-zone-1');
+       const hz2 = document.getElementById('hover-zone-2');
+       const hz3 = document.getElementById('hover-zone-3');
+       if (hz0 && laneScreenBounds.length >= 1) hz0.style.height = laneScreenBounds[0].top + 'px';
+       if (hz1 && laneScreenBounds.length >= 1) hz1.style.height = (laneScreenBounds[0].bottom - laneScreenBounds[0].top) + 'px';
+       if (hz2 && laneScreenBounds.length >= 2) hz2.style.height = (laneScreenBounds[1].bottom - laneScreenBounds[1].top) + 'px';
+       if (hz3 && laneScreenBounds.length >= 3) hz3.style.height = (laneScreenBounds[2].bottom - laneScreenBounds[2].top) + 'px';
+    }
+    window.addEventListener('resize', () => { if (mode === 'peppa-game') computeLaneScreenBounds(); });
+
     function peppaMouseMove(e) {
        if (mode !== 'peppa-game') return;
        const viewport = document.getElementById('peppa-game-viewport');
@@ -1677,20 +1835,20 @@
        
        const rect = viewport.getBoundingClientRect();
        const mouseY = e.clientY - rect.top;
-       const relativeY = mouseY / rect.height; 
-       
-       // Road starts at 32% screen height (aligned with Blue Hover Zone 1)
-       if (relativeY >= 0.32) { 
-          const roadY = (relativeY - 0.32) / 0.68; 
-          let lane = 0;
-          
-          if (relativeY < 0.47) lane = 0;      // 32 + 15 = 47
-          else if (relativeY < 0.67) lane = 1; // 47 + 20 = 67
-          else lane = 2; // Bottom lane (remains 33%)
-          
-          window.setBusLane(lane);
+       const mouseX = e.clientX;
+       targetMouseX = mouseX;
 
-          // Update hover visualizer active state
+       // Use actual rendered lane positions for detection
+       let lane = -1;
+       for (let i = 0; i < laneScreenBounds.length; i++) {
+          if (mouseY >= laneScreenBounds[i].top && mouseY < laneScreenBounds[i].bottom) {
+             lane = i;
+             break;
+          }
+       }
+       
+       if (lane >= 0) {
+          window.setBusLane(lane);
           document.querySelectorAll('.hover-zone').forEach((zone, idx) => {
              zone.classList.toggle('active', idx === lane);
           });
@@ -1704,14 +1862,18 @@
        if (!friendsLayer) return;
        const friend = document.createElement('div');
        const lane = Math.floor(Math.random() * 3);
-       // Center characters in midlines based on 3D depth segments
+       // Center characters centrally based on requesting midline alignment
        const laneTops = ['13.7%', '43.1%', '79.4%'];
        
-       const characters = ['peppa.png', 'george.png', 'suzy.png', 'danny.png', 'pedro.png'];
-       const charImg = characters[Math.floor(Math.random() * characters.length)];
-       
-       friend.style.backgroundImage = `url('assets/peppa/${charImg}')`;
        friend.className = 'peppa-friend';
+       
+       // Sprite Mapping: 2 rows of 5 characters in friends.png
+       const slot = Math.floor(Math.random() * 10);
+       const col = slot % 5;
+       const row = Math.floor(slot / 5);
+       const posX = col * 25; // x-axis: 0%, 25%, 50%, 75%, 100%
+       const posY = row * 100; // y-axis: 0%, 100%
+       friend.style.backgroundPosition = `${posX}% ${posY}%`;
 
        friend.style.right = '-300px'; 
        friend.style.top = laneTops[lane];
@@ -1721,19 +1883,16 @@
        
        let pos = -300;
        let collected = false;
-       const moveInterval = setInterval(() => {
-          if (mode !== 'peppa-game' || collected) {
-             clearInterval(moveInterval);
-             return;
-          }
+       let lastTime = performance.now();
+
+       function move(time) {
+          if (mode !== 'peppa-game' || collected) return;
           
-          // Speed matches roadScroll animation (600px / 0.8s = 750px/s)
-          // Interval 30ms -> 750 * 0.03 = 22.5px
-          // Scaled by peppaSpeed factor. 
-          // Road moves at Speed * f. 
-          // At f=1.0, speed is 750px/s.
-          // Correct sync: increment matches the road markings cycle exactly.
-          pos += 22.5 * appData.peppaSpeed;
+          const dt = (time - lastTime) / 1000;
+          lastTime = time;
+          
+          // Speed: 750px/s * peppaSpeed
+          pos += 750 * appData.peppaSpeed * dt;
           friend.style.right = pos + 'px';
           
           // Collision Detection
@@ -1742,39 +1901,62 @@
              if (bus) {
                 const bRect = bus.getBoundingClientRect();
                 const fRect = friend.getBoundingClientRect();
-                
-                // If horizontal overlap happens with the larger bus
-                if (fRect.left < bRect.right - 100 && fRect.right > bRect.left + 50) {
+                if (fRect.left < bRect.right - 120 && fRect.right > bRect.left + 80) {
                    collected = true;
-                   clearInterval(moveInterval);
-                   
-                   // Collect Animation
                    friend.style.transition = 'all 0.5s cubic-bezier(0.4, 0, 0.2, 1)';
                    friend.style.transform = 'rotateX(-45deg) scale(0.1) translate(300px, -600px)';
                    friend.style.opacity = '0';
-                   
                    peppaScore++;
                    document.getElementById('peppa-score').textContent = peppaScore;
-                   
-                   // Trigger Bus Jump Animation
                    if (bus) {
                       bus.classList.remove('animate-bus-jump');
-                      void bus.offsetWidth; // Trigger reflow
+                      void bus.offsetWidth; 
                       bus.classList.add('animate-bus-jump');
                    }
-
                    if (window.playJoySound) window.playJoySound();
                    setTimeout(() => friend.remove(), 500);
+                   return;
                 }
              }
           }
 
-          if (pos > 4000) {
-             clearInterval(moveInterval);
+          if (pos < 4000) {
+             requestAnimationFrame(move);
+          } else {
              friend.remove();
           }
-       }, 30);
-       peppaIntervals.push(moveInterval);
+       }
+       requestAnimationFrame(move);
+    }
+
+    function spawnPeppaDecoration() {
+       const layer = document.getElementById('peppa-decorations-layer');
+       if (!layer) return;
+       const decoration = document.createElement('div');
+       const isTree = Math.random() > 0.5;
+       decoration.className = `peppa-decoration ${isTree ? 'peppa-tree' : 'peppa-lamp'}`;
+       
+       layer.appendChild(decoration);
+       
+       let pos = -300;
+       decoration.style.right = pos + 'px';
+       let lastTime = performance.now();
+
+       function move(time) {
+          if (mode !== 'peppa-game') return;
+          const dt = (time - lastTime) / 1000;
+          lastTime = time;
+
+          pos += 750 * appData.peppaSpeed * dt;
+          decoration.style.right = pos + 'px';
+          
+          if (pos < 3500) {
+             requestAnimationFrame(move);
+          } else {
+             decoration.remove();
+          }
+       }
+       requestAnimationFrame(move);
     }
 
     function setPeppaGameMode() {
@@ -1795,15 +1977,62 @@
        // Fullscreen Preparation (Add listener AFTER stopPeppaGame)
        document.addEventListener('mousemove', peppaMouseMove);
        
+       // Compute lane screen positions after a frame so 3D transforms are rendered
+       requestAnimationFrame(() => computeLaneScreenBounds());
+       
        peppaScore = 0;
        document.getElementById('peppa-score').textContent = '0';
        window.setBusLane(1);
        startPeppaTheme();
 
+       // Reset positions
+       const viewWidth = window.innerWidth;
+       peppaBusX = viewWidth * 0.45; // Starting position: midpoint of 25%-60%
+       targetMouseX = viewWidth * 0.45;
+
+       // Start horizontal movement loop
+       const moveLoop = setInterval(() => {
+          if (mode !== 'peppa-game') {
+             clearInterval(moveLoop);
+             return;
+          }
+          
+          const bus = document.getElementById('peppa-bus');
+          if (!bus) return;
+
+          const vw = window.innerWidth;
+          const roadOffset = vw * 0.25; // Road starts at left: -25vw
+          
+          // Limits: left boundary 25% from left, right boundary 40% from right edge (= 60%)
+          const minX = vw * 0.25;
+          const maxX = vw * 0.60;
+
+          const clampedTargetX = Math.max(minX, Math.min(maxX, targetMouseX));
+          
+          // Smooth movement - speed from settings
+          const dist = clampedTargetX - peppaBusX;
+          const speed = getBusMoveSpeedMultiplier() * appData.peppaSpeed; 
+          
+          if (Math.abs(dist) > speed) {
+             peppaBusX += Math.sign(dist) * speed;
+          } else {
+             peppaBusX = clampedTargetX;
+          }
+          
+          // Convert page coords to road-local coords (road left is -25vw)
+          bus.style.left = (peppaBusX + roadOffset) + 'px';
+       }, 16); 
+       peppaIntervals.push(moveLoop);
+
        const spawnInt = setInterval(() => {
           if (mode === 'peppa-game' && Math.random() > 0.4) spawnPeppaFriend();
-       }, 2000);
+       }, getCharSpawnInterval());
        peppaIntervals.push(spawnInt);
+
+       const decoInt = setInterval(() => {
+          if (mode === 'peppa-game' && Math.random() > 0.3) spawnPeppaDecoration();
+       }, 1500);
+       peppaIntervals.push(decoInt);
     }
 
     function setMode(newMode) {
