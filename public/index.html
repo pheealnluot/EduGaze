@@ -174,8 +174,8 @@
        position: absolute;
        top: 50%; /* Initial pos, JS will override */
        left: 48%; /* Calibrated to road width: Hit 1/3 viewport target exactly */
-       width: 500px; /* Right-sized for the double-decker card */
-       height: 500px;
+       width: 125px; /* Shrink to 1/4 of 500px */
+       height: 125px;
        background-image: url('assets/peppa/bus2.png');
        background-size: contain;
        background-repeat: no-repeat;
@@ -184,19 +184,26 @@
        animation: busDrive 0.6s ease-in-out infinite alternate;
        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
        transform-style: preserve-3d;
-       /* Premium Standing Card: Physically separated from road (200px) */
-       transform: translate(-50%, -50%) rotateX(-45deg) translateY(-30%) translateZ(200px);
+       /* Scaled perspective positioning */
+       transform: translate(-50%, -50%) rotateX(-45deg) translateY(-30%) translateZ(50px);
        pointer-events: none;
        transform-origin: bottom center;
-       /* Premium Sticker Finish: Rounded card cutout with thick white border */
-       border: 10px solid white;
-       border-radius: 40px;
-       box-shadow: 0 20px 50px rgba(0,0,0,0.6);
-       clip-path: inset(22% 5% 10% 5% round 30px);
+       /* Premium Sticker Finish: Scaled down */
+       border: 3px solid white;
+       border-radius: 10px;
+       box-shadow: 0 10px 25px rgba(0,0,0,0.6);
+       clip-path: inset(22% 5% 10% 5% round 8px);
     }
     @keyframes busDrive {
-      from { transform: translate(-50%, -50%) rotateX(-45deg) translateZ(100px) translateY(0) scale(1.0); }
-      to { transform: translate(-50%, -50%) rotateX(-45deg) translateZ(100px) translateY(-5px) scale(1.02); }
+      from { transform: translate(-50%, -50%) rotateX(-45deg) translateZ(50px) translateY(0) scale(1.0); }
+      to { transform: translate(-50%, -50%) rotateX(-45deg) translateZ(50px) translateY(-2px) scale(1.02); }
+    }
+    @keyframes busJump {
+      0%, 100% { transform: translate(-50%, -50%) rotateX(-45deg) translateZ(50px) scale(1.0); }
+      50% { transform: translate(-50%, -50%) rotateX(-45deg) translateZ(100px) scale(1.1, 0.9) translateY(-20px); }
+    }
+    .animate-bus-jump {
+      animation: busJump 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     }
     .peppa-road {
        position: absolute;
@@ -259,38 +266,39 @@
 
     .peppa-friend {
       position: absolute;
-      width: 180px; height: 180px;
+      width: 80px; height: 80px; /* Scaled relative to new bus size */
       background-size: contain;
       background-repeat: no-repeat;
-      background-color: white; /* Clean sticker base */
       z-index: 400; /* Behind bus but on road */
-      /* Hinge transform: standing upright cardboard cutouts */
-      transform: rotateX(-45deg) translateY(-25%) translateZ(100px);
+      /* Hinge transform: standing upright silhouettes */
+      transform: rotateX(-45deg) translateY(-25%) translateZ(30px);
       transform-origin: bottom center;
       pointer-events: none;
-      /* Premium Round Sticker Look */
-      border: 6px solid white;
-      border-radius: 50%;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-      clip-path: circle(48% at 50% 50%);
+      /* Character Silhouette Effect: Solid dark shape without white bubble */
+      filter: brightness(0) contrast(1.2) drop-shadow(0 5px 10px rgba(0,0,0,0.4));
     }
     /* Counter-rotate bubbles to be parallel to screen */
     .peppa-bubble {
-      transform: translateX(-50%) rotateX(0deg);
-      position: absolute;
-      top: -50px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 50px;
-      height: 50px;
-      background: white;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+        display: none !important; /* Removed per request "without the white bubble" */
     }
-    .peppa-bubble svg { width: 28px; height: 28px; color: #3b82f6; }
+    .peppa-sidewalk {
+      position: absolute;
+      top: -24px; /* Calibrated to fit road perspective */
+      left: 0;
+      width: 100%;
+      height: 30px;
+      background: repeating-linear-gradient(
+        90deg,
+        #cbd5e1 0px,
+        #cbd5e1 60px,
+        #94a3b8 60px,
+        #94a3b8 64px
+      );
+      transform: skewX(-41deg);
+      border-bottom: 4px solid #475569;
+      box-shadow: inset 0 -5px 10px rgba(0,0,0,0.1);
+      z-index: 1;
+    }
 
     .friends-count {
       position: absolute;
@@ -546,6 +554,7 @@
 
         <!-- Road & Lanes -->
         <div class="peppa-road">
+          <div class="peppa-sidewalk"></div>
           <div class="peppa-lane peppa-lane-0"><span class="peppa-lane-text">LANE 1</span></div>
           <div class="peppa-lane peppa-lane-1"><span class="peppa-lane-text">LANE 2</span></div>
           <div class="peppa-lane peppa-lane-2"><span class="peppa-lane-text">LANE 3</span></div>
@@ -1325,6 +1334,36 @@
       } catch (err) {}
     }
     window.playSuccessSound = playSuccessSound;
+    
+    function playJoySound() {
+      try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) return;
+        const ctx = new AudioContext();
+        
+        // High-pitched "bouncy" joy sound (ascending slides)
+        const playSlide = (startTime, startFreq, endFreq) => {
+           const osc = ctx.createOscillator();
+           const gain = ctx.createGain();
+           osc.type = 'sine';
+           osc.frequency.setValueAtTime(startFreq, startTime);
+           osc.frequency.exponentialRampToValueAtTime(endFreq, startTime + 0.1);
+           
+           gain.gain.setValueAtTime(0, startTime);
+           gain.gain.linearRampToValueAtTime(0.2, startTime + 0.02);
+           gain.gain.linearRampToValueAtTime(0, startTime + 0.1);
+           
+           osc.connect(gain);
+           gain.connect(ctx.destination);
+           osc.start(startTime);
+           osc.stop(startTime + 0.1);
+        };
+        
+        playSlide(ctx.currentTime, 440, 880); // A4 to A5
+        playSlide(ctx.currentTime + 0.1, 660, 1320); // E5 to E6
+      } catch (err) {}
+    }
+    window.playJoySound = playJoySound;
 
     function playWrongSound() {
       try {
@@ -1716,7 +1755,15 @@
                    
                    peppaScore++;
                    document.getElementById('peppa-score').textContent = peppaScore;
-                   if (window.playSuccessSound) window.playSuccessSound();
+                   
+                   // Trigger Bus Jump Animation
+                   if (bus) {
+                      bus.classList.remove('animate-bus-jump');
+                      void bus.offsetWidth; // Trigger reflow
+                      bus.classList.add('animate-bus-jump');
+                   }
+
+                   if (window.playJoySound) window.playJoySound();
                    setTimeout(() => friend.remove(), 500);
                 }
              }
