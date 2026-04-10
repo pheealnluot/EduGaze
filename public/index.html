@@ -302,6 +302,110 @@
       pointer-events: none;
       filter: drop-shadow(0 5px 10px rgba(0,0,0,0.4));
     }
+    
+    /* Road Hazards Styling */
+    .peppa-hazard {
+      position: absolute;
+      width: 80px; height: 80px;
+      background-size: contain;
+      background-repeat: no-repeat;
+      background-color: #152036; /* Match road asphalt color */
+      border-radius: 50%; /* Smooth background edges */
+      z-index: 350;
+      transform: rotateX(-45deg) translateY(-50%) translateZ(20px);
+      transform-origin: center center;
+      pointer-events: none;
+    }
+    .peppa-hazard.banana { background-image: url('assets/peppa/banana.png'); }
+    .peppa-hazard.mud { background-image: url('assets/peppa/mud.png'); }
+    .peppa-hazard.water { background-image: url('assets/peppa/water.png'); }
+
+    /* Bus Feedback Animations */
+    @keyframes busSlide {
+      0%, 100% { transform: translate(-50%, -100%) rotateX(-45deg) translateZ(50px) rotate(0); }
+      20% { transform: translate(-50%, -100%) rotateX(-45deg) translateZ(50px) rotate(-15deg); }
+      40% { transform: translate(-50%, -100%) rotateX(-45deg) translateZ(50px) rotate(10deg); }
+      60% { transform: translate(-50%, -100%) rotateX(-45deg) translateZ(50px) rotate(-5deg); }
+      80% { transform: translate(-50%, -100%) rotateX(-45deg) translateZ(50px) rotate(3deg); }
+    }
+    .animate-bus-slide { animation: busSlide 0.6s ease-out; }
+
+    @keyframes busShake {
+       0%, 100% { transform: translate(-50%, -100%) rotateX(-45deg) translateZ(50px) translate(0,0); }
+       10%, 30%, 50%, 70%, 90% { transform: translate(-50%, -100%) rotateX(-45deg) translateZ(50px) translate(-5px, 2px); }
+       20%, 40%, 60%, 80% { transform: translate(-50%, -100%) rotateX(-45deg) translateZ(50px) translate(5px, -2px); }
+    }
+    .animate-bus-shake { animation: busShake 0.4s linear 3; }
+
+    /* Screen Mud Splash (Periphery focus) */
+    .mud-edge-splat {
+      position: fixed;
+      width: 250px; height: 250px;
+      background-image: url('assets/peppa/mud_splat.png');
+      background-size: contain;
+      background-repeat: no-repeat;
+      pointer-events: none;
+      z-index: 2100;
+      opacity: 0;
+      transition: opacity 0.5s, transform 0.5s;
+    }
+    .mud-edge-splat.show { opacity: 0.85; }
+    
+    .mud-particle {
+      position: absolute;
+      width: 40px; height: 40px;
+      background-image: url('assets/peppa/mud.png');
+      background-size: contain;
+      pointer-events: none;
+      z-index: 1000;
+      animation: mudSplatter 0.6s ease-out forwards;
+    }
+    @keyframes mudSplatter {
+      0% { transform: scale(0) translate(0, 0); opacity: 1; }
+      100% { transform: scale(1.5) translate(var(--tx), var(--ty)); opacity: 0; }
+    }
+    
+    /* Water Splash Visuals */
+    .water-edge-splat {
+      position: fixed;
+      width: 180px; height: 180px;
+      background-image: url('assets/peppa/water.png');
+      background-size: contain;
+      background-repeat: no-repeat;
+      pointer-events: none;
+      z-index: 2100;
+      opacity: 0;
+      filter: hue-rotate(200deg) brightness(1.2); /* Make it bluer */
+      transition: opacity 0.5s, transform 0.5s;
+    }
+    .water-edge-splat.show { opacity: 0.9; }
+
+    .water-particle {
+      position: absolute;
+      width: 30px; height: 30px;
+      background-image: url('assets/peppa/water.png');
+      background-size: contain;
+      pointer-events: none;
+      z-index: 1000;
+      filter: hue-rotate(200deg);
+      animation: mudSplatter 0.5s ease-out forwards;
+    }
+    
+    /* Water Splash Visual Effect */
+    .water-splash-effect {
+      position: absolute;
+      width: 200px; height: 200px;
+      background-image: radial-gradient(circle, #60a5fa 20%, transparent 70%);
+      border-radius: 50%;
+      opacity: 0.6;
+      transform: translate(-50%, -50%) scale(0);
+      animation: waterSplashAnim 0.8s ease-out forwards;
+      pointer-events: none;
+      z-index: 1500;
+    }
+    @keyframes waterSplashAnim {
+      to { transform: translate(-50%, -50%) scale(2.5); opacity: 0; }
+    }
     /* Counter-rotate bubbles to be parallel to screen */
     .peppa-bubble {
         display: none !important; /* Removed per request "without the white bubble" */
@@ -580,8 +684,11 @@
     <!-- Peppa Game Placeholder -->
     <div id="view-peppa-game" class="hidden">
       <div id="peppa-game-viewport">
-       <div class="skyline peppa-skyline"></div>
+        <div class="skyline peppa-skyline"></div>
         <div class="peppa-skyline"></div>
+        
+        <!-- Screen Mud Splash Container -->
+        <div id="peppa-mud-splash-container" class="fixed inset-0 pointer-events-none z-[2000]"></div>
 
         <!-- Road & Lanes -->
         <div class="peppa-road">
@@ -670,6 +777,18 @@
                   <button onclick="window.setPeppaCharFreq('low')" class="py-3 bg-slate-800 border-2 border-slate-700 text-slate-400 font-bold rounded-xl transition-all char-freq-btn" id="btn-char-freq-low">Low</button>
                   <button onclick="window.setPeppaCharFreq('medium')" class="py-3 bg-slate-800 border-2 border-slate-700 text-slate-400 font-bold rounded-xl transition-all char-freq-btn" id="btn-char-freq-medium">Medium</button>
                   <button onclick="window.setPeppaCharFreq('high')" class="py-3 bg-slate-800 border-2 border-slate-700 text-slate-400 font-bold rounded-xl transition-all char-freq-btn" id="btn-char-freq-high">High</button>
+                </div>
+              </div>
+
+              <div class="space-y-4">
+                <div class="flex justify-between items-center text-slate-400 font-bold uppercase tracking-wider text-xs">
+                  <span>Road Hazards</span>
+                </div>
+                <div class="grid grid-cols-4 gap-2">
+                  <button onclick="window.setPeppaHazards('none')" class="py-2 bg-slate-800 border-2 border-slate-700 text-slate-400 font-bold rounded-xl transition-all text-[10px] hazard-btn" id="btn-hazard-none">None</button>
+                  <button onclick="window.setPeppaHazards('low')" class="py-2 bg-slate-800 border-2 border-slate-700 text-slate-400 font-bold rounded-xl transition-all text-[10px] hazard-btn" id="btn-hazard-low">Low</button>
+                  <button onclick="window.setPeppaHazards('medium')" class="py-2 bg-slate-800 border-2 border-slate-700 text-slate-400 font-bold rounded-xl transition-all text-[10px] hazard-btn" id="btn-hazard-medium">Medium</button>
+                  <button onclick="window.setPeppaHazards('high')" class="py-2 bg-slate-800 border-2 border-slate-700 text-slate-400 font-bold rounded-xl transition-all text-[10px] hazard-btn" id="btn-hazard-high">High</button>
                 </div>
               </div>
 
@@ -898,7 +1017,9 @@
     const CATEGORIES = ['Activity', 'Feelings', 'Things', 'English', 'Chinese', 'Math', 'Science', 'TBC'];
     let appData = { 
       dwellTimeMs: 2000, 
-      peppaSpeed: 0.8,
+      peppaSpeed: 0.4,
+      peppaHazardsFreq: 'medium',
+      peppaBusMoveSpeed: 'fast',
       selectedCategory: 'Activity',
       categories: { 'Activity': [initData()] } 
     };
@@ -1752,6 +1873,144 @@
        highlightSettingBtn('char-freq-btn', 'btn-char-freq-' + freq);
     };
 
+    window.setPeppaHazards = (freq) => {
+       appData.peppaHazardsFreq = freq;
+       highlightSettingBtn('hazard-btn', 'btn-hazard-' + freq);
+    };
+
+    function getHazardSpawnInterval() {
+       const intervals = { 'low': 6000, 'medium': 4000, 'high': 2000 };
+       return intervals[appData.peppaHazardsFreq] || 4000;
+    }
+
+    function spawnPeppaHazard() {
+       if (appData.peppaHazardsFreq === 'none') return;
+       const layer = document.getElementById('peppa-friends-layer'); // Repurpose this layer for road-aligned items
+       if (!layer) return;
+       
+       const hazard = document.createElement('div');
+       const lane = Math.floor(Math.random() * 3);
+       const types = ['banana', 'mud', 'water'];
+       const type = types[Math.floor(Math.random() * types.length)];
+       hazard.className = `peppa-hazard ${type}`;
+       
+       const laneTops = ['13.7%', '43.1%', '79.4%'];
+       hazard.style.right = '-200px';
+       hazard.style.top = laneTops[lane];
+       
+       layer.appendChild(hazard);
+       
+       let pos = -200;
+       let triggered = false;
+       let lastTime = performance.now();
+
+       function move(time) {
+          if (mode !== 'peppa-game' || triggered) return;
+          const dt = (time - lastTime) / 1000;
+          lastTime = time;
+          pos += 750 * appData.peppaSpeed * dt;
+          hazard.style.right = pos + 'px';
+
+          // Collision Check
+          if (lane === busLane) {
+             const bus = document.getElementById('peppa-bus');
+             if (bus) {
+                const bRect = bus.getBoundingClientRect();
+                const hRect = hazard.getBoundingClientRect();
+                if (hRect.left < bRect.right - 100 && hRect.right > bRect.left + 60) {
+                   triggered = true;
+                   handleHazardCollision(type);
+                   hazard.style.opacity = '0';
+                   setTimeout(() => hazard.remove(), 500);
+                   return;
+                }
+             }
+          }
+
+          if (pos < 4000) requestAnimationFrame(move);
+          else hazard.remove();
+       }
+       requestAnimationFrame(move);
+    }
+
+    function handleHazardCollision(type) {
+       const bus = document.getElementById('peppa-bus');
+       const mudContainer = document.getElementById('peppa-mud-splash-container');
+       if (!bus) return;
+
+       // --- 1. Audio Setup ---
+       let soundFile = 'assets/peppa/splash.mp3';
+       if (type === 'banana') soundFile = 'assets/peppa/clown.mp3'; // Placeholder or user-provided
+       
+       const audio = new Audio(soundFile);
+       if (!peppaMuted) {
+          audio.currentTime = 0;
+          audio.play().catch(e => console.log("Audio play failed:", e));
+       }
+
+       // --- 2. Shared Physical Feedback (Shake & Slowdown) ---
+       const originalSpeed = appData.peppaSpeed;
+       appData.peppaSpeed = originalSpeed * 0.35; // Significant slow down
+       updatePeppaSpeedFactor();
+
+       bus.classList.remove('animate-bus-shake');
+       void bus.offsetWidth;
+       bus.classList.add('animate-bus-shake');
+
+       // Restore speed after brief period
+       setTimeout(() => {
+          appData.peppaSpeed = originalSpeed;
+          updatePeppaSpeedFactor();
+       }, 2000);
+
+       // --- 3. Specific Visual Feedback ---
+       if (type === 'banana') {
+          // Slide animation (Extra feedback for banana)
+          bus.classList.remove('animate-bus-slide');
+          void bus.offsetWidth;
+          bus.classList.add('animate-bus-slide');
+       } else {
+          // Splash Visuals (Mud or Water)
+          const isWater = (type === 'water');
+          const particleClass = isWater ? 'water-particle' : 'mud-particle';
+          const splatClass = isWater ? 'water-edge-splat' : 'mud-edge-splat';
+
+          // A. Particles at Bus
+          const busRect = bus.getBoundingClientRect();
+          for (let i = 0; i < 10; i++) {
+             const p = document.createElement('div');
+             p.className = particleClass;
+             p.style.left = (busRect.left + busRect.width/2) + 'px';
+             p.style.top = (busRect.top + busRect.height/2) + 'px';
+             p.style.setProperty('--tx', `${(Math.random()-0.5) * 400}px`);
+             p.style.setProperty('--ty', `${-Math.random() * 250}px`);
+             document.body.appendChild(p);
+             setTimeout(() => p.remove(), 600);
+          }
+
+          // B. Screen Edge Splash
+          if (mudContainer) {
+             const locations = [
+                { top: '5%', left: '5%' }, { top: '5%', right: '5%' },
+                { bottom: '15%', left: '2%' }, { bottom: '10%', right: '8%' },
+                { top: '40%', left: '-5%' }, { top: '35%', right: '-8%' }
+             ];
+             locations.forEach(loc => {
+                const splat = document.createElement('div');
+                splat.className = splatClass;
+                Object.assign(splat.style, loc);
+                splat.style.transform = `scale(${0.6 + Math.random()}) rotate(${Math.random()*360}deg)`;
+                mudContainer.appendChild(splat);
+                setTimeout(() => splat.classList.add('show'), 10);
+                setTimeout(() => {
+                   splat.classList.remove('show');
+                   setTimeout(() => splat.remove(), 1000);
+                }, 2000);
+             });
+          }
+       }
+    }
+
     function updatePeppaSpeedFactor() {
        const speed = appData.peppaSpeed || 0.8;
        document.documentElement.style.setProperty('--peppa-speed-factor', speed);
@@ -1775,8 +2034,9 @@
           overlay.classList.add('show');
           updatePeppaSpeedFactor();
           window.setPeppaMusicStyle(appData.peppaMusicStyle || 'instrumental');
-          window.setPeppaBusMoveSpeed(appData.peppaBusMoveSpeed || 'normal');
+          window.setPeppaBusMoveSpeed(appData.peppaBusMoveSpeed || 'fast');
           window.setPeppaCharFreq(appData.peppaCharFreq || 'medium');
+          window.setPeppaHazards(appData.peppaHazardsFreq || 'medium');
        } else {
           overlay.classList.remove('show');
           saveData(); 
@@ -2033,6 +2293,11 @@
           if (mode === 'peppa-game' && Math.random() > 0.3) spawnPeppaDecoration();
        }, 1500);
        peppaIntervals.push(decoInt);
+
+       const hazardInt = setInterval(() => {
+          if (mode === 'peppa-game' && Math.random() > 0.4) spawnPeppaHazard();
+       }, getHazardSpawnInterval());
+       peppaIntervals.push(hazardInt);
     }
 
     function setMode(newMode) {
