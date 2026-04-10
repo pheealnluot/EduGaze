@@ -144,34 +144,26 @@
 
     /* Peppa Game Styles */
     #peppa-game-viewport {
-      position: fixed;
-      inset: 0;
-      width: 100vw;
-      height: 100vh;
-      max-width: none;
-      background: linear-gradient(to bottom, #7dd3fc, #bae6fd);
-      border: none;
-      border-radius: 0;
-      overflow: hidden;
-      cursor: default; /* Show cursor */
-      perspective: 1500px;
-      z-index: 9999;
-      display: none;
-    }
-    #view-peppa-game.hidden #peppa-game-viewport {
-      display: none;
-    }
-    #view-peppa-game:not(.hidden) #peppa-game-viewport {
-      display: block;
+       position: fixed;
+       inset: 0;
+       width: 100vw;
+       height: 100vh;
+       max-width: none;
+       background: linear-gradient(to bottom, #87CEEB, #bae6fd);
+       box-sizing: border-box;
+       overflow: hidden;
+       cursor: default;
+       perspective: 1200px;
+       z-index: 9999;
     }
     .peppa-skyline {
       position: absolute;
       top: 0; left: 0;
-      width: 200%; height: 40vh !important;
+      width: 200%; height: 50vh !important;
       background-image: url('assets/peppa/skyline.png');
       background-size: 50% 100%;
       background-repeat: repeat-x;
-      animation: skylineMove 20s linear infinite;
+      animation: skylineMove calc(20s / var(--peppa-speed-factor, 0.8)) linear infinite;
       z-index: 1;
     }
     @keyframes skylineMove {
@@ -179,36 +171,43 @@
       to { transform: translateX(-50%); }
     }
     .peppa-bus {
-      position: absolute;
-      bottom: 5vh; 
-      left: 33vw; /* 1/3 across the screen */
-      width: 480px; /* 50% bigger */
-      height: 300px;
-      background-image: url('assets/peppa/bus.png');
-      background-size: 100% 100%;
-      background-position: bottom center;
-      background-repeat: no-repeat;
-      z-index: 1000; /* Always on foreground */
-      animation: busDrive 0.6s ease-in-out infinite alternate;
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-      transform-style: preserve-3d;
-      transform: rotateX(-45deg);
-      pointer-events: none;
-      clip-path: inset(22% 16% 18% 16% round 30px);
+       position: absolute;
+       top: 50%; /* Initial pos, JS will override */
+       left: 48%; /* Calibrated to road width: Hit 1/3 viewport target exactly */
+       width: 500px; /* Right-sized for the double-decker card */
+       height: 500px;
+       background-image: url('assets/peppa/bus2.png');
+       background-size: contain;
+       background-repeat: no-repeat;
+       background-color: white; /* Clean card base */
+       z-index: 1000; /* Always on foreground */
+       animation: busDrive 0.6s ease-in-out infinite alternate;
+       transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+       transform-style: preserve-3d;
+       /* Premium Standing Card: Physically separated from road (200px) */
+       transform: translate(-50%, -50%) rotateX(-45deg) translateY(-30%) translateZ(200px);
+       pointer-events: none;
+       transform-origin: bottom center;
+       /* Premium Sticker Finish: Rounded card cutout with thick white border */
+       border: 10px solid white;
+       border-radius: 40px;
+       box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+       clip-path: inset(22% 5% 10% 5% round 30px);
     }
     @keyframes busDrive {
-      from { transform: rotateX(-45deg) translateY(0) scale(1.0); }
-      to { transform: rotateX(-45deg) translateY(-5px) scale(1.02); }
+      from { transform: translate(-50%, -50%) rotateX(-45deg) translateZ(100px) translateY(0) scale(1.0); }
+      to { transform: translate(-50%, -50%) rotateX(-45deg) translateZ(100px) translateY(-5px) scale(1.02); }
     }
     .peppa-road {
        position: absolute;
-       bottom: -15vh; /* Tuck the bottom away */
+       top: 32%; /* Shifted up for full visibility of Lane 3 (33%) */
        left: -25vw;
        width: 150vw;
-       height: 95vh !important; /* Height increased to counteract perspective shortening */
-       background: linear-gradient(to bottom, #475569, #1e293b);
-       transform: rotateX(45deg);
-       transform-origin: bottom center;
+       height: 548px !important; /* Fixed depth calibrated to viewport for 15/20/33 visual display */
+       /* Premium dark asphalt palette: Makes the white 'Paper Cards' pop beautifully */
+       background: linear-gradient(to bottom, #1e293b, #0f172a);
+       transform: rotateX(45deg) translateZ(1px); /* Layer strictly above background */
+       transform-origin: top center;
        transform-style: preserve-3d;
        z-index: 10;
        box-shadow: 0 50px 100px rgba(0,0,0,0.5);
@@ -217,14 +216,17 @@
       position: absolute;
       left: 0;
       width: 100%;
-      height: 33.33%;
       display: flex;
       align-items: center;
       justify-content: center;
       color: rgba(255,255,255,0.03);
-      font-size: 10vh;
+      font-size: 8vh;
       font-weight: 900;
       pointer-events: none;
+      transform-style: preserve-3d;
+    }
+    .peppa-lane-text {
+       display: none; /* Hide debug lane labels */
     }
     /* Parallelogram Lane Markings */
     .peppa-lane::before {
@@ -244,33 +246,37 @@
       background-size: 600px 100%;
       transform: skewX(-35deg);
       z-index: 1;
-      animation: roadScroll 0.8s linear infinite;
+      animation: roadScroll calc(0.8s / var(--peppa-speed-factor, 0.8)) linear infinite;
     }
     @keyframes roadScroll {
       from { background-position: 0 0; }
       to { background-position: -600px 0; }
     }
-    .peppa-lane-0 { top: 0; }
+    .peppa-lane-0 { top: 0; height: 27.4% !important; border-bottom: none; } 
     .peppa-lane-0::before { display: none; }
-    .peppa-lane-1 { top: 33.33%; height: 33.33% !important; }
-    .peppa-lane-2 { top: 66.66% !important; height: 33.34% !important; }
+    .peppa-lane-1 { top: 27.4%; height: 31.4% !important; border-bottom: none; }
+    .peppa-lane-2 { top: 58.8% !important; height: 41.2% !important; border-bottom: none; } 
 
     .peppa-friend {
       position: absolute;
-      bottom: 2vh;
-      width: 160px; /* Slightly bigger for the new bus size */
-      height: 180px;
-      background-size: cover;
-      background-position: center;
+      width: 180px; height: 180px;
+      background-size: contain;
       background-repeat: no-repeat;
+      background-color: white; /* Clean sticker base */
       z-index: 400; /* Behind bus but on road */
-      transform: rotateX(-45deg);
+      /* Hinge transform: standing upright cardboard cutouts */
+      transform: rotateX(-45deg) translateY(-25%) translateZ(100px);
       transform-origin: bottom center;
       pointer-events: none;
-      /* Tight circular mask to hide chequerboard */
-      clip-path: circle(35% at 50% 50%);
+      /* Premium Round Sticker Look */
+      border: 6px solid white;
+      border-radius: 50%;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      clip-path: circle(48% at 50% 50%);
     }
+    /* Counter-rotate bubbles to be parallel to screen */
     .peppa-bubble {
+      transform: translateX(-50%) rotateX(0deg);
       position: absolute;
       top: -50px;
       left: 50%;
@@ -331,12 +337,114 @@
       border-color: rgba(255,255,255,0.4);
     }
     .btn-control svg { width: 28px; height: 28px; }
+
+    #peppa-settings-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.9);
+      backdrop-filter: blur(12px);
+      z-index: 10001;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.5s ease;
+    }
+    #peppa-settings-overlay.show {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .settings-panel {
+      background: #1e293b;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 2rem;
+      padding: 3rem;
+      width: 100%;
+      max-width: 450px;
+      text-align: center;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+      transform: translateY(20px);
+      transition: transform 0.5s ease;
+    }
+    #peppa-settings-overlay.show .settings-panel {
+      transform: translateY(0);
+    }
+
+    /* Hover Visualizer Styles */
+     #peppa-hover-visualizer {
+        display: none !important; /* Final production lockdown */
+        position: absolute;
+        top: 0; left: 0;
+        width: 100%; height: 100%;
+        display: none;
+        flex-direction: column;
+        opacity: 0.4;
+     }
+    .hover-zone {
+       width: 100%;
+       border: 2px solid #3b82f6;
+       background: rgba(59, 130, 246, 0.05);
+       box-sizing: border-box;
+       display: flex;
+       align-items: center;
+       justify-content: flex-start;
+       padding-left: 2rem;
+       color: #60a5fa;
+       font-weight: 800;
+       font-size: 0.75rem;
+       letter-spacing: 0.1em;
+       opacity: 0;
+       transition: opacity 0.2s;
+    }
+    .hover-zone.active {
+       opacity: 1;
+       background: rgba(59, 130, 246, 0.15);
+    }
+    #hover-zone-0 { height: 32%; border: none; } /* Gap shifted to 32% */
+    #hover-zone-1 { height: 15%; } /* Lane 1 visual boundary (15%) */
+    #hover-zone-2 { height: 20%; } /* Lane 2 visual boundary (20%) */
+    #hover-zone-3 { height: 33%; } /* Lane 3 (Full 33% depth) */
+    
+    /* Math Game Styles */
+    #math-game-viewport {
+       position: relative;
+       width: 100%;
+       height: 600px;
+       background: #1e1b4b; /* deep indigo */
+       border-radius: 2rem;
+       overflow: hidden;
+       box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+       border: 1px solid rgba(255,255,255,0.05);
+    }
+    .math-bubble {
+       position: absolute;
+       width: 120px;
+       height: 120px;
+       background: white;
+       border: 8px solid #3b82f6;
+       border-radius: 50%;
+       display: flex;
+       align-items: center;
+       justify-content: center;
+       font-size: 2.5rem;
+       font-weight: 900;
+       color: #1e293b;
+       cursor: pointer;
+       user-select: none;
+       box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+       transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .math-bubble:hover {
+       transform: scale(1.1);
+       box-shadow: 0 15px 35px rgba(59, 130, 246, 0.4);
+    }
   </style>
 </head>
 <body class="min-h-screen flex flex-col items-center py-10 px-4">
   <header class="w-full max-w-4xl flex justify-between items-center mb-10 z-50">
     <div class="flex items-center gap-6">
-      <h1 id="logo" class="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-emerald-400 cursor-pointer hover:opacity-80 transition-opacity">
+      <h1 id="logo" onclick="setMode('landing')" class="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-emerald-400 cursor-pointer hover:opacity-80 transition-opacity">
         EduGaze
       </h1>
       <div class="flex flex-col border-l border-slate-700 pl-6">
@@ -382,14 +490,13 @@
           <p>Test your knowledge with interactive flashcards and multiple choice questions.</p>
         </div>
 
-        <!-- Math Game Card (Do nothing for now) -->
-        <div class="hub-card group cursor-default opacity-80" style="--tw-gradient-from: #a855f7; --tw-gradient-to: #ec4899;">
-          <div class="icon-box text-purple-400">
+        <!-- Math Game Card -->
+        <div onclick="setMode('math-game')" class="hub-card group" style="--tw-gradient-from: #a855f7; --tw-gradient-to: #ec4899;">
+          <div class="icon-box text-purple-400 group-hover:text-white">
             <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
           </div>
           <h3>Math Game</h3>
           <p>Challenge your brain with exciting math puzzles and quick calculations.</p>
-          <span class="text-[10px] absolute bottom-4 text-purple-300/50 uppercase font-bold tracking-widest">Available Soon</span>
         </div>
 
         <!-- Peppa Game Card -->
@@ -403,29 +510,45 @@
       </div>
     </div>
 
-    <!-- Math Game Placeholder -->
+    <!-- Math Game View -->
     <div id="view-math-game" class="w-full flex flex-col items-center gap-8 hidden transition-opacity">
-      <div class="bg-slate-800 p-12 rounded-3xl border border-slate-700 text-center space-y-6">
-        <div class="w-24 h-24 bg-purple-500/10 text-purple-400 rounded-full flex items-center justify-center mx-auto">
-          <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
-        </div>
-        <h2 class="text-4xl font-extrabold text-white">Math Game</h2>
-        <p class="text-slate-400 max-w-sm">This module is currently under development. Get ready for exciting mathematical challenges!</p>
-        <button onclick="setMode('landing')" class="px-8 py-3 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-xl transition-all">Back to Home</button>
-      </div>
+       <div class="flex justify-between items-center w-full max-w-4xl px-4">
+          <div class="flex flex-col">
+             <span class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Math Game</span>
+             <h2 id="math-problem-display" class="text-5xl font-black text-white bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-400">
+                8 + 5 = ?
+             </h2>
+          </div>
+          <div class="flex items-center gap-6">
+             <div class="flex flex-col items-end">
+                <span class="text-[10px] font-bold text-slate-500 uppercase">Score</span>
+                <span id="math-score" class="text-4xl font-black text-emerald-400">0</span>
+             </div>
+             <button onclick="setMode('landing')" class="px-6 py-2 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl border border-slate-700">Exit</button>
+          </div>
+       </div>
+       
+       <div id="math-game-viewport">
+          <div id="math-bubbles-layer" style="position: absolute; inset: 0;"></div>
+          <!-- Background particles or effect -->
+          <div class="absolute inset-0 opacity-10 pointer-events-none">
+             <div class="absolute top-10 left-10 w-24 h-24 border-4 border-purple-500 rounded-full"></div>
+             <div class="absolute bottom-20 right-20 w-16 h-16 border-4 border-pink-500 rounded-full rotate-45"></div>
+          </div>
+       </div>
     </div>
 
     <!-- Peppa Game Placeholder -->
     <div id="view-peppa-game" class="hidden">
       <div id="peppa-game-viewport">
-        <!-- Parallax Background -->
+       <div class="skyline peppa-skyline"></div>
         <div class="peppa-skyline"></div>
 
         <!-- Road & Lanes -->
         <div class="peppa-road">
-          <div class="peppa-lane peppa-lane-0">LANE 1</div>
-          <div class="peppa-lane peppa-lane-1">LANE 2</div>
-          <div class="peppa-lane peppa-lane-2">LANE 3</div>
+          <div class="peppa-lane peppa-lane-0"><span class="peppa-lane-text">LANE 1</span></div>
+          <div class="peppa-lane peppa-lane-1"><span class="peppa-lane-text">LANE 2</span></div>
+          <div class="peppa-lane peppa-lane-2"><span class="peppa-lane-text">LANE 3</span></div>
           
           <!-- The Bus (Placed inside road for 3D relative positioning) -->
           <div id="peppa-bus" class="peppa-bus"></div>
@@ -435,12 +558,22 @@
         </div>
         
         <!-- UI Elements (Floating Layer) -->
+        <div id="peppa-hover-visualizer">
+           <div id="hover-zone-0"></div>
+           <div id="hover-zone-1" class="hover-zone"><span>HOVER ZONE 1 (BLUE)</span></div>
+           <div id="hover-zone-2" class="hover-zone"><span>HOVER ZONE 2 (BLUE)</span></div>
+           <div id="hover-zone-3" class="hover-zone"><span>HOVER ZONE 3 (BLUE)</span></div>
+        </div>
+
         <div class="friends-count">
            <svg class="w-8 h-8 text-red-500" fill="currentColor" viewBox="0 0 20 20"><path d="M8 8a3 3 0 100-6 3 3 0 000 6zm2 11H8v-4h2v4zm2-11a3 3 0 100-6 3 3 0 000 6zm-2 11h2v-4h-2v4zm4-5l1 4h-2l-1-4h2zM4 14l-1 4h2l1-4H4zm5-6h2v2H9V8z" /></svg>
            <span id="peppa-score">0</span>
         </div>
         
         <div class="game-controls">
+          <button id="btn-peppa-settings" class="btn-control" onclick="window.togglePeppaSettings()">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+          </button>
           <button id="btn-peppa-mute" class="btn-control" onclick="window.togglePeppaMute()">
             <svg id="icon-mute-off" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
             <svg id="icon-mute-on" class="hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
@@ -448,6 +581,25 @@
           <button onclick="setMode('landing')" class="btn-control px-6 w-auto text-sm font-bold">
             Exit
           </button>
+        </div>
+
+        <div id="peppa-settings-overlay">
+          <div class="settings-panel">
+            <h2 class="text-3xl font-black text-white mb-8">Game Settings</h2>
+            <div class="space-y-8">
+              <div class="space-y-4">
+                <div class="flex justify-between items-center text-slate-400 font-bold uppercase tracking-wider text-xs">
+                  <span>Game Speed</span>
+                  <span id="speed-value-display">0.8x</span>
+                </div>
+                <input type="range" id="input-peppa-speed" min="0.4" max="2.0" step="0.1" value="0.8" class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-orange-500">
+                <p class="text-[10px] text-slate-500 font-medium">Lower values make the game easier for gaze interaction.</p>
+              </div>
+              <button onclick="window.togglePeppaSettings()" class="w-full py-4 bg-orange-600 hover:bg-orange-500 text-white font-black rounded-2xl transition-all shadow-lg active:scale-95">
+                Close & Save
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -668,6 +820,7 @@
     const CATEGORIES = ['Activity', 'Feelings', 'Things', 'English', 'Chinese', 'Math', 'Science', 'TBC'];
     let appData = { 
       dwellTimeMs: 2000, 
+      peppaSpeed: 0.8,
       selectedCategory: 'Activity',
       categories: { 'Activity': [initData()] } 
     };
@@ -748,13 +901,12 @@
                      dwellTimeMs: 2000, 
                      selectedCategory: 'Activity',
                      categories: { 'Activity': [initData()] } 
-                   };
-                   CATEGORIES.forEach(cat => { if (!appData.categories[cat]) appData.categories[cat] = []; });
-                }
-                isInitialLoadComplete = true; // Set flag BEFORE saving defaults
-                await saveDataToFirestore();
-            }
-            isInitialLoadComplete = true;
+                    };
+                    CATEGORIES.forEach(cat => { if (!appData.categories[cat]) appData.categories[cat] = []; });
+                 }
+                 isInitialLoadComplete = true; // Set flag BEFORE saving defaults
+                 await saveDataToFirestore();
+             }
        } catch (error) {
            console.error("Error loading data from Firestore:", error);
            // Even if error, allow editing with what we have
@@ -887,22 +1039,26 @@
        showToast("Logged out successfully.");
     };
 
-     btnGuest.onclick = async () => {
-        try {
-           btnGuest.disabled = true;
-           btnGuest.textContent = "Connecting...";
-           await signInAnonymously(auth);
-           // onAuthStateChanged will handle hiding overlay and loading
-        } catch (err) {
-           console.warn("Guest login failed (Anonymous Auth likely disabled in Console):", err);
-           showToast("Cloud sync disabled for guest. Using local storage.", "info");
-           // Fallback to local guest mode manually
-           handleAuthStateChanged({ isAnonymous: true, isGuest: true, uid: 'guest-local', displayName: 'Guest' });
-        } finally {
-           btnGuest.disabled = false;
-           btnGuest.textContent = "Continue as Guest";
-        }
-     };
+      btnGuest.onclick = async () => {
+         try {
+            btnGuest.disabled = true;
+            btnGuest.textContent = "Connecting...";
+            await signInAnonymously(auth);
+            // onAuthStateChanged handles UI but we'll force defensive state check
+            setTimeout(() => {
+               if (loginOverlay && !loginOverlay.classList.contains('hidden')) {
+                   handleAuthStateChanged({ isAnonymous: true, isGuest: true, uid: 'guest-local', displayName: 'Guest' });
+               }
+            }, 3000);
+         } catch (err) {
+            console.warn("Guest login failed (Anonymous Auth likely disabled in Console):", err);
+            showToast("Cloud sync disabled for guest. Using local storage.", "info");
+            handleAuthStateChanged({ isAnonymous: true, isGuest: true, uid: 'guest-local', displayName: 'Guest' });
+         } finally {
+            btnGuest.disabled = false;
+            btnGuest.textContent = "Continue as Guest";
+         }
+      };
     
     // Auth events
     btnLogin.onclick = async () => {
@@ -1303,6 +1459,88 @@
        viewMathGame.classList.remove('hidden');
        viewPeppaGame.classList.add('hidden');
        categoryTabs.classList.add('hidden');
+       initMathGame();
+    }
+    
+    let mathScore = 0;
+    let mathProblem = null;
+    let mathIntervals = [];
+    
+    function generateMathProblem() {
+       const a = Math.floor(Math.random() * 10) + 1;
+       const b = Math.floor(Math.random() * 10) + 1;
+       const op = Math.random() > 0.5 ? '+' : '-';
+       let result = op === '+' ? a + b : a - b;
+       // Avoid negative for now
+       if (result < 0) result = a + b;
+       
+       mathProblem = { a, b, op, result };
+       document.getElementById('math-problem-display').textContent = `${a} ${op === '+' ? '+' : '-'} ${b} = ?`;
+    }
+    
+    function spawnMathBubble() {
+       const layer = document.getElementById('math-bubbles-layer');
+       if (!layer) return;
+       
+       const bubble = document.createElement('div');
+       bubble.className = 'math-bubble';
+       
+       const isCorrect = Math.random() > 0.6;
+       const val = isCorrect ? mathProblem.result : (mathProblem.result + Math.floor(Math.random() * 5) + 1 - 2);
+       
+       bubble.textContent = val;
+       bubble.style.left = (Math.random() * 80 + 10) + '%';
+       bubble.style.top = '-150px';
+       
+       layer.appendChild(bubble);
+       
+       let top = -150;
+       const speed = 2 + Math.random() * 2;
+       const moveInt = setInterval(() => {
+          if (mode !== 'math-game') {
+             clearInterval(moveInt);
+             return;
+          }
+          top += speed;
+          bubble.style.top = top + 'px';
+          
+          if (top > 700) {
+             clearInterval(moveInt);
+             bubble.remove();
+          }
+       }, 30);
+       
+       bubble.onclick = () => {
+          if (val === mathProblem.result) {
+             mathScore += 10;
+             document.getElementById('math-score').textContent = mathScore;
+             playSuccessSound();
+             bubble.style.background = '#10b981'; // emerald
+             bubble.style.borderColor = '#059669';
+             generateMathProblem();
+          } else {
+             mathScore = Math.max(0, mathScore - 5);
+             document.getElementById('math-score').textContent = mathScore;
+             playWrongSound();
+             bubble.style.background = '#ef4444'; // red
+          }
+          setTimeout(() => bubble.remove(), 200);
+       };
+       mathIntervals.push(moveInt);
+    }
+    
+    function initMathGame() {
+       mathScore = 0;
+       document.getElementById('math-score').textContent = '0';
+       mathIntervals.forEach(clearInterval);
+       mathIntervals = [];
+       document.getElementById('math-bubbles-layer').innerHTML = '';
+       generateMathProblem();
+       
+       const spawnInt = setInterval(() => {
+          if (mode === 'math-game') spawnMathBubble();
+       }, 2000);
+       mathIntervals.push(spawnInt);
     }
 
     let peppaScore = 0;
@@ -1338,11 +1576,40 @@
        if (busLane === lane) return;
        busLane = lane;
        const bus = document.getElementById('peppa-bus');
-       if (bus) {
-          // Move bus between lanes (top offsets in the 3D plane)
-          const laneTops = ['0%', '33.33%', '66.66%'];
-          bus.style.top = laneTops[lane];
-          bus.style.zIndex = 50 + lane;
+        if (bus) {
+           // Center bus visually in each segment (verified midlines)
+           const laneTops = ['13.7%', '43.1%', '79.4%'];
+           bus.style.top = laneTops[lane];
+           bus.style.zIndex = 50 + lane;
+        }
+    };
+
+    function updatePeppaSpeedFactor() {
+       const speed = appData.peppaSpeed || 0.8;
+       document.documentElement.style.setProperty('--peppa-speed-factor', speed);
+       const display = document.getElementById('speed-value-display');
+       if (display) display.textContent = speed.toFixed(1) + 'x';
+       const input = document.getElementById('input-peppa-speed');
+       if (input) {
+          input.value = speed;
+          input.oninput = (e) => {
+             appData.peppaSpeed = parseFloat(e.target.value);
+             updatePeppaSpeedFactor();
+          };
+       }
+    }
+
+    window.togglePeppaSettings = () => {
+       const overlay = document.getElementById('peppa-settings-overlay');
+       if (!overlay) return;
+       const isShowing = overlay.classList.contains('show');
+       if (!isShowing) {
+          overlay.classList.add('show');
+          // Update inputs
+          updatePeppaSpeedFactor();
+       } else {
+          overlay.classList.remove('show');
+          saveData(); // Save new speed setting
        }
     };
 
@@ -1360,6 +1627,10 @@
        document.removeEventListener('mousemove', peppaMouseMove);
     }
 
+    function initPeppaGame() {
+        // Production Ready: Standard Asset Paths
+    }
+
     function peppaMouseMove(e) {
        if (mode !== 'peppa-game') return;
        const viewport = document.getElementById('peppa-game-viewport');
@@ -1369,13 +1640,23 @@
        const mouseY = e.clientY - rect.top;
        const relativeY = mouseY / rect.height; 
        
-       // Visual detection logic: road is bottom ~60%
-       if (relativeY >= 0.2) { // Generous detection zone
-          const roadY = (relativeY - 0.4) / 0.6; // Scale relative to road visual start
-          let lane = 1;
-          if (roadY < 0.3) lane = 0;
-          else if (roadY > 0.7) lane = 2;
+       // Road starts at 32% screen height (aligned with Blue Hover Zone 1)
+       if (relativeY >= 0.32) { 
+          const roadY = (relativeY - 0.32) / 0.68; 
+          let lane = 0;
+          
+          if (relativeY < 0.47) lane = 0;      // 32 + 15 = 47
+          else if (relativeY < 0.67) lane = 1; // 47 + 20 = 67
+          else lane = 2; // Bottom lane (remains 33%)
+          
           window.setBusLane(lane);
+
+          // Update hover visualizer active state
+          document.querySelectorAll('.hover-zone').forEach((zone, idx) => {
+             zone.classList.toggle('active', idx === lane);
+          });
+       } else {
+          document.querySelectorAll('.hover-zone').forEach(zone => zone.classList.remove('active'));
        }
     }
 
@@ -1383,14 +1664,17 @@
        const friendsLayer = document.getElementById('peppa-friends-layer');
        if (!friendsLayer) return;
        const friend = document.createElement('div');
-       const characters = ['peppa.png', 'george.png', 'suzy.png'];
-       const charImg = characters[Math.floor(Math.random() * characters.length)];
        const lane = Math.floor(Math.random() * 3);
-       const laneTops = ['0%', '33.33%', '66.66%'];
+       // Center characters in midlines based on 3D depth segments
+       const laneTops = ['13.7%', '43.1%', '79.4%'];
        
-       friend.className = 'peppa-friend';
+       const characters = ['peppa.png', 'george.png', 'suzy.png', 'danny.png', 'pedro.png'];
+       const charImg = characters[Math.floor(Math.random() * characters.length)];
+       
        friend.style.backgroundImage = `url('assets/peppa/${charImg}')`;
-       friend.style.right = '-300px'; /* Start off-screen */
+       friend.className = 'peppa-friend';
+
+       friend.style.right = '-300px'; 
        friend.style.top = laneTops[lane];
        friend.style.zIndex = 40 + lane;
        
@@ -1406,7 +1690,11 @@
           
           // Speed matches roadScroll animation (600px / 0.8s = 750px/s)
           // Interval 30ms -> 750 * 0.03 = 22.5px
-          pos += 22.5;
+          // Scaled by peppaSpeed factor. 
+          // Road moves at Speed * f. 
+          // At f=1.0, speed is 750px/s.
+          // Correct sync: increment matches the road markings cycle exactly.
+          pos += 22.5 * appData.peppaSpeed;
           friend.style.right = pos + 'px';
           
           // Collision Detection
@@ -1451,6 +1739,9 @@
        viewPeppaGame.classList.remove('hidden');
        categoryTabs.classList.add('hidden');
        
+       // Ensure speed factor is applied
+       updatePeppaSpeedFactor();
+
        // Start Game
        stopPeppaGame(); 
        
@@ -1491,9 +1782,7 @@
     // Navigation Event Listeners
     const logoElement = document.getElementById('logo');
     if (logoElement) {
-       logoElement.addEventListener('dblclick', () => {
-          setMode('landing');
-       });
+       logoElement.onclick = () => setMode('landing');
     }
 
     if (btnEducation) {
@@ -2150,6 +2439,14 @@
     }
     renderCategoryTabs();
     onAuthStateChanged(auth, handleAuthStateChanged);
+    // Settings event listener for Peppa speed
+    const peppaSpeedInput = document.getElementById('input-peppa-speed');
+    if (peppaSpeedInput) {
+       peppaSpeedInput.oninput = (e) => {
+          appData.peppaSpeed = parseFloat(e.target.value);
+          updatePeppaSpeedFactor();
+       };
+    }
   </script>
 </body>
 </html>
