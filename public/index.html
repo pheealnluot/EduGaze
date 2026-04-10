@@ -163,7 +163,6 @@
       background-image: url('assets/peppa/skyline.png');
       background-size: 50% 100%;
       background-repeat: repeat-x;
-      animation: skylineMove calc(20s / var(--peppa-speed-factor, 0.8)) linear infinite;
       z-index: 1;
     }
     @keyframes skylineMove {
@@ -205,7 +204,7 @@
       50% { transform: translate(-50%, -100%) rotateX(-45deg) translateZ(60px) scale(1.05, 0.95) translateY(-40px); }
     }
     .animate-bus-jump {
-      animation: busJump 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      animation: busJump 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
     }
     .peppa-road {
        position: absolute;
@@ -255,7 +254,6 @@
       background-size: 600px 100%;
       transform: skewX(-35deg);
       z-index: 1;
-      animation: roadScroll calc(0.8s / var(--peppa-speed-factor, 0.8)) linear infinite;
     }
     @keyframes roadScroll {
       from { background-position: 0 0; }
@@ -2251,38 +2249,66 @@
        targetMouseX = viewWidth * 0.45;
 
        // Start horizontal movement loop
-       const moveLoop = setInterval(() => {
-          if (mode !== 'peppa-game') {
-             clearInterval(moveLoop);
-             return;
-          }
-          
-          const bus = document.getElementById('peppa-bus');
-          if (!bus) return;
+        // World Movement State
+        let peppaRoadX = 0;
+        let peppaSkylineX = 0;
+        let lastTickTime = performance.now();
 
-          const vw = window.innerWidth;
-          const roadOffset = vw * 0.25; // Road starts at left: -25vw
-          
-          // Limits: left boundary 25% from left, right boundary 40% from right edge (= 60%)
-          const minX = vw * 0.25;
-          const maxX = vw * 0.60;
+        const moveLoop = setInterval(() => {
+           if (mode !== 'peppa-game') {
+              clearInterval(moveLoop);
+              return;
+           }
+           
+           const now = performance.now();
+           const dt = (now - lastTickTime) / 1000;
+           lastTickTime = now;
 
-          const clampedTargetX = Math.max(minX, Math.min(maxX, targetMouseX));
-          
-          // Smooth movement - speed from settings
-          const dist = clampedTargetX - peppaBusX;
-          const speed = getBusMoveSpeedMultiplier() * appData.peppaSpeed; 
-          
-          if (Math.abs(dist) > speed) {
-             peppaBusX += Math.sign(dist) * speed;
-          } else {
-             peppaBusX = clampedTargetX;
-          }
-          
-          // Convert page coords to road-local coords (road left is -25vw)
-          bus.style.left = (peppaBusX + roadOffset) + 'px';
-       }, 16); 
-       peppaIntervals.push(moveLoop);
+           const bus = document.getElementById('peppa-bus');
+           const roadMarks = document.querySelectorAll('.peppa-lane::before');
+           const skylines = document.querySelectorAll('.peppa-skyline');
+           
+           if (!bus) return;
+
+           // 1. World Movement (Road & Skyline)
+           const baseSpeed = 750; // px/s
+           peppaRoadX += baseSpeed * appData.peppaSpeed * dt;
+           peppaSkylineX += (baseSpeed / 10) * appData.peppaSpeed * dt; // Parallax
+           
+           // Wrap positions
+           peppaRoadX %= 600;
+           
+           roadMarks.forEach(m => {
+              m.style.backgroundPosition = `-${peppaRoadX}px 0`;
+           });
+           skylines.forEach(s => {
+              s.style.backgroundPosition = `-${peppaSkylineX}px 0`;
+           });
+
+           // 2. Bus Horizontal Movement
+           const vw = window.innerWidth;
+           const roadOffset = vw * 0.25; // Road starts at left: -25vw
+           
+           // Limits: left boundary 25% from left, right boundary 40% from right edge (= 60%)
+           const minX = vw * 0.25;
+           const maxX = vw * 0.60;
+
+           const clampedTargetX = Math.max(minX, Math.min(maxX, targetMouseX));
+           
+           // Smooth movement - speed from settings
+           const dist = clampedTargetX - peppaBusX;
+           const speed = getBusMoveSpeedMultiplier() * appData.peppaSpeed; 
+           
+           if (Math.abs(dist) > speed) {
+              peppaBusX += Math.sign(dist) * speed;
+           } else {
+              peppaBusX = clampedTargetX;
+           }
+           
+           // Convert page coords to road-local coords (road left is -25vw)
+           bus.style.left = (peppaBusX + roadOffset) + "px";
+        }, 16); 
+        peppaIntervals.push(moveLoop);
 
        const spawnInt = setInterval(() => {
           if (mode === 'peppa-game' && Math.random() > 0.4) spawnPeppaFriend();
