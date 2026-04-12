@@ -173,13 +173,13 @@
        position: absolute;
        top: 50%; /* Initial pos, JS will override */
        left: 35%; /* Re-calibrated starting position: middle at 35% */
-       width: 240px; /* 80% of 300px */
-       height: 176px;
-       background-image: url('assets/peppa/bus3.jpg');
-       background-size: cover;
+       width: 288px; /* 1.2 * 240px */
+       height: 211px; /* 1.2 * 176px */
+       background-image: url('assets/peppa/bus4.png');
+       background-size: contain;
        background-position: center;
        background-repeat: no-repeat;
-       background-color: white; 
+       background-color: transparent; 
        z-index: 1000;
        animation: busDrive 0.6s ease-in-out infinite alternate;
        /* Transition vertical moves (lane changes) but not horizontal (which is handled by loop) */
@@ -189,11 +189,8 @@
        transform: translate(-50%, -100%) rotateX(-45deg) translateY(0) translateZ(50px);
        pointer-events: none;
        transform-origin: bottom center;
-       /* Premium Sticker Finish: Trim white space */
-       border: 4px solid white;
-       border-radius: 20px;
-       box-shadow: 0 15px 35px rgba(0,0,0,0.6);
-       clip-path: inset(2% 2% 8% 2% round 15px);
+       /* Premium Sticker Finish: Clean transparency */
+       filter: drop-shadow(0 15px 35px rgba(0,0,0,0.6));
     }
     @keyframes busDrive {
       from { transform: translate(-50%, -100%) rotateX(-45deg) translateZ(50px) translateY(0) scale(1.0); }
@@ -201,10 +198,11 @@
     }
     @keyframes busJump {
       0%, 100% { transform: translate(-50%, -100%) rotateX(-45deg) translateZ(50px) scale(1.0); }
-      50% { transform: translate(-50%, -100%) rotateX(-45deg) translateZ(60px) scale(1.05, 0.95) translateY(-40px); }
+      40% { transform: translate(-50%, -100%) rotateX(-45deg) translateZ(80px) scale(1.1, 0.9) translateY(-60px); }
+      60% { transform: translate(-50%, -100%) rotateX(-45deg) translateZ(75px) scale(0.95, 1.05) translateY(-30px); }
     }
     .animate-bus-jump {
-      animation: busJump 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
+      animation: busJump 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
     }
     .peppa-road {
        position: absolute;
@@ -254,6 +252,7 @@
       background-size: 600px 100%;
       transform: skewX(-35deg);
       z-index: 1;
+      animation: roadScroll calc(0.8s / var(--peppa-speed-factor, 0.8)) linear infinite;
     }
     @keyframes roadScroll {
       from { background-position: 0 0; }
@@ -291,14 +290,13 @@
       background-image: url('assets/peppa/friends.png');
       background-size: 500% 200%;
       background-repeat: no-repeat;
-      background-color: #152036; /* Match road asphalt color */
-      border-radius: 8px;
+      background-color: transparent;
       z-index: 400; /* Behind bus but on road */
       /* Hinge transform: standing upright silhouettes, centered vertically in lane */
       transform: rotateX(-45deg) translateY(-50%) translateZ(30px);
       transform-origin: center center;
       pointer-events: none;
-      filter: drop-shadow(0 5px 10px rgba(0,0,0,0.4));
+      filter: drop-shadow(0 10px 15px rgba(0,0,0,0.5));
     }
     
     /* Road Hazards Styling */
@@ -307,15 +305,15 @@
       width: 80px; height: 80px;
       background-size: contain;
       background-repeat: no-repeat;
-      background-color: #152036; /* Match road asphalt color */
-      border-radius: 50%; /* Smooth background edges */
+      background-color: transparent;
       z-index: 350;
       transform: rotateX(-45deg) translateY(-50%) translateZ(20px);
       transform-origin: center center;
       pointer-events: none;
+      filter: drop-shadow(0 5px 10px rgba(0,0,0,0.4));
     }
     .peppa-hazard.banana { background-image: url('assets/peppa/banana.png'); }
-    .peppa-hazard.mud { background-image: url('assets/peppa/mud.png'); }
+    .peppa-hazard.mud { background-image: url('assets/peppa/mud2_clean.png'); }
     .peppa-hazard.water { background-image: url('assets/peppa/water.png'); }
 
     /* Bus Feedback Animations */
@@ -339,7 +337,7 @@
     .mud-edge-splat {
       position: fixed;
       width: 250px; height: 250px;
-      background-image: url('assets/peppa/mud_splat.png');
+      background-image: url('assets/peppa/mud2_clean.png');
       background-size: contain;
       background-repeat: no-repeat;
       pointer-events: none;
@@ -352,7 +350,7 @@
     .mud-particle {
       position: absolute;
       width: 40px; height: 40px;
-      background-image: url('assets/peppa/mud.png');
+      background-image: url('assets/peppa/mud2_clean.png');
       background-size: contain;
       pointer-events: none;
       z-index: 1000;
@@ -580,6 +578,90 @@
        transform: scale(1.1);
        box-shadow: 0 15px 35px rgba(59, 130, 246, 0.4);
     }
+
+    /* Win Overlay */
+    #peppa-win-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.95);
+      backdrop-filter: blur(16px);
+      z-index: 20000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    #peppa-win-overlay.show {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    
+    /* Cinematic Victory Animations */
+    .peppa-bus.victory-hero {
+       left: 50% !important;
+       top: 55.7% !important; /* Centered in Middle Lane */
+       transform: translate(-50%, -50%) rotateX(-45deg) translateZ(150px) scale(2) !important;
+       transition: all 1.5s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+       z-index: 50000 !important;
+    }
+
+    .peppa-celebration-friend {
+       position: absolute;
+       width: 15vw; height: 15vw;
+       background-image: url('assets/peppa/friends.png');
+       background-size: 500% 200%;
+       z-index: 60000;
+       pointer-events: none;
+       animation: celebrationFloat 3s ease-in-out infinite alternate;
+       filter: drop-shadow(0 20px 40px rgba(0,0,0,0.4));
+       transform-style: preserve-3d;
+       transform: rotateX(-45deg);
+    }
+
+    @keyframes celebrationFloat {
+       0% { transform: translate(var(--dx), var(--dy)) rotateX(-45deg) translateY(0); }
+       100% { transform: translate(var(--dx), var(--dy)) rotateX(-45deg) translateY(-30px); }
+    }
+
+    .win-card {
+      background: linear-gradient(135deg, #1e293b, #0f172a);
+      border: 2px solid rgba(16, 185, 129, 0.3);
+      border-radius: 3rem;
+      padding: 4rem;
+      text-align: center;
+      max-width: 500px;
+      width: 90%;
+      box-shadow: 0 0 100px rgba(16, 185, 129, 0.15);
+      transform: scale(0.8) translateY(20px);
+      transition: all 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    #peppa-win-overlay.show .win-card {
+      transform: scale(1) translateY(0);
+    }
+    .victory-badge {
+      width: 120px;
+      height: 120px;
+      background: #10b981;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 2rem;
+      box-shadow: 0 0 40px rgba(16, 185, 129, 0.5);
+      animation: badgePulse 2s infinite;
+    }
+    @keyframes badgePulse {
+      0%, 100% { transform: scale(1); box-shadow: 0 0 40px rgba(16, 185, 129, 0.5); }
+      50% { transform: scale(1.1); box-shadow: 0 0 80px rgba(16, 185, 129, 0.7); }
+    }
+    /* Pause State */
+    .peppa-game-paused, .peppa-game-paused *, .peppa-game-paused ::before, .peppa-game-paused ::after {
+      animation-play-state: paused !important;
+      transition: none !important;
+    }
   </style>
 </head>
 <body class="min-h-screen flex flex-col items-center py-10 px-4">
@@ -715,7 +797,13 @@
 
         <div class="friends-count">
            <img src="assets/peppa/peppa.png" class="w-10 h-10 object-contain" alt="Peppa">
-           <span id="peppa-score">0</span>
+          <div class="flex items-center gap-3">
+             <img src="assets/peppa/george.png" class="w-8 h-8 object-contain" />
+             <div class="flex items-baseline gap-1">
+               <span id="peppa-score" class="text-3xl">0</span>
+               <span id="peppa-target-display" class="text-slate-400 text-sm font-bold">/ 12</span>
+             </div>
+          </div>
         </div>
         
         <div class="game-controls">
@@ -725,6 +813,10 @@
           <button id="btn-peppa-mute" class="btn-control" onclick="window.togglePeppaMute()">
             <svg id="icon-mute-off" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
             <svg id="icon-mute-on" class="hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
+          </button>
+          <button id="btn-peppa-pause" class="btn-control hidden" onclick="window.togglePeppaPause()">
+            <svg id="icon-pause" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            <svg id="icon-play" class="hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
           </button>
           <button onclick="setMode('landing')" class="btn-control px-6 w-auto text-sm font-bold">
             Exit
@@ -741,7 +833,15 @@
                   <span id="speed-value-display">0.8x</span>
                 </div>
                 <input type="range" id="input-peppa-speed" min="0.1" max="2.0" step="0.1" value="0.8" class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-orange-500">
-                <p class="text-[10px] text-slate-500 font-medium">Lower values make the game easier for gaze interaction.</p>
+              </div>
+
+              <div class="space-y-4 border-t border-slate-800 pt-6">
+                <div class="flex justify-between items-center text-slate-400 font-bold uppercase tracking-wider text-xs">
+                  <span>Game Goal (Characters)</span>
+                  <span id="goal-value-display" class="text-emerald-400">12</span>
+                </div>
+                <input type="range" id="input-peppa-goal" min="5" max="50" step="1" value="12" class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-500">
+                <p class="text-[10px] text-slate-500 font-medium italic">Game finishes automatically when you collect this many characters.</p>
               </div>
 
               <div class="space-y-4">
@@ -793,6 +893,20 @@
               <button onclick="window.togglePeppaSettings()" class="w-full py-4 bg-orange-600 hover:bg-orange-500 text-white font-black rounded-2xl transition-all shadow-lg active:scale-95">
                 Close & Save
               </button>
+            </div>
+          </div>
+        </div>
+
+        <div id="peppa-win-overlay">
+          <div class="win-card">
+            <div class="victory-badge">
+              <svg class="w-16 h-16 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+            </div>
+            <h2 class="text-4xl font-black text-white mb-4">Well Done!</h2>
+            <p class="text-slate-400 text-lg mb-8">You finished the tour and collected all the friends!</p>
+            <div class="flex flex-col gap-4">
+              <button onclick="window.restartPeppaGame()" class="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-2xl transition-all shadow-xl shadow-emerald-500/20 text-lg">Play Again</button>
+              <button onclick="setMode('landing')" class="w-full py-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-2xl transition-all">Back to Menu</button>
             </div>
           </div>
         </div>
@@ -1777,12 +1891,14 @@
     let peppaIntervals = [];
     let busLane = 1;
     let peppaMuted = false;
+    let peppaPaused = false;
     let peppaAudio = null;
     // Merge peppa defaults into existing appData (declared earlier)
     if (!appData.peppaSpeed) appData.peppaSpeed = 0.8;
-    if (!appData.peppaMusicStyle) appData.peppaMusicStyle = 'instrumental'; // Default: instrumental
+    if (!appData.peppaMusicStyle) appData.peppaMusicStyle = 'instrumental'; 
     if (!appData.peppaBusMoveSpeed) appData.peppaBusMoveSpeed = 'normal';
     if (!appData.peppaCharFreq) appData.peppaCharFreq = 'medium';
+    if (!appData.peppaTargetCount) appData.peppaTargetCount = 12;
     let peppaBusX = window.innerWidth * 0.45; // Starting position: midpoint of 25%-60%
     let targetMouseX = window.innerWidth * 0.45;
 
@@ -1806,11 +1922,44 @@
        }
     }
 
+    window.updatePeppaScoreUI = () => {
+       const scoreEl = document.getElementById('peppa-score');
+       const targetEl = document.getElementById('peppa-target-display');
+       if (scoreEl) scoreEl.textContent = peppaScore;
+       if (targetEl) targetEl.textContent = `/ ${appData.peppaTargetCount || 12}`;
+    };
     window.togglePeppaMute = () => {
        peppaMuted = !peppaMuted;
        if (peppaAudio) peppaAudio.muted = peppaMuted;
        document.getElementById('icon-mute-on').classList.toggle('hidden', !peppaMuted);
        document.getElementById('icon-mute-off').classList.toggle('hidden', peppaMuted);
+    };
+
+    window.togglePeppaPause = () => {
+       peppaPaused = !peppaPaused;
+       const viewport = document.getElementById('peppa-game-viewport');
+       if (viewport) {
+           viewport.classList.toggle('peppa-game-paused', peppaPaused);
+       }
+       document.getElementById('icon-pause').classList.toggle('hidden', peppaPaused);
+       document.getElementById('icon-play').classList.toggle('hidden', !peppaPaused);
+       
+       if (peppaAudio) {
+           if (peppaPaused) peppaAudio.pause();
+           else peppaAudio.play().catch(e => console.log("Audio resume deferred", e));
+       }
+    };
+
+    window.triggerBusAnimation = (className, duration) => {
+       const bus = document.getElementById('peppa-bus');
+       if (!bus) return;
+       // Clear any existing animation classes
+       bus.classList.remove('animate-bus-jump', 'animate-bus-shake', 'animate-bus-slide');
+       void bus.offsetWidth; // Force reflow
+       bus.classList.add(className);
+       setTimeout(() => {
+          bus.classList.remove(className);
+       }, duration);
     };
 
     window.setBusLane = (lane) => {
@@ -1819,7 +1968,7 @@
        const bus = document.getElementById('peppa-bus');
         if (bus) {
            // Wheels sit just above the bottom edge of each lane
-           const laneTops = ['22%', '52%', '90%'];
+           const laneTops = ['24.6%', '55.7%', '95.9%'];
            bus.style.top = laneTops[lane];
            bus.style.zIndex = 50 + lane;
         }
@@ -1892,7 +2041,7 @@
        const type = types[Math.floor(Math.random() * types.length)];
        hazard.className = `peppa-hazard ${type}`;
        
-       const laneTops = ['13.7%', '43.1%', '79.4%'];
+       const laneTops = ['17.9%', '49.0%', '89.2%'];
        hazard.style.right = '-200px';
        hazard.style.top = laneTops[lane];
        
@@ -1903,7 +2052,13 @@
        let lastTime = performance.now();
 
        function move(time) {
-          if (mode !== 'peppa-game' || triggered) return;
+          if (mode !== 'peppa-game' || triggered || peppaPaused) {
+              if (peppaPaused) {
+                  lastTime = time; // Reset timer so no jump on resume
+                  requestAnimationFrame(move);
+              }
+              return;
+          }
           const dt = (time - lastTime) / 1000;
           lastTime = time;
           pos += 750 * appData.peppaSpeed * dt;
@@ -1917,7 +2072,10 @@
                 const hRect = hazard.getBoundingClientRect();
                 if (hRect.left < bRect.right - 100 && hRect.right > bRect.left + 60) {
                    triggered = true;
-                   handleHazardCollision(type);
+                                       peppaScore = Math.max(0, peppaScore - 1); 
+                    window.updatePeppaScoreUI(); 
+                    handleHazardCollision(type);
+
                    hazard.style.opacity = '0';
                    setTimeout(() => hazard.remove(), 500);
                    return;
@@ -1938,7 +2096,7 @@
 
        // --- 1. Audio Setup ---
        let soundFile = 'assets/peppa/splash.mp3';
-       if (type === 'banana') soundFile = 'assets/peppa/clown.mp3'; // Placeholder or user-provided
+        if (type === 'banana') soundFile = 'assets/peppa/bananapeel.mp3';
        
        const audio = new Audio(soundFile);
        if (!peppaMuted) {
@@ -1951,9 +2109,7 @@
        appData.peppaSpeed = originalSpeed * 0.35; // Significant slow down
        updatePeppaSpeedFactor();
 
-       bus.classList.remove('animate-bus-shake');
-       void bus.offsetWidth;
-       bus.classList.add('animate-bus-shake');
+       window.triggerBusAnimation('animate-bus-shake', 1200);
 
        // Restore speed after brief period
        setTimeout(() => {
@@ -1964,9 +2120,7 @@
        // --- 3. Specific Visual Feedback ---
        if (type === 'banana') {
           // Slide animation (Extra feedback for banana)
-          bus.classList.remove('animate-bus-slide');
-          void bus.offsetWidth;
-          bus.classList.add('animate-bus-slide');
+          window.triggerBusAnimation('animate-bus-slide', 600);
        } else {
           // Splash Visuals (Mud or Water)
           const isWater = (type === 'water');
@@ -2024,6 +2178,21 @@
        }
     }
 
+    function updatePeppaSettingsUIv2() {
+       updatePeppaSpeedFactor();
+       const goalVal = document.getElementById('goal-value-display');
+       const goalInput = document.getElementById('input-peppa-goal');
+       if (goalVal) goalVal.textContent = appData.peppaTargetCount || 12;
+       if (goalInput) {
+           goalInput.value = appData.peppaTargetCount || 12;
+           goalInput.oninput = (e) => {
+               appData.peppaTargetCount = parseInt(e.target.value);
+               if (goalVal) goalVal.textContent = appData.peppaTargetCount;
+               window.updatePeppaScoreUI();
+           };
+       }
+    }
+
     window.togglePeppaSettings = () => {
        const overlay = document.getElementById('peppa-settings-overlay');
        if (!overlay) return;
@@ -2031,6 +2200,7 @@
        if (!isShowing) {
           overlay.classList.add('show');
           updatePeppaSpeedFactor();
+          updatePeppaSettingsUIv2();
           window.setPeppaMusicStyle(appData.peppaMusicStyle || 'instrumental');
           window.setPeppaBusMoveSpeed(appData.peppaBusMoveSpeed || 'fast');
           window.setPeppaCharFreq(appData.peppaCharFreq || 'medium');
@@ -2049,6 +2219,11 @@
           }
        });
        peppaIntervals = [];
+       peppaPaused = false;
+       const viewport = document.getElementById('peppa-game-viewport');
+       if (viewport) viewport.classList.remove('peppa-game-paused');
+       const btnPause = document.getElementById('btn-peppa-pause');
+       if (btnPause) btnPause.classList.add('hidden');
        stopPeppaTheme();
        const layer = document.getElementById('peppa-friends-layer');
        if (layer) layer.innerHTML = '';
@@ -2087,7 +2262,7 @@
     window.addEventListener('resize', () => { if (mode === 'peppa-game') computeLaneScreenBounds(); });
 
     function peppaMouseMove(e) {
-       if (mode !== 'peppa-game') return;
+       if (mode !== 'peppa-game' || peppaPaused) { if (peppaPaused) { lastTime = performance.now(); requestAnimationFrame(move); } return; }
        const viewport = document.getElementById('peppa-game-viewport');
        if (!viewport) return;
        
@@ -2121,7 +2296,7 @@
        const friend = document.createElement('div');
        const lane = Math.floor(Math.random() * 3);
        // Center characters centrally based on requesting midline alignment
-       const laneTops = ['13.7%', '43.1%', '79.4%'];
+       const laneTops = ['12.9%', '44.0%', '84.2%'];
        
        friend.className = 'peppa-friend';
        
@@ -2144,7 +2319,7 @@
        let lastTime = performance.now();
 
        function move(time) {
-          if (mode !== 'peppa-game' || collected) return;
+          if (mode !== 'peppa-game' || collected || peppaPaused) { if (peppaPaused) { lastTime = performance.now(); requestAnimationFrame(move); } return; }
           
           const dt = (time - lastTime) / 1000;
           lastTime = time;
@@ -2159,18 +2334,14 @@
              if (bus) {
                 const bRect = bus.getBoundingClientRect();
                 const fRect = friend.getBoundingClientRect();
-                if (fRect.left < bRect.right - 120 && fRect.right > bRect.left + 80) {
+                if (fRect.left < bRect.right - 20 && fRect.right > bRect.left + 40) {
                    collected = true;
                    friend.style.transition = 'all 0.5s cubic-bezier(0.4, 0, 0.2, 1)';
                    friend.style.transform = 'rotateX(-45deg) scale(0.1) translate(300px, -600px)';
                    friend.style.opacity = '0';
-                   peppaScore++;
+                   peppaScore++; window.updatePeppaScoreUI(); if (peppaScore >= (appData.peppaTargetCount || 12)) { setTimeout(() => winPeppaGame(), 500); }
                    document.getElementById('peppa-score').textContent = peppaScore;
-                   if (bus) {
-                      bus.classList.remove('animate-bus-jump');
-                      void bus.offsetWidth; 
-                      bus.classList.add('animate-bus-jump');
-                   }
+                   window.triggerBusAnimation('animate-bus-jump', 500);
                    if (window.playJoySound) window.playJoySound();
                    setTimeout(() => friend.remove(), 500);
                    return;
@@ -2201,7 +2372,7 @@
        let lastTime = performance.now();
 
        function move(time) {
-          if (mode !== 'peppa-game') return;
+          if (mode !== 'peppa-game' || peppaPaused) { if (peppaPaused) { lastTime = performance.now(); requestAnimationFrame(move); } return; }
           const dt = (time - lastTime) / 1000;
           lastTime = time;
 
@@ -2216,6 +2387,78 @@
        }
        requestAnimationFrame(move);
     }
+
+    function winPeppaGame() {
+        peppaPaused = true;
+        if (peppaAudio) peppaAudio.pause();
+        
+        // Winning Sound
+        const winSound = new Audio('assets/peppa/win.mp3');
+        if (!peppaMuted) winSound.play().catch(e => console.log("Win audio play failed", e));
+
+        const bus = document.getElementById('peppa-bus');
+        const viewport = document.getElementById('peppa-game-viewport');
+        const winOverlay = document.getElementById('peppa-win-overlay');
+        const friendsLayer = document.getElementById('peppa-friends-layer');
+        
+        if (viewport) viewport.classList.add('peppa-game-paused');
+        if (bus) bus.classList.add('victory-hero');
+        
+        // Spawn Celebration Friends
+        setTimeout(() => {
+           if (!friendsLayer) return;
+           const friendCount = 8;
+           for (let i = 0; i < friendCount; i++) {
+              const f = document.createElement('div');
+              f.className = 'peppa-celebration-friend';
+              
+              // Random Friend Sprite
+              const slot = Math.floor(Math.random() * 10);
+              const col = slot % 5;
+              const row = Math.floor(slot / 5);
+              f.style.backgroundPosition = `${col * 25}% ${row * 100}%`;
+              
+              // Random Final Floating Position (Spread around centered bus)
+              const angle = (i / friendCount) * Math.PI * 2;
+              const dist = 250 + Math.random() * 150;
+              const dx = Math.cos(angle) * dist;
+              const dy = Math.sin(angle) * dist - 100;
+              
+              f.style.left = '50%';
+              f.style.top = '40%';
+              f.style.setProperty('--dx', `${dx}px`);
+              f.style.setProperty('--dy', `${dy}px`);
+              
+              // Initial pop from bus
+              f.style.transform = 'translate(-50%, -50%) scale(0) rotateX(-45deg)';
+              friendsLayer.appendChild(f);
+              
+              setTimeout(() => {
+                 f.style.transition = 'all 1s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
+                 f.style.transform = `translate(${dx}px, ${dy}px) rotateX(-45deg) scale(1.2)`;
+              }, i * 150);
+           }
+        }, 1200);
+
+        setTimeout(() => {
+           if (winOverlay) winOverlay.classList.add('show');
+        }, 4000);
+     }
+
+     window.restartPeppaGame = () => {
+        const winOverlay = document.getElementById('peppa-win-overlay');
+        const bus = document.getElementById('peppa-bus');
+        const friendsLayer = document.getElementById('peppa-friends-layer');
+        
+        if (winOverlay) winOverlay.classList.remove('show');
+        if (bus) bus.classList.remove('victory-hero');
+        if (friendsLayer) friendsLayer.innerHTML = '';
+        
+        peppaScore = 0;
+        window.updatePeppaScoreUI();
+        stopPeppaGame();
+        setPeppaGameMode();
+     };
 
     function setPeppaGameMode() {
        isEditMode = false;
@@ -2239,8 +2482,8 @@
        requestAnimationFrame(() => computeLaneScreenBounds());
        
        peppaScore = 0;
-       document.getElementById('peppa-score').textContent = '0';
-       window.setBusLane(1);
+       window.updatePeppaScoreUI();
+       window.setBusLane(1); document.getElementById('btn-peppa-pause').classList.remove('hidden');
        startPeppaTheme();
 
        // Reset positions
@@ -2255,7 +2498,7 @@
         let lastTickTime = performance.now();
 
         const moveLoop = setInterval(() => {
-           if (mode !== 'peppa-game') {
+           if (mode !== 'peppa-game') { clearInterval(moveLoop); return; } if (peppaPaused) { lastTickTime = performance.now(); return;
               clearInterval(moveLoop);
               return;
            }
