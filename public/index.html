@@ -970,6 +970,7 @@
     <!-- Landing Page (Hub) -->
     <div id="view-landing" class="w-full flex flex-col items-center gap-12 transition-all duration-500">
       <div class="text-center space-y-4 mb-4">
+        <p style="font-size:0.6rem;color:#1f2937;font-family:monospace;letter-spacing:0.06em;margin-bottom:-0.5rem">v 18-Apr-26 17:49:04</p>
         <h2 class="text-5xl md:text-6xl font-black text-white tracking-tight">Welcome, <span class="bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-400">Explorer</span></h2>
         <p class="text-slate-400 text-lg md:text-xl font-medium">Choose an activity to begin your journey.</p>
       </div>
@@ -1544,6 +1545,7 @@
       <h1 class="text-4xl font-extrabold text-white tracking-tight">EduGaze</h1>
       <p class="text-slate-400 text-lg">Interactive Learning Platform</p>
 
+
       <div class="space-y-4 pt-2">
         <input type="email" id="email-field" placeholder="Email Address" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all font-medium">
         <input type="password" id="password-field" placeholder="Password" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all font-medium">
@@ -1636,11 +1638,23 @@
           maxOutputTokens: 1024,
         }
       };
-      const resp = await fetch('/api/quiz-generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
+      const GEMINI_DIRECT_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=AIzaSyAmKix1Pa_LZcdK4wJCLxmnhWq84EHa_Ew`;
+      let resp;
+      try {
+        resp = await fetch('/api/quiz-generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        // If proxy isn't available in production, fall back to direct API call
+        if (!resp.ok && (resp.status === 503 || resp.status === 404)) throw new Error('proxy-unavailable');
+      } catch(_) {
+        resp = await fetch(GEMINI_DIRECT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+      }
       if (!resp.ok) throw new Error(`Gemini API error ${resp.status}`);
       const data = await resp.json();
       const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
@@ -3570,7 +3584,10 @@ Return this structure:
 ]}`;
 
       console.log('[Quiz] fetchQuizBatch — slots:', slots, '| known:', quizAskedQuestions.length);
-      const resp = await fetch('/api/quiz-generate', {
+      const GEMINI_DIRECT_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=AIzaSyAmKix1Pa_LZcdK4wJCLxmnhWq84EHa_Ew`;
+      let resp;
+      try {
+        resp = await fetch('/api/quiz-generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -3581,6 +3598,21 @@ Return this structure:
             }
           })
         });
+        // If proxy reports key not set (503) or route missing (404), hit Gemini directly
+        if (!resp.ok && (resp.status === 503 || resp.status === 404 || resp.status === 502)) throw new Error('proxy-unavailable');
+      } catch(_) {
+        resp = await fetch(GEMINI_DIRECT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: {
+              temperature: 0.9,
+              maxOutputTokens: 4096,
+            }
+          })
+        });
+      }
       if (!resp.ok) {
         const errText = await resp.text();
         throw new Error(`Gemini API ${resp.status}: ${errText.slice(0,200)}`);
