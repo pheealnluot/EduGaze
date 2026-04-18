@@ -970,7 +970,7 @@
     <!-- Landing Page (Hub) -->
     <div id="view-landing" class="w-full flex flex-col items-center gap-12 transition-all duration-500">
       <div class="text-center space-y-4 mb-4">
-        <p style="font-size:0.6rem;color:#1f2937;font-family:monospace;letter-spacing:0.06em;margin-bottom:-0.5rem">v 18-Apr-26 17:49:04</p>
+        <p style="font-size:0.6rem;color:#1f2937;font-family:monospace;letter-spacing:0.06em;margin-bottom:-0.5rem">v 18-Apr-26 17:55:25</p>
         <h2 class="text-5xl md:text-6xl font-black text-white tracking-tight">Welcome, <span class="bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-400">Explorer</span></h2>
         <p class="text-slate-400 text-lg md:text-xl font-medium">Choose an activity to begin your journey.</p>
       </div>
@@ -1638,24 +1638,17 @@
           maxOutputTokens: 1024,
         }
       };
-      const GEMINI_DIRECT_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=AIzaSyAmKix1Pa_LZcdK4wJCLxmnhWq84EHa_Ew`;
-      let resp;
-      try {
-        resp = await fetch('/api/quiz-generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body)
-        });
-        // If proxy isn't available in production, fall back to direct API call
-        if (!resp.ok && (resp.status === 503 || resp.status === 404)) throw new Error('proxy-unavailable');
-      } catch(_) {
-        resp = await fetch(GEMINI_DIRECT_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body)
-        });
-      }
+      // Call Gemini API directly (works in all environments: localhost, Cloud Run, Firebase)
+      const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=AIzaSyAmKix1Pa_LZcdK4wJCLxmnhWq84EHa_Ew`;
+      const resp = await fetch(GEMINI_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
       if (!resp.ok) throw new Error(`Gemini API error ${resp.status}`);
+      // Guard against proxy/CDN returning an HTML page instead of JSON
+      const ct = resp.headers.get('content-type') || '';
+      if (!ct.includes('application/json')) throw new Error('Gemini response was not JSON');
       const data = await resp.json();
       const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
       const clean = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
@@ -3583,40 +3576,27 @@ Return this structure:
   {"question": "...", "answers": [{"id":"1","text":"..."},{"id":"2","text":"..."},{"id":"3","text":"..."},{"id":"4","text":"..."}], "correctId": "1-4"}
 ]}`;
 
-      console.log('[Quiz] fetchQuizBatch — slots:', slots, '| known:', quizAskedQuestions.length);
-      const GEMINI_DIRECT_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=AIzaSyAmKix1Pa_LZcdK4wJCLxmnhWq84EHa_Ew`;
+      // Call Gemini API directly — reliable in all environments (localhost, Cloud Run, static hosting)
+      const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=AIzaSyAmKix1Pa_LZcdK4wJCLxmnhWq84EHa_Ew`;
       let resp;
-      try {
-        resp = await fetch('/api/quiz-generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ role: 'user', parts: [{ text: prompt }] }],
-            generationConfig: {
-              temperature: 0.9,
-              maxOutputTokens: 4096,
-            }
-          })
-        });
-        // If proxy reports key not set (503) or route missing (404), hit Gemini directly
-        if (!resp.ok && (resp.status === 503 || resp.status === 404 || resp.status === 502)) throw new Error('proxy-unavailable');
-      } catch(_) {
-        resp = await fetch(GEMINI_DIRECT_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ role: 'user', parts: [{ text: prompt }] }],
-            generationConfig: {
-              temperature: 0.9,
-              maxOutputTokens: 4096,
-            }
-          })
-        });
-      }
+      resp = await fetch(GEMINI_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.9,
+            maxOutputTokens: 4096,
+          }
+        })
+      });
       if (!resp.ok) {
         const errText = await resp.text();
         throw new Error(`Gemini API ${resp.status}: ${errText.slice(0,200)}`);
       }
+      // Guard: ensure response is JSON (not an HTML error page)
+      const ct = resp.headers.get('content-type') || '';
+      if (!ct.includes('application/json')) throw new Error('Gemini response was not JSON (got: ' + ct + ')');
       const data = await resp.json();
       const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
       const parsed = extractJSON(text);
