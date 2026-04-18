@@ -9,8 +9,8 @@ try {
   const envPath = new URL('.env', import.meta.url).pathname.replace(/^\/([A-Z]:)/, '$1');
   readFileSync(envPath, 'utf8').split('\n').forEach(line => {
     const [key, ...val] = line.trim().split('=');
-    if (key && !key.startsWith('#') && val.length && !process.env[key]) {
-      process.env[key] = val.join('=');
+    if (key && !key.startsWith('#') && val.length) {
+      process.env[key] = val.join('=');  // .env always takes precedence
     }
   });
   console.log('✅ Loaded .env for local development');
