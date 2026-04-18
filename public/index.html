@@ -747,18 +747,32 @@
   .quiz-card-peppa span { color: #831843 !important; }
   .quiz-card-kfp { background: linear-gradient(135deg,#1c1917,#292524) !important; border: 3px solid #dc2626 !important; box-shadow: 0 0 18px rgba(220,38,38,0.35) !important; }
   .quiz-card-kfp span { color: #fef3c7 !important; }
-  /* Ben Elf walking animation */
-  @keyframes benElfWalkIn  { from { left: -220px; } to { left: 20px; } }
-  @keyframes benElfWalkOut { from { left: 20px; }  to { left: -260px; } }
-  #quiz-ben-elf {
-    position: fixed; bottom: 0; left: -220px; z-index: 99997;
-    width: clamp(140px,15vw,200px); pointer-events: none; opacity: 0;
-    transform: scaleX(-1);
-    filter: drop-shadow(0 0 14px rgba(255,220,60,0.75));
-    transition: opacity 0.3s ease;
+  /* Ben & Holly celebration toast — characters placed by JS */
+  @keyframes bhPopIn  { 0%{opacity:0;scale:0;rotate:-8deg} 65%{opacity:1;scale:1.12;rotate:3deg} 100%{opacity:1;scale:1;rotate:0deg} }
+  @keyframes bhPopOut { 0%{opacity:1;scale:1} 100%{opacity:0;scale:0;rotate:6deg} }
+  @keyframes bhFloat  { 0%,100%{translate:0 0;rotate:0deg} 50%{translate:0 -18px;rotate:3deg} }
+  @keyframes bhGlow   { 0%,100%{filter:drop-shadow(0 0 18px rgba(255,220,60,0.6))} 50%{filter:drop-shadow(0 0 42px rgba(255,220,60,1))} }
+  #bh-toast {
+    position: fixed; inset: 0; z-index: 99998;
+    pointer-events: none;
   }
-  #quiz-ben-elf.walk-in  { opacity:1; animation: benElfWalkIn  0.65s cubic-bezier(0.34,1.56,0.64,1) forwards; }
-  #quiz-ben-elf.walk-out { opacity:1; animation: benElfWalkOut 0.55s ease-in  forwards; }
+  .bh-toast-char {
+    position: absolute;
+    width: clamp(160px, 32vw, 400px);
+    height: auto;
+    opacity: 0;
+    transform: translate(-50%, -50%);
+  }
+  #bh-toast.show .bh-toast-char {
+    animation: bhPopIn 0.55s cubic-bezier(0.34,1.56,0.64,1) forwards,
+               bhFloat 1.6s ease-in-out 0.55s infinite,
+               bhGlow  1.8s ease-in-out 0.55s infinite;
+  }
+  #bh-toast.hide .bh-toast-char {
+    animation: bhPopOut 0.35s ease-in forwards !important;
+  }
+  /* legacy hidden element */
+  #quiz-ben-elf { display: none; }
   /* Quiz Win overlay */
   #quiz-win-overlay {
     position: fixed;
@@ -1416,8 +1430,9 @@
         100% { transform:translateY(-30px) rotate(4deg) scale(1.1); }
       }
     </style>
-    <!-- Ben Elf walking sprite (hidden until Ben & Holly celebration) -->
-    <img id="quiz-ben-elf" src="assets/bh/ben_elf.png" alt="Ben Elf" />
+    <!-- Ben & Holly celebration toast — characters injected dynamically by JS -->
+    <img id="quiz-ben-elf" src="assets/bh/ben_elf.png" alt="" style="display:none" />
+    <div id="bh-toast"></div>
 
     <!-- Quiz Win Overlay -->
     <div id="quiz-win-overlay">
@@ -2216,7 +2231,6 @@
     window.playJoySound = playJoySound;
 
     function playWrongSound() {
-      if (peppaMuted) return;
       try {
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         if (!AudioContext) return;
@@ -3993,58 +4007,79 @@ Return this structure:
       // (Character image overlays removed per user request.)
     }
 
-    // ── Ben Elf celebration (Ben & Holly theme) ────────────────────────
-    let _benElfT = null;
-    function triggerBenElfCelebration() {
-      playBenElfHorn();
-      const el = document.getElementById('quiz-ben-elf');
-      if (!el) return;
-      if (_benElfT) { clearTimeout(_benElfT); }
-      el.classList.remove('walk-in','walk-out');
-      void el.offsetWidth; // force reflow
-      el.classList.add('walk-in');
-      _benElfT = setTimeout(() => {
-        el.classList.remove('walk-in');
-        el.classList.add('walk-out');
-        _benElfT = setTimeout(() => {
-          el.classList.remove('walk-out');
-          el.style.opacity = '0';
-        }, 600);
-      }, 2700);
-    }
+    // ── Ben & Holly celebration toast ────────────────────────────────────
+    const _BH_CHARS = [
+      'assets/bh/ben.png',
+      'assets/bh/holly.png',
+      'assets/bh/gaston.png',
+      'assets/bh/nannyplum.png',
+      'assets/bh/wiseoldelf.png',
+      'assets/bh/mrmrself.png',
+      'assets/bh/kingandqueen.png',
+      'assets/bh/sqiurrel.png',
+      'assets/bh/hollywand.png',
+      'assets/bh/benhorn.png',
+    ];
+    const _BH_SOUNDS = ['assets/bh/fairy_wow.mp3', 'assets/bh/recorder.mp3'];
 
-    // ── Ben Elf horn fanfare (sawtooth + square for brass texture) ───────
-    function playBenElfHorn() {
+    let _bhToastT = null;
+    function triggerBenElfCelebration() {
+      // Random sound
       try {
-        const AC = window.AudioContext || window.webkitAudioContext;
-        if (!AC) return;
-        const ctx = new AC();
-        const master = ctx.createGain();
-        master.gain.setValueAtTime(0.30, ctx.currentTime);
-        master.connect(ctx.destination);
-        // Ta-ta-ta-TAAA fanfare (horn melody)
-        const fanfare = [
-          [392, 0.00, 0.20], // G4
-          [392, 0.22, 0.18], // G4
-          [392, 0.42, 0.18], // G4
-          [523, 0.62, 0.38], // C5
-          [659, 1.02, 0.22], // E5
-          [784, 1.26, 0.55], // G5 long
-        ];
-        fanfare.forEach(([freq, delay, dur]) => {
-          const t = ctx.currentTime + delay;
-          ['sawtooth','square'].forEach((type, ti) => {
-            const osc = ctx.createOscillator(), gain = ctx.createGain();
-            osc.type = type; osc.frequency.setValueAtTime(freq, t);
-            if (ti === 1) osc.detune.value = 8;
-            gain.gain.setValueAtTime(0, t);
-            gain.gain.linearRampToValueAtTime(ti === 0 ? 0.4 : 0.1, t + 0.04);
-            gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
-            osc.connect(gain); gain.connect(master);
-            osc.start(t); osc.stop(t + dur + 0.05);
-          });
-        });
+        const snd = new Audio(_BH_SOUNDS[Math.floor(Math.random() * _BH_SOUNDS.length)]);
+        snd.volume = 0.85;
+        snd.play().catch(() => {});
       } catch(_) {}
+
+      const toast = document.getElementById('bh-toast');
+      if (!toast) return;
+
+      // Cancel any pending hide
+      if (_bhToastT) { clearTimeout(_bhToastT); _bhToastT = null; }
+      toast.classList.remove('show', 'hide');
+
+      // Pick 2 unique random characters
+      const pool = [..._BH_CHARS].sort(() => Math.random() - 0.5);
+      const picked = pool.slice(0, 2);
+
+      // Clear previous characters
+      toast.innerHTML = '';
+
+      // Each character gets a random position biased towards the centre third
+      // Char 0: left half, Char 1: right half — so they don't overlap
+      picked.forEach((src, i) => {
+        const img = document.createElement('img');
+        img.src = src;
+        img.className = 'bh-toast-char';
+        img.alt = '';
+
+        // X: left char 20-48%, right char 52-80%  (% of viewport, centred on that point)
+        const xMin = i === 0 ? 20 : 52;
+        const x = xMin + Math.random() * 28;
+        // Y: 25-65% from top
+        const y = 25 + Math.random() * 40;
+        img.style.left = `${x}%`;
+        img.style.top  = `${y}%`;
+
+        // Stagger second character slightly
+        if (i === 1) {
+          img.style.animationDelay = '0.09s, 0.64s, 0.64s';
+        }
+        toast.appendChild(img);
+      });
+
+      void toast.offsetWidth; // force reflow
+      toast.classList.add('show');
+
+      // Hold 2.2 s then pop out
+      _bhToastT = setTimeout(() => {
+        toast.classList.remove('show');
+        toast.classList.add('hide');
+        _bhToastT = setTimeout(() => {
+          toast.classList.remove('hide');
+          toast.innerHTML = ''; // clean up DOM
+        }, 380);
+      }, 2200);
     }
 
     // ── Confetti burst ──────────────────────────────────────────────────────
@@ -4076,7 +4111,6 @@ Return this structure:
 
     // ── Quiz correct-answer fanfare (richer than basic success chirp) ────────
     function playQuizCorrectSound() {
-      if (peppaMuted) return;
       try {
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
         if (!AudioCtx) return;
