@@ -13,6 +13,7 @@ exports.quizGenerate = onRequest(
   {
     secrets: [geminiApiKey],
     cors: true,
+    invoker: 'public',
     timeoutSeconds: 60,
     memory: '256MiB',
     region: 'us-central1',
