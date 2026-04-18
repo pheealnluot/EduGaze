@@ -2,6 +2,19 @@ import express from 'express';
 import compression from 'compression';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { readFileSync } from 'fs';
+
+// Auto-load .env for local development (file is gitignored, never committed)
+try {
+  const envPath = new URL('.env', import.meta.url).pathname.replace(/^\/([A-Z]:)/, '$1');
+  readFileSync(envPath, 'utf8').split('\n').forEach(line => {
+    const [key, ...val] = line.trim().split('=');
+    if (key && !key.startsWith('#') && val.length && !process.env[key]) {
+      process.env[key] = val.join('=');
+    }
+  });
+  console.log('✅ Loaded .env for local development');
+} catch (_) { /* .env not present — using system env vars (production) */ }
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
