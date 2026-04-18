@@ -740,6 +740,19 @@
   .quiz-theme-chip:hover:not(.active) {
     border-color: rgba(139,92,246,0.4); color: #e2e8f0;
   }
+  /* Question source pill (2-col grid toggle) */
+  .qsrc-pill {
+    display: flex; align-items: center; justify-content: center;
+    padding: 0.55rem 0.5rem; border-radius: 0.75rem;
+    font-size: 0.78rem; font-weight: 700; cursor: pointer;
+    transition: all 0.2s; border: 2px solid rgba(139,92,246,0.15);
+    background: rgba(30,41,59,0.7); color: #94a3b8; user-select: none;
+  }
+  .qsrc-pill.active-source {
+    background: rgba(139,92,246,0.25); border-color: rgba(139,92,246,0.7);
+    color: #c4b5fd; box-shadow: 0 0 12px rgba(139,92,246,0.25);
+  }
+  .qsrc-pill:hover:not(.active-source) { border-color: rgba(139,92,246,0.4); color: #e2e8f0; }
   /* Theme-specific card styles */
   .quiz-card-bh { background: linear-gradient(135deg,#dbeafe,#fce7f3) !important; border: 3px solid #93c5fd !important; box-shadow: 0 0 20px rgba(147,197,253,0.4) !important; }
   .quiz-card-bh span { color: #1e3a5f !important; text-shadow: 0 1px 4px rgba(255,255,255,0.9); }
@@ -773,6 +786,92 @@
   }
   /* legacy hidden element */
   #quiz-ben-elf { display: none; }
+
+  /* ── Quiz viewport-fill layout ──────────────────────────────────────────
+     Applied to <body> when entering quiz mode so everything sits in one
+     screen with no scrolling needed.
+  ─────────────────────────────────────────────────────────────────────── */
+  body.quiz-active {
+    height: 100dvh;
+    padding: 0.25rem !important;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch !important;
+  }
+  body.quiz-active header {
+    margin-bottom: 0.25rem !important;
+  }
+  body.quiz-active nav#category-tabs {
+    display: none !important;
+  }
+  /* main fills remaining height after header */
+  body.quiz-active main {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    align-items: stretch !important;
+    justify-content: flex-start !important;
+  }
+  /* view-quiz: outer CSS Grid with auto/1fr rows.
+     Guarantees the answer grid gets a truly definite height for 1fr rows. */
+  body.quiz-active #view-quiz {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    display: grid !important;
+    grid-template-rows: auto 1fr;
+    align-items: stretch;
+    gap: 1vh;
+    width: 100%;
+    max-width: none !important;
+    padding: 0 clamp(10px, 2vw, 30px);
+    box-sizing: border-box;
+  }
+  /* Question row: natural height */
+  body.quiz-active #view-quiz > .quiz-question-section {
+    width: 100%;
+    max-width: 100% !important;
+  }
+  /* Answer grid: Fills the 1fr row. Rows are 1fr 1fr to stretch equally. */
+  body.quiz-active #quiz-answers-grid {
+    width: 100% !important;
+    max-width: none !important;
+    height: 100%;
+    min-height: 0;
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    /* Gaps scale with viewport height for that "larger distance" feel */
+    gap: clamp(16px, 4vh, 60px) clamp(16px, 3vw, 50px);
+    padding: 0 0 clamp(12px, 2vh, 24px);
+    box-sizing: border-box;
+  }
+  /* Answer cards: display:flex ensures content is centered when boxes are huge */
+  body.quiz-active #quiz-answers-grid > div {
+    height: 100% !important;
+    min-height: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: center !important;
+    align-items: center !important;
+    text-align: center !important;
+    padding: clamp(12px, 3vh, 40px) clamp(12px, 2vw, 30px) !important;
+    border-radius: 1.5rem !important;
+  }
+  /* Question font scales down to stay compact */
+  body.quiz-active #quiz-display-question {
+    font-size: clamp(1.1rem, 3vw, 2.4rem) !important;
+    line-height: 1.2 !important;
+    padding: clamp(6px, 1vh, 14px) !important;
+  }
+  /* Answer text: scale max font size so it "fills" the tall box */
+  body.quiz-active #quiz-answers-grid span {
+    font-size: clamp(1rem, 3.5vh, 2.5rem) !important;
+    font-weight: 800 !important;
+    width: 100%;
+  }
+  body.quiz-active .quiz-score-row { margin-bottom: 0 !important; }
   /* Quiz Win overlay */
   #quiz-win-overlay {
     position: fixed;
@@ -984,7 +1083,7 @@
     <!-- Landing Page (Hub) -->
     <div id="view-landing" class="w-full flex flex-col items-center gap-12 transition-all duration-500">
       <div class="text-center space-y-4 mb-4">
-        <p style="font-size:0.6rem;color:#1f2937;font-family:monospace;letter-spacing:0.06em;margin-bottom:-0.5rem">v 18-Apr-26 19:09:10</p>
+        <p style="font-size:0.6rem;color:#1f2937;font-family:monospace;letter-spacing:0.06em;margin-bottom:-0.5rem">v 18-Apr-26 23:41:00</p>
         <h2 class="text-5xl md:text-6xl font-black text-white tracking-tight">Welcome, <span class="bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-400">Explorer</span></h2>
         <p class="text-slate-400 text-lg md:text-xl font-medium">Choose an activity to begin your journey.</p>
       </div>
@@ -1209,31 +1308,31 @@
     </div>
 
     <!-- Quiz View -->
-    <div id="view-quiz" class="w-full flex flex-col items-center gap-16 transition-opacity hidden">
-      <!-- Score row + question box + flanking arrows, then badge below -->
-      <div class="w-full max-w-5xl px-4 flex flex-col gap-1">
-        <!-- Score dots: their own centred row -->
-        <div class="flex items-center gap-3 justify-center mb-2">
+    <div id="view-quiz" class="w-full flex flex-col items-center gap-4 transition-opacity hidden">
+      <!-- Score + question section -->
+      <div class="quiz-question-section w-full max-w-5xl px-4 flex flex-col gap-1">
+        <!-- Score dots -->
+        <div class="quiz-score-row flex items-center gap-3 justify-center mb-1">
           <span class="text-xs font-bold uppercase tracking-[0.2em] text-violet-400">Quiz</span>
           <div id="quiz-score-bar" class="flex items-center gap-1.5"><!-- filled by JS --></div>
         </div>
-        <!-- Question text with arrows flanking it -->
-        <div class="flex items-center gap-4">
-          <button id="btn-quiz-prev" class="w-12 h-12 rounded-full bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 flex flex-shrink-0 items-center justify-center transition-all disabled:opacity-30 disabled:pointer-events-none">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+        <!-- Question text with arrows -->
+        <div class="flex items-center gap-3">
+          <button id="btn-quiz-prev" class="w-10 h-10 rounded-full bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 flex flex-shrink-0 items-center justify-center transition-all disabled:opacity-30 disabled:pointer-events-none">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
           </button>
-          <h2 id="quiz-display-question" class="flex-1 text-4xl md:text-5xl font-extrabold text-center text-slate-100 tracking-tight leading-tight">
+          <h2 id="quiz-display-question" class="flex-1 text-3xl md:text-4xl font-extrabold text-center text-slate-100 tracking-tight leading-tight">
             Loading quiz...
           </h2>
-          <button id="btn-quiz-next" class="w-12 h-12 rounded-full bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 flex flex-shrink-0 items-center justify-center transition-all disabled:opacity-30 disabled:pointer-events-none">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+          <button id="btn-quiz-next" class="w-10 h-10 rounded-full bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 flex flex-shrink-0 items-center justify-center transition-all disabled:opacity-30 disabled:pointer-events-none">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
           </button>
         </div>
-        <!-- AI/FB badge: sits below question, left-aligned, offset to clear the arrow -->
-        <div id="quiz-source-badge" style="padding-left:4rem;margin-top:0.3rem;min-height:1.3rem"></div>
+        <!-- AI/FB badge -->
+        <div id="quiz-source-badge" style="padding-left:3.5rem;margin-top:0.2rem;min-height:1.2rem"></div>
       </div>
       <!-- Answer grid -->
-      <div id="quiz-answers-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-8 w-full max-w-2xl">
+      <div id="quiz-answers-grid" class="grid grid-cols-2 gap-4 w-full max-w-4xl px-4">
         <!-- Generated by JS -->
       </div>
     </div>
@@ -1250,6 +1349,24 @@
 
         <div class="space-y-7">
 
+          <!-- Question Source -->
+          <div class="space-y-3">
+            <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">📡 Question Source</label>
+            <div class="grid grid-cols-2 gap-2">
+              <button id="qsrc-btn-ai"
+                class="qsrc-pill active-source"
+                title="Questions are generated live by Gemini AI, personalised to the selected subjects and age">
+                🤖 AI Generated
+              </button>
+              <button id="qsrc-btn-bank"
+                class="qsrc-pill"
+                title="Questions are drawn from the built-in question bank — no internet needed">
+                📚 Question Bank
+              </button>
+            </div>
+            <p class="text-[10px] text-slate-500">AI generates fresh questions every time. Question Bank uses the built-in set (no AI needed).</p>
+          </div>
+
           <!-- Subjects -->
           <div class="space-y-3">
             <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">Subjects</label>
@@ -1265,7 +1382,7 @@
           </div>
 
           <!-- Age Range -->
-          <div class="space-y-3 border-t border-slate-800 pt-5">
+          <div class="space-y-3 border-t border-slate-800 pt-5" id="quiz-age-section">
             <div class="flex justify-between items-center">
               <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">Target Age</label>
               <span id="quiz-age-display" class="text-violet-400 font-black text-lg">6 years old</span>
@@ -3270,7 +3387,10 @@
       qReadEnabled: true,
       qReadTimeMs: 1000,
       theme: 'ben-holly',
+      questionSource: 'ai',
     };
+    // Migrate saved settings that are missing the new field
+    if (!initialSettings.questionSource) initialSettings.questionSource = 'ai';
 
     let quizSettings = initialSettings;
 
@@ -3312,6 +3432,7 @@
     }
 
     function restoreHeaderFromQuizMode() {
+      document.body.classList.remove('quiz-active');
       // Restore btn-education
       btnEducation.innerHTML = 'Education Mode';
       btnEducation.className = 'flex items-center gap-2 px-4 py-2 rounded-lg transition-all bg-slate-800 text-slate-400 hover:bg-slate-700';
@@ -3442,8 +3563,20 @@
         qReadSlider.value = val;
         saveQuizSettings();
       };
-      qReadInput.oninput = e => syncQRead(e.target.value);
-      qReadSlider.oninput = e => syncQRead(e.target.value);
+      // Question Source toggle
+      const updateQSourceUI = () => {
+        document.getElementById('qsrc-btn-ai').classList.toggle('active-source', quizSettings.questionSource === 'ai');
+        document.getElementById('qsrc-btn-bank').classList.toggle('active-source', quizSettings.questionSource === 'bank');
+        const ageSection = document.getElementById('quiz-age-section');
+        if (ageSection) ageSection.style.opacity = quizSettings.questionSource === 'bank' ? '0.4' : '1';
+      };
+      document.getElementById('qsrc-btn-ai').onclick = () => {
+        quizSettings.questionSource = 'ai'; updateQSourceUI(); saveQuizSettings();
+      };
+      document.getElementById('qsrc-btn-bank').onclick = () => {
+        quizSettings.questionSource = 'bank'; updateQSourceUI(); saveQuizSettings();
+      };
+      updateQSourceUI();
     }
 
     function updateQuizMusicToggleUI() {
@@ -3618,10 +3751,79 @@ Return this structure:
       return batch;
     }
 
+    // ── Built-in question bank (Bank mode + AI error fallback) ────────────────
+    const QUIZ_FALLBACK_BANK = [
+      {subject:'Pure Chinese', question:'下面哪个是动物？', answers:[{id:'1',text:'苹果'},{id:'2',text:'狗'},{id:'3',text:'桌子'},{id:'4',text:'书'}], correctId:'2'},
+      {subject:'Pure Chinese', question:'什么颜色是天空？', answers:[{id:'1',text:'红色'},{id:'2',text:'绿色'},{id:'3',text:'蓝色'},{id:'4',text:'黄色'}], correctId:'3'},
+      {subject:'Pure Chinese', question:'哪个数字最大？', answers:[{id:'1',text:'三'},{id:'2',text:'七'},{id:'3',text:'五'},{id:'4',text:'二'}], correctId:'2'},
+      {subject:'Pure Chinese', question:'妈妈的妈妈叫什么？', answers:[{id:'1',text:'阿姨'},{id:'2',text:'姐姐'},{id:'3',text:'奶奶'},{id:'4',text:'外婆'}], correctId:'4'},
+      {subject:'Pure Chinese', question:'什么动物会飞？', answers:[{id:'1',text:'狗'},{id:'2',text:'猫'},{id:'3',text:'鸟'},{id:'4',text:'鱼'}], correctId:'3'},
+      {subject:'Pure Chinese', question:'苹果是什么颜色的？', answers:[{id:'1',text:'蓝色'},{id:'2',text:'红色'},{id:'3',text:'黑色'},{id:'4',text:'紫色'}], correctId:'2'},
+      {subject:'Pure Chinese', question:'哪个是水果？', answers:[{id:'1',text:'桌子'},{id:'2',text:'椅子'},{id:'3',text:'香蕉'},{id:'4',text:'书包'}], correctId:'3'},
+      {subject:'Pure Chinese', question:'"\u5927"的反义词是什么？', answers:[{id:'1',text:'快'},{id:'2',text:'长'},{id:'3',text:'高'},{id:'4',text:'小'}], correctId:'4'},
+      {subject:'Pure Chinese', question:'太阳什么时候出来？', answers:[{id:'1',text:'晚上'},{id:'2',text:'早上'},{id:'3',text:'下午'},{id:'4',text:'凌晨'}], correctId:'2'},
+      {subject:'Pure Chinese', question:'水是什么颜色？', answers:[{id:'1',text:'红色'},{id:'2',text:'蓝色'},{id:'3',text:'无色'},{id:'4',text:'黄色'}], correctId:'3'},
+      {subject:'English', question:'Which word is a noun?', answers:[{id:'1',text:'Run'},{id:'2',text:'Happy'},{id:'3',text:'Apple'},{id:'4',text:'Quickly'}], correctId:'3'},
+      {subject:'English', question:"What is the plural of 'child'?", answers:[{id:'1',text:'Childs'},{id:'2',text:'Children'},{id:'3',text:'Childes'},{id:'4',text:"Child's"}], correctId:'2'},
+      {subject:'English', question:'Which sentence is correct past tense?', answers:[{id:'1',text:'She runned fast'},{id:'2',text:'She run fast'},{id:'3',text:'She ran fast'},{id:'4',text:'She runs fast'}], correctId:'3'},
+      {subject:'English', question:"What does 'enormous' mean?", answers:[{id:'1',text:'Very small'},{id:'2',text:'Very fast'},{id:'3',text:'Very large'},{id:'4',text:'Very loud'}], correctId:'3'},
+      {subject:'English', question:'What punctuation ends a question?', answers:[{id:'1',text:'Full stop'},{id:'2',text:'Comma'},{id:'3',text:'Question mark'},{id:'4',text:'Exclamation mark'}], correctId:'3'},
+      {subject:'English', question:"Synonym for 'happy'?", answers:[{id:'1',text:'Sad'},{id:'2',text:'Angry'},{id:'3',text:'Joyful'},{id:'4',text:'Tired'}], correctId:'3'},
+      {subject:'English', question:"What does 'curious' mean?", answers:[{id:'1',text:'Bored'},{id:'2',text:'Eager to know things'},{id:'3',text:'Very tired'},{id:'4',text:'Very hungry'}], correctId:'2'},
+      {subject:'English', question:"Antonym of 'hot'?", answers:[{id:'1',text:'Warm'},{id:'2',text:'Boiling'},{id:'3',text:'Cold'},{id:'4',text:'Spicy'}], correctId:'3'},
+      {subject:'Chinese', question:'What does "ni hao" (你好) mean?', answers:[{id:'1',text:'Good night'},{id:'2',text:'Thank you'},{id:'3',text:'Hello'},{id:'4',text:'Goodbye'}], correctId:'3'},
+      {subject:'Chinese', question:'How do you say "cat" in Mandarin?', answers:[{id:'1',text:'Gou (狗)'},{id:'2',text:'Mao (猫)'},{id:'3',text:'Niao (鸟)'},{id:'4',text:'Yu (鱼)'}], correctId:'2'},
+      {subject:'Chinese', question:'What does "xie xie" (谢谢) mean?', answers:[{id:'1',text:'Sorry'},{id:'2',text:'Please'},{id:'3',text:'Hello'},{id:'4',text:'Thank you'}], correctId:'4'},
+      {subject:'Chinese', question:'Colour of "hong se" (红色)?', answers:[{id:'1',text:'Blue'},{id:'2',text:'Green'},{id:'3',text:'Red'},{id:'4',text:'Yellow'}], correctId:'3'},
+      {subject:'Chinese', question:'What does "da" (大) mean?', answers:[{id:'1',text:'Small'},{id:'2',text:'Big'},{id:'3',text:'Fast'},{id:'4',text:'Old'}], correctId:'2'},
+      {subject:'Chinese', question:'What number is "wu" (五)?', answers:[{id:'1',text:'3'},{id:'2',text:'4'},{id:'3',text:'5'},{id:'4',text:'6'}], correctId:'3'},
+      {subject:'Math', question:'What is 5 + 3?', answers:[{id:'1',text:'6'},{id:'2',text:'7'},{id:'3',text:'8'},{id:'4',text:'9'}], correctId:'3'},
+      {subject:'Math', question:'How many sides does a triangle have?', answers:[{id:'1',text:'2'},{id:'2',text:'3'},{id:'3',text:'4'},{id:'4',text:'5'}], correctId:'2'},
+      {subject:'Math', question:'What is 4 x 3?', answers:[{id:'1',text:'10'},{id:'2',text:'11'},{id:'3',text:'12'},{id:'4',text:'14'}], correctId:'3'},
+      {subject:'Math', question:'Largest: 47, 74, 54?', answers:[{id:'1',text:'47'},{id:'2',text:'74'},{id:'3',text:'54'},{id:'4',text:'45'}], correctId:'2'},
+      {subject:'Science', question:'How many legs does a spider have?', answers:[{id:'1',text:'4'},{id:'2',text:'6'},{id:'3',text:'8'},{id:'4',text:'10'}], correctId:'3'},
+      {subject:'Science', question:'Planet closest to the Sun?', answers:[{id:'1',text:'Earth'},{id:'2',text:'Venus'},{id:'3',text:'Mars'},{id:'4',text:'Mercury'}], correctId:'4'},
+      {subject:'Science', question:'What do plants need to make food?', answers:[{id:'1',text:'Darkness'},{id:'2',text:'Sunlight'},{id:'3',text:'Salt'},{id:'4',text:'Sugar'}], correctId:'2'},
+      {subject:'General Knowledge', question:'Mix red + blue =?', answers:[{id:'1',text:'Green'},{id:'2',text:'Purple'},{id:'3',text:'Orange'},{id:'4',text:'Yellow'}], correctId:'2'},
+      {subject:'General Knowledge', question:'Days in a week?', answers:[{id:'1',text:'5'},{id:'2',text:'6'},{id:'3',text:'7'},{id:'4',text:'8'}], correctId:'3'},
+      {subject:'General Knowledge', question:'Country with the Great Wall?', answers:[{id:'1',text:'Japan'},{id:'2',text:'India'},{id:'3',text:'China'},{id:'4',text:'Korea'}], correctId:'3'},
+    ];
+    function pickFromBank() {
+      const activeSubs = quizSettings.subjects;
+      const bySubject = QUIZ_FALLBACK_BANK.filter(f => activeSubs.includes(f.subject));
+      const pool_all  = bySubject.length > 0 ? bySubject : QUIZ_FALLBACK_BANK;
+      const unused    = pool_all.filter(f => !quizAskedQuestions.includes(f.question));
+      const pool      = unused.length > 0 ? unused : pool_all;
+      return { ...pool[Math.floor(Math.random() * pool.length)], _source: 'fallback' };
+    }
+
     async function generateQuizQuestion() {
       const grid = document.getElementById('quiz-answers-grid');
       const questionEl = document.getElementById('quiz-display-question');
       if (!grid || !questionEl) return;
+
+      // ── BANK MODE: skip AI entirely ─────────────────────────────────────────
+      if (quizSettings.questionSource === 'bank') {
+        if (quizQuestionQueue.length > 0) {
+          quizCurrentQ = quizQuestionQueue.shift();
+        } else {
+          quizCurrentQ = pickFromBank();
+          // Pre-load more into queue for smooth navigation
+          for (let i = 0; i < 4; i++) quizQuestionQueue.push(pickFromBank());
+        }
+        if (quizCurrentQ?.question && !quizAskedQuestions.includes(quizCurrentQ.question)) {
+          quizAskedQuestions.push(quizCurrentQ.question);
+          if (quizAskedQuestions.length > 150) quizAskedQuestions.shift();
+          saveQuizAsked();
+        }
+        quizHistory.push(quizCurrentQ);
+        quizHistoryIdx = quizHistory.length - 1;
+        updateQuizNavButtons();
+        renderQuizBoard();
+        return;
+      }
+
+      // ── AI MODE ───────────────────────────────────────────────────────────────────────
 
       // If queue has items, use next one immediately (no loading flicker)
       if (quizQuestionQueue.length > 0) {
@@ -3692,58 +3894,10 @@ Return this structure:
               <button onclick="window.generateQuizQuestion()" style="font-size:0.6rem;background:#ef4444;color:white;border-radius:4px;padding:2px 6px;font-weight:bold;cursor:pointer">Retry AI</button>
             </div>`;
         }
-        // Fallback bank — each question tagged with its subject for filtering
-        const fallbacks = [
-          // Pure Chinese
-          {subject:'Pure Chinese', question:'下面哪个是动物？', answers:[{id:'1',text:'苹果'},{id:'2',text:'狗'},{id:'3',text:'桌子'},{id:'4',text:'书'}], correctId:'2'},
-          {subject:'Pure Chinese', question:'什么颜色是天空？', answers:[{id:'1',text:'红色'},{id:'2',text:'绿色'},{id:'3',text:'蓝色'},{id:'4',text:'黄色'}], correctId:'3'},
-          {subject:'Pure Chinese', question:'哪个数字最大？', answers:[{id:'1',text:'三'},{id:'2',text:'七'},{id:'3',text:'五'},{id:'4',text:'二'}], correctId:'2'},
-          {subject:'Pure Chinese', question:'妈妈的妈妈叫什么？', answers:[{id:'1',text:'阿姨'},{id:'2',text:'姐姐'},{id:'3',text:'奶奶'},{id:'4',text:'外婆'}], correctId:'4'},
-          {subject:'Pure Chinese', question:'什么动物会飞？', answers:[{id:'1',text:'狗'},{id:'2',text:'猫'},{id:'3',text:'鸟'},{id:'4',text:'鱼'}], correctId:'3'},
-          {subject:'Pure Chinese', question:'苹果是什么颜色的？', answers:[{id:'1',text:'蓝色'},{id:'2',text:'红色'},{id:'3',text:'黑色'},{id:'4',text:'紫色'}], correctId:'2'},
-          {subject:'Pure Chinese', question:'哪个是水果？', answers:[{id:'1',text:'桌子'},{id:'2',text:'椅子'},{id:'3',text:'香蕉'},{id:'4',text:'书包'}], correctId:'3'},
-          {subject:'Pure Chinese', question:'"大"的反义词是什么？', answers:[{id:'1',text:'快'},{id:'2',text:'长'},{id:'3',text:'高'},{id:'4',text:'小'}], correctId:'4'},
-          {subject:'Pure Chinese', question:'太阳什么时候出来？', answers:[{id:'1',text:'晚上'},{id:'2',text:'早上'},{id:'3',text:'下午'},{id:'4',text:'凌晨'}], correctId:'2'},
-          {subject:'Pure Chinese', question:'水是什么颜色？', answers:[{id:'1',text:'红色'},{id:'2',text:'蓝色'},{id:'3',text:'无色'},{id:'4',text:'黄色'}], correctId:'3'},
-          // English
-          {subject:'English', question:'Which word is a noun?', answers:[{id:'1',text:'Run'},{id:'2',text:'Happy'},{id:'3',text:'Apple'},{id:'4',text:'Quickly'}], correctId:'3'},
-          {subject:'English', question:"What is the plural of 'child'?", answers:[{id:'1',text:'Childs'},{id:'2',text:'Children'},{id:'3',text:'Childes'},{id:'4',text:"Child's"}], correctId:'2'},
-          {subject:'English', question:'Which sentence is the correct past tense?', answers:[{id:'1',text:'She runned fast'},{id:'2',text:'She run fast'},{id:'3',text:'She ran fast'},{id:'4',text:'She runs fast'}], correctId:'3'},
-          {subject:'English', question:"What does 'enormous' mean?", answers:[{id:'1',text:'Very small'},{id:'2',text:'Very fast'},{id:'3',text:'Very large'},{id:'4',text:'Very loud'}], correctId:'3'},
-          {subject:'English', question:'What punctuation mark ends a question?', answers:[{id:'1',text:'Full stop'},{id:'2',text:'Comma'},{id:'3',text:'Question mark'},{id:'4',text:'Exclamation mark'}], correctId:'3'},
-          {subject:'English', question:"Which word is a synonym for 'happy'?", answers:[{id:'1',text:'Sad'},{id:'2',text:'Angry'},{id:'3',text:'Joyful'},{id:'4',text:'Tired'}], correctId:'3'},
-          {subject:'English', question:"What does 'curious' mean?", answers:[{id:'1',text:'Bored'},{id:'2',text:'Eager to know things'},{id:'3',text:'Very tired'},{id:'4',text:'Very hungry'}], correctId:'2'},
-          {subject:'English', question:"Which word is an antonym of 'hot'?", answers:[{id:'1',text:'Warm'},{id:'2',text:'Boiling'},{id:'3',text:'Cold'},{id:'4',text:'Spicy'}], correctId:'3'},
-          // Chinese (pinyin-aided)
-          {subject:'Chinese', question:'What does "ni hao" (你好) mean?', answers:[{id:'1',text:'Good night'},{id:'2',text:'Thank you'},{id:'3',text:'Hello'},{id:'4',text:'Goodbye'}], correctId:'3'},
-          {subject:'Chinese', question:'How do you say "cat" in Mandarin?', answers:[{id:'1',text:'Gou (狗)'},{id:'2',text:'Mao (猫)'},{id:'3',text:'Niao (鸟)'},{id:'4',text:'Yu (鱼)'}], correctId:'2'},
-          {subject:'Chinese', question:'What does "xie xie" (谢谢) mean?', answers:[{id:'1',text:'Sorry'},{id:'2',text:'Please'},{id:'3',text:'Hello'},{id:'4',text:'Thank you'}], correctId:'4'},
-          {subject:'Chinese', question:'What colour is "hong se" (红色)?', answers:[{id:'1',text:'Blue'},{id:'2',text:'Green'},{id:'3',text:'Red'},{id:'4',text:'Yellow'}], correctId:'3'},
-          {subject:'Chinese', question:'What does "da" (大) mean?', answers:[{id:'1',text:'Small'},{id:'2',text:'Big'},{id:'3',text:'Fast'},{id:'4',text:'Old'}], correctId:'2'},
-          {subject:'Chinese', question:'What number does "wu" (五) represent?', answers:[{id:'1',text:'3'},{id:'2',text:'4'},{id:'3',text:'5'},{id:'4',text:'6'}], correctId:'3'},
-          // Math
-          {subject:'Math', question:'What is 5 + 3?', answers:[{id:'1',text:'6'},{id:'2',text:'7'},{id:'3',text:'8'},{id:'4',text:'9'}], correctId:'3'},
-          {subject:'Math', question:'How many sides does a triangle have?', answers:[{id:'1',text:'2'},{id:'2',text:'3'},{id:'3',text:'4'},{id:'4',text:'5'}], correctId:'2'},
-          {subject:'Math', question:'What is 4 x 3?', answers:[{id:'1',text:'10'},{id:'2',text:'11'},{id:'3',text:'12'},{id:'4',text:'14'}], correctId:'3'},
-          {subject:'Math', question:'Which is the largest number?', answers:[{id:'1',text:'47'},{id:'2',text:'74'},{id:'3',text:'54'},{id:'4',text:'45'}], correctId:'2'},
-          // Science
-          {subject:'Science', question:'How many legs does a spider have?', answers:[{id:'1',text:'4'},{id:'2',text:'6'},{id:'3',text:'8'},{id:'4',text:'10'}], correctId:'3'},
-          {subject:'Science', question:'Which planet is closest to the Sun?', answers:[{id:'1',text:'Earth'},{id:'2',text:'Venus'},{id:'3',text:'Mars'},{id:'4',text:'Mercury'}], correctId:'4'},
-          {subject:'Science', question:'What do plants need to make food?', answers:[{id:'1',text:'Darkness'},{id:'2',text:'Sunlight'},{id:'3',text:'Salt'},{id:'4',text:'Sugar'}], correctId:'2'},
-          // General Knowledge
-          {subject:'General Knowledge', question:'What color do you get when you mix red and blue?', answers:[{id:'1',text:'Green'},{id:'2',text:'Purple'},{id:'3',text:'Orange'},{id:'4',text:'Yellow'}], correctId:'2'},
-          {subject:'General Knowledge', question:'How many days are in a week?', answers:[{id:'1',text:'5'},{id:'2',text:'6'},{id:'3',text:'7'},{id:'4',text:'8'}], correctId:'3'},
-          {subject:'General Knowledge', question:'Which country has the Great Wall?', answers:[{id:'1',text:'Japan'},{id:'2',text:'India'},{id:'3',text:'China'},{id:'4',text:'Korea'}], correctId:'3'},
-        ];
-        // 1. Restrict to active subjects  2. Exclude already-asked  3. Fall back to full pool if empty
-        const activeSubs = quizSettings.subjects;
-        const bySubject = fallbacks.filter(f => activeSubs.includes(f.subject));
-        const pool_all = bySubject.length > 0 ? bySubject : fallbacks;
-        const unused = pool_all.filter(f => !quizAskedQuestions.includes(f.question));
-        const pool = unused.length > 0 ? unused : pool_all;
-        quizCurrentQ = pool[Math.floor(Math.random() * pool.length)];
-        quizCurrentQ._source = 'fallback';
+        // Fallback to built-in bank on AI error
+        quizCurrentQ = pickFromBank();
       }
+
 
       if (quizCurrentQ?.question && !quizAskedQuestions.includes(quizCurrentQ.question)) {
         quizAskedQuestions.push(quizCurrentQ.question);
@@ -3822,7 +3976,8 @@ Return this structure:
         }
       }
       grid.innerHTML = '';
-      grid.className = 'grid grid-cols-1 sm:grid-cols-2 gap-8 w-full max-w-2xl';
+      // Class reset — quiz-active CSS overrides sizing in viewport-fill mode
+      grid.className = 'grid grid-cols-2 gap-4 w-full max-w-4xl px-4';
 
       // Question read time
       const questionContainer = questionEl.parentElement;
@@ -3896,10 +4051,10 @@ Return this structure:
       q.answers.forEach((answer, idx) => {
         const isCorrect = answer.id === q.correctId;
         const card = document.createElement('div');
-        card.className = 'relative overflow-hidden rounded-2xl p-6 h-48 flex items-center justify-center cursor-pointer transition-all duration-300 transform outline outline-2 outline-offset-4 select-none bg-slate-800 outline-transparent hover:bg-slate-700 hover:shadow-xl';
+        card.className = 'relative overflow-hidden rounded-2xl p-5 flex items-center justify-center cursor-pointer transition-all duration-300 transform outline outline-2 outline-offset-4 select-none bg-slate-800 outline-transparent hover:bg-slate-700 hover:shadow-xl';
 
         const textSpan = document.createElement('span');
-        textSpan.className = 'text-3xl font-semibold text-center text-slate-100 transition-colors z-10 pointer-events-none';
+        textSpan.className = 'text-xl md:text-2xl font-semibold text-center text-slate-100 transition-colors z-10 pointer-events-none';
         textSpan.textContent = answer.text;
         card.appendChild(textSpan);
 
@@ -4454,6 +4609,7 @@ Return this structure:
 
     function setQuizMode() {
       mode = 'quiz';
+      document.body.classList.add('quiz-active');
       isEditMode = false;
       viewLanding.classList.add('hidden');
       viewEducation.classList.add('hidden');
