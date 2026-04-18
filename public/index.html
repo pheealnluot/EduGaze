@@ -659,6 +659,195 @@
       animation-play-state: paused !important;
       transition: none !important;
     }
+  /* Quiz Mode Styles */
+  #quiz-settings-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.92);
+    backdrop-filter: blur(16px);
+    z-index: 10001;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.4s ease;
+  }
+  #quiz-settings-overlay.show {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .quiz-settings-panel {
+    background: linear-gradient(145deg, #1e293b, #0f172a);
+    border: 1px solid rgba(139, 92, 246, 0.2);
+    border-radius: 2rem;
+    padding: 2.5rem;
+    width: 100%;
+    max-width: 540px;
+    max-height: 90vh;
+    overflow-y: auto;
+    text-align: left;
+    box-shadow: 0 25px 60px -12px rgba(0, 0, 0, 0.6), 0 0 40px rgba(139, 92, 246, 0.1);
+    transform: translateY(24px);
+    transition: transform 0.4s ease;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(139, 92, 246, 0.3) transparent;
+  }
+  #quiz-settings-overlay.show .quiz-settings-panel {
+    transform: translateY(0);
+  }
+  .quiz-subject-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.45rem 1rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    border: 2px solid rgba(139, 92, 246, 0.2);
+    background: rgba(30, 41, 59, 0.7);
+    color: #94a3b8;
+    user-select: none;
+    white-space: nowrap;
+  }
+  .quiz-subject-chip.active {
+    background: rgba(139, 92, 246, 0.25);
+    border-color: rgba(139, 92, 246, 0.7);
+    color: #c4b5fd;
+  }
+  .quiz-subject-chip:hover:not(.active) {
+    border-color: rgba(139, 92, 246, 0.4);
+    color: #e2e8f0;
+  }
+  /* Theme selection chips */
+  .quiz-theme-chip {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    padding: 0.5rem 0.9rem; border-radius: 0.75rem;
+    font-size: 0.78rem; font-weight: 700; cursor: pointer;
+    transition: all 0.2s ease;
+    border: 2px solid rgba(139,92,246,0.15);
+    background: rgba(30,41,59,0.7); color: #94a3b8;
+    user-select: none; white-space: nowrap; width:100%;
+    justify-content: flex-start;
+  }
+  .quiz-theme-chip.active {
+    background: rgba(139,92,246,0.25);
+    border-color: rgba(139,92,246,0.7); color: #c4b5fd;
+    box-shadow: 0 0 12px rgba(139,92,246,0.25);
+  }
+  .quiz-theme-chip:hover:not(.active) {
+    border-color: rgba(139,92,246,0.4); color: #e2e8f0;
+  }
+  /* Theme-specific card styles */
+  .quiz-card-bh { background: linear-gradient(135deg,#dbeafe,#fce7f3) !important; border: 3px solid #93c5fd !important; box-shadow: 0 0 20px rgba(147,197,253,0.4) !important; }
+  .quiz-card-bh span { color: #1e3a5f !important; text-shadow: 0 1px 4px rgba(255,255,255,0.9); }
+  .quiz-card-peppa { background: linear-gradient(135deg,#fce7f3,#ffe4e6) !important; border: 3px solid #f9a8d4 !important; }
+  .quiz-card-peppa span { color: #831843 !important; }
+  .quiz-card-kfp { background: linear-gradient(135deg,#1c1917,#292524) !important; border: 3px solid #dc2626 !important; box-shadow: 0 0 18px rgba(220,38,38,0.35) !important; }
+  .quiz-card-kfp span { color: #fef3c7 !important; }
+  /* Ben Elf walking animation */
+  @keyframes benElfWalkIn  { from { left: -220px; } to { left: 20px; } }
+  @keyframes benElfWalkOut { from { left: 20px; }  to { left: -260px; } }
+  #quiz-ben-elf {
+    position: fixed; bottom: 0; left: -220px; z-index: 99997;
+    width: clamp(140px,15vw,200px); pointer-events: none; opacity: 0;
+    transform: scaleX(-1);
+    filter: drop-shadow(0 0 14px rgba(255,220,60,0.75));
+    transition: opacity 0.3s ease;
+  }
+  #quiz-ben-elf.walk-in  { opacity:1; animation: benElfWalkIn  0.65s cubic-bezier(0.34,1.56,0.64,1) forwards; }
+  #quiz-ben-elf.walk-out { opacity:1; animation: benElfWalkOut 0.55s ease-in  forwards; }
+  /* Quiz Win overlay */
+  #quiz-win-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.97);
+    backdrop-filter: blur(20px);
+    z-index: 20000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.7s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  #quiz-win-overlay.show {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .quiz-win-card {
+    background: linear-gradient(135deg, #1e293b, #0f172a);
+    border: 2px solid rgba(139, 92, 246, 0.4);
+    border-radius: 3rem;
+    padding: 3.5rem;
+    text-align: center;
+    max-width: 480px;
+    width: 90%;
+    box-shadow: 0 0 80px rgba(139, 92, 246, 0.2);
+    transform: scale(0.85) translateY(20px);
+    transition: all 0.7s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  }
+  #quiz-win-overlay.show .quiz-win-card {
+    transform: scale(1) translateY(0);
+  }
+  /* Quiz correct-answer confetti burst */
+  @keyframes quizConfettiFly {
+    0%   { transform: translate(0,0) rotate(0deg) scale(1); opacity: 1; }
+    100% { transform: translate(var(--cx), var(--cy)) rotate(var(--cr)) scale(0.4); opacity: 0; }
+  }
+  .quiz-confetti-piece {
+    position: fixed;
+    width: 10px; height: 10px;
+    border-radius: 2px;
+    pointer-events: none;
+    z-index: 99999;
+    animation: quizConfettiFly 0.85s cubic-bezier(0.22,1,0.36,1) forwards;
+  }
+  @keyframes quizCorrectPulse {
+    0%   { box-shadow: 0 0 0 0 rgba(167,139,250,0.7); }
+    70%  { box-shadow: 0 0 0 22px rgba(167,139,250,0); }
+    100% { box-shadow: 0 0 0 0 rgba(167,139,250,0); }
+  }
+  .quiz-correct-pulse { animation: quizCorrectPulse 0.6s ease-out; }
+  .quiz-badge {
+    width: 120px;
+    height: 120px;
+    background: linear-gradient(135deg, #7c3aed, #a855f7);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 2rem;
+    box-shadow: 0 0 50px rgba(139, 92, 246, 0.5);
+    animation: quizBadgePulse 2s infinite;
+    font-size: 3rem;
+  }
+  @keyframes quizBadgePulse {
+    0%, 100% { transform: scale(1); box-shadow: 0 0 40px rgba(139, 92, 246, 0.5); }
+    50% { transform: scale(1.08); box-shadow: 0 0 80px rgba(139, 92, 246, 0.7); }
+  }
+  /* Quiz loading state */
+  .quiz-generating {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1.5rem;
+    padding: 4rem;
+    text-align: center;
+  }
+  .quiz-spinner {
+    width: 56px;
+    height: 56px;
+    border: 4px solid rgba(139, 92, 246, 0.2);
+    border-top-color: #a855f7;
+    border-radius: 50%;
+    animation: quizSpin 0.9s linear infinite;
+  }
+  @keyframes quizSpin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body class="min-h-screen flex flex-col items-center py-10 px-4">
@@ -689,15 +878,15 @@
         </button>
       </div>
     </div>
-    <div class="flex gap-4">
+    <div class="flex gap-4" id="header-mode-btns">
       <button id="btn-education" class="flex items-center gap-2 px-4 py-2 rounded-lg transition-all bg-blue-600 text-white shadow-lg shadow-blue-500/30">
         Education Mode
       </button>
-      <div class="flex items-center gap-2">
+      <div class="flex items-center gap-2" id="btn-edit-wrap">
         <button id="btn-edit" class="flex items-center gap-2 px-4 py-2 rounded-lg transition-all bg-slate-800 text-slate-400 hover:bg-slate-700">
           Edit Mode
         </button>
-        <span class="text-[10px] text-slate-500 whitespace-nowrap opacity-60 hidden sm:block">Double-click or Ctrl-e to enter Edit Mode</span>
+        <span id="header-mode-hint" class="text-[10px] text-slate-500 whitespace-nowrap opacity-60 hidden sm:block">Double-click or Ctrl-e to enter Edit Mode</span>
       </div>
     </div>
   </header>
@@ -738,6 +927,15 @@
           </div>
           <h3>Peppa Game</h3>
           <p>Join Peppa and friends for fun educational mini-games and adventures.</p>
+        </div>
+
+        <!-- Quiz Card -->
+        <div onclick="setMode('quiz')" class="hub-card group" style="--tw-gradient-from: #7c3aed; --tw-gradient-to: #ec4899;">
+          <div class="icon-box text-violet-400 group-hover:text-white">
+            <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
+          </div>
+          <h3>Quiz</h3>
+          <p>AI-generated quizzes tailored to your child's age and subject of interest.</p>
         </div>
       </div>
     </div>
@@ -918,6 +1116,155 @@
               <button onclick="setMode('landing')" class="w-full py-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-2xl transition-all">Back to Menu</button>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quiz View -->
+    <div id="view-quiz" class="w-full flex flex-col items-center gap-16 transition-opacity hidden">
+      <!-- Quiz score/question area (with nav arrows like edu mode) -->
+      <div class="flex items-center justify-between w-full max-w-5xl px-4 gap-4">
+        <button id="btn-quiz-prev" class="w-12 h-12 rounded-full bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 flex flex-shrink-0 items-center justify-center transition-all disabled:opacity-30 disabled:pointer-events-none">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
+        </button>
+        <div class="flex flex-col flex-1 gap-2">
+          <div class="flex items-center gap-3 justify-center">
+            <span class="text-xs font-bold uppercase tracking-[0.2em] text-violet-400">Quiz</span>
+            <div id="quiz-score-bar" class="flex items-center gap-1.5">
+              <!-- Score dots filled by JS -->
+            </div>
+          </div>
+          <h2 id="quiz-display-question" class="text-4xl md:text-5xl font-extrabold text-center text-slate-100 tracking-tight leading-tight">
+            Loading quiz...
+          </h2>
+        </div>
+        <button id="btn-quiz-next" class="w-12 h-12 rounded-full bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 flex flex-shrink-0 items-center justify-center transition-all disabled:opacity-30 disabled:pointer-events-none">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+        </button>
+      </div>
+      <div id="quiz-answers-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-8 w-full max-w-2xl">
+        <!-- Generated by JS -->
+      </div>
+    </div>
+
+    <!-- Quiz Settings Overlay -->
+    <div id="quiz-settings-overlay">
+      <div class="quiz-settings-panel">
+        <div class="flex items-center justify-between mb-6">
+          <h2 class="text-2xl font-black text-white">Quiz Settings</h2>
+          <button onclick="window.closeQuizSettings()" class="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-white transition-all">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+
+        <div class="space-y-7">
+
+          <!-- Subjects -->
+          <div class="space-y-3">
+            <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">Subjects</label>
+            <div class="flex flex-wrap gap-2" id="quiz-subject-chips">
+              <span class="quiz-subject-chip" data-subject="English">📖 English</span>
+              <span class="quiz-subject-chip" data-subject="Chinese">🈶 Chinese</span>
+              <span class="quiz-subject-chip" data-subject="Pure Chinese">🀄 Pure Chinese</span>
+              <span class="quiz-subject-chip" data-subject="Math">🔢 Math</span>
+              <span class="quiz-subject-chip" data-subject="Science">🔬 Science</span>
+              <span class="quiz-subject-chip" data-subject="General Knowledge">🌍 General Knowledge</span>
+            </div>
+            <p class="text-[10px] text-slate-500">Select one or more subjects.</p>
+          </div>
+
+          <!-- Age Range -->
+          <div class="space-y-3 border-t border-slate-800 pt-5">
+            <div class="flex justify-between items-center">
+              <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">Target Age</label>
+              <span id="quiz-age-display" class="text-violet-400 font-black text-lg">6 years old</span>
+            </div>
+            <input type="range" id="quiz-age-slider" min="3" max="12" step="1" value="6" class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-violet-500">
+            <div class="flex justify-between text-[10px] text-slate-600 font-bold">
+              <span>3 yrs</span><span>6 yrs</span><span>9 yrs</span><span>12 yrs</span>
+            </div>
+          </div>
+
+          <!-- Correct answers to win -->
+          <div class="space-y-3 border-t border-slate-800 pt-5">
+            <div class="flex justify-between items-center">
+              <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">Correct Answers to Win</label>
+              <span id="quiz-count-display" class="text-violet-400 font-black text-lg">5</span>
+            </div>
+            <input type="range" id="quiz-count-slider" min="1" max="20" step="1" value="5" class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-violet-500">
+            <p class="text-[10px] text-slate-500">Quiz ends automatically after this many correct answers.</p>
+          </div>
+
+          <!-- Music On/Off + Volume -->
+          <div class="border-t border-slate-800 pt-5 space-y-3">
+            <div class="flex items-center justify-between">
+              <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">Music</label>
+              <button id="quiz-music-toggle" onclick="window.toggleQuizMusic()" class="relative w-14 h-7 rounded-full transition-all duration-300 bg-slate-700">
+                <div id="quiz-music-thumb" class="absolute top-0.5 left-0.5 w-6 h-6 bg-slate-400 rounded-full transition-all duration-300"></div>
+              </button>
+            </div>
+            <div class="flex items-center gap-3" id="quiz-volume-row">
+              <svg class="w-4 h-4 text-slate-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072M12 6v12m0 0l-3-3m3 3l3-3M9.172 14.828A4 4 0 116 12" /></svg>
+              <input type="range" id="quiz-volume-slider" min="0" max="100" step="5" value="20" class="flex-1 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-violet-500">
+              <span id="quiz-volume-display" class="text-violet-400 font-black text-sm w-8 text-right">20%</span>
+            </div>
+          </div>
+
+          <!-- Theme Selection -->
+          <div class="border-t border-slate-800 pt-5 space-y-3">
+            <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">🎨 Theme</label>
+            <div class="flex flex-col gap-2" id="quiz-theme-chips">
+              <button class="quiz-theme-chip active" data-theme="normal">🎯 Normal</button>
+              <button class="quiz-theme-chip" data-theme="ben-holly">🧝 Ben &amp; Holly's Little Kingdom</button>
+              <button class="quiz-theme-chip" data-theme="peppa">🐷 Peppa Pig</button>
+              <button class="quiz-theme-chip" data-theme="kung-fu-panda">🐼 Kung Fu Panda</button>
+              <button class="quiz-theme-chip" data-theme="mixed">🎲 Mixed (Random each question)</button>
+            </div>
+            <p class="text-[10px] text-slate-500">Ben &amp; Holly: Ben Elf walks in and blows his horn on each correct answer!</p>
+          </div>
+
+          <!-- Dwell Time -->
+          <div class="space-y-3 border-t border-slate-800 pt-5">
+            <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">Dwell Time to Select (ms)</label>
+            <div class="flex items-center gap-3">
+              <input type="number" id="quiz-dwell-input" min="0" max="6000" step="100" value="2000" class="w-24 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-violet-500 transition-all font-mono text-sm">
+              <input type="range" id="quiz-dwell-slider" min="0" max="6000" step="100" value="2000" class="flex-1 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-violet-500">
+            </div>
+            <p class="text-[10px] text-slate-500">How long the cursor must stay over an answer to select it. (0 = instant click)</p>
+          </div>
+
+          <!-- Question Read Time -->
+          <div class="space-y-3 border-t border-slate-800 pt-5">
+            <div class="flex items-center gap-3 mb-2">
+              <input type="checkbox" id="quiz-qread-enabled" class="w-4 h-4 text-violet-500 bg-slate-900 border-slate-700 rounded focus:ring-violet-500">
+              <label for="quiz-qread-enabled" class="text-xs font-bold text-slate-400 uppercase tracking-wider cursor-pointer select-none">Question Read Time Before Showing Answers</label>
+            </div>
+            <div id="quiz-qread-controls" class="flex items-center gap-3 opacity-40 pointer-events-none transition-opacity">
+              <input type="number" id="quiz-qread-input" min="0" max="10000" step="100" value="2000" class="w-24 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-violet-500 transition-all font-mono text-sm">
+              <input type="range" id="quiz-qread-slider" min="0" max="10000" step="100" value="2000" class="flex-1 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-amber-500">
+            </div>
+            <p class="text-[10px] text-slate-500">Delay before answers appear, giving time to read the question. (0-10000ms)</p>
+          </div>
+
+          <button onclick="window.startQuiz()" class="w-full py-4 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white font-black rounded-2xl transition-all shadow-lg shadow-violet-500/20 active:scale-95 text-base mt-2">
+            🚀 Start Quiz!
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Ben Elf walking sprite (hidden until Ben & Holly celebration) -->
+    <img id="quiz-ben-elf" src="assets/bh/ben_elf.png" alt="Ben Elf" />
+
+    <!-- Quiz Win Overlay -->
+    <div id="quiz-win-overlay">
+      <div class="quiz-win-card">
+        <div class="quiz-badge">🏆</div>
+        <h2 class="text-4xl font-black text-white mb-3">Quiz Complete!</h2>
+        <p id="quiz-win-message" class="text-slate-400 text-base mb-8">You answered all questions correctly!</p>
+        <div class="flex flex-col gap-4">
+          <button onclick="window.startQuiz()" class="w-full py-4 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white font-black rounded-2xl transition-all shadow-xl text-lg">Play Again</button>
+          <button onclick="setMode('landing')" class="w-full py-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-2xl transition-all">Back to Menu</button>
         </div>
       </div>
     </div>
@@ -1116,6 +1463,30 @@
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const db = getFirestore(app);
+
+    // Gemini API helper (direct REST, no extra SDK needed)
+    const GEMINI_API_KEY = firebaseConfig.apiKey;
+    async function callGeminiJSON(prompt) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
+      const body = {
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseMimeType: 'application/json',
+          temperature: 0.8,
+          maxOutputTokens: 1024,
+        }
+      };
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (!resp.ok) throw new Error(`Gemini API error ${resp.status}`);
+      const data = await resp.json();
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const clean = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      return JSON.parse(clean);
+    }
     const googleProvider = new GoogleAuthProvider();
 
     const STORAGE_KEY = 'eduApp_data_v2';
@@ -1308,6 +1679,7 @@
     const viewEdit = document.getElementById('view-edit');
     const viewMathGame = document.getElementById('view-math-game');
     const viewPeppaGame = document.getElementById('view-peppa-game');
+    const viewQuiz = document.getElementById('view-quiz');
     const displayQuestion = document.getElementById('display-question');
     const answersGrid = document.getElementById('answers-grid');
     const categoryTabs = document.getElementById('category-tabs');
@@ -1749,6 +2121,7 @@
        else if (newMode === 'edit') setEditMode();
        else if (newMode === 'math-game') setMathGameMode();
        else if (newMode === 'peppa-game') setPeppaGameMode();
+       else if (newMode === 'quiz') setQuizMode();
     };
 
     function setLandingMode() {
@@ -1759,10 +2132,13 @@
        viewEdit.classList.add('hidden');
        viewMathGame.classList.add('hidden');
        viewPeppaGame.classList.add('hidden');
+       if (viewQuiz) viewQuiz.classList.add('hidden');
+       restoreHeaderFromQuizMode();
        btnEducation.classList.replace('bg-blue-600', 'bg-slate-800');
        btnEdit.classList.replace('bg-blue-600', 'bg-slate-800');
-       categoryTabs.classList.add('hidden'); // Landing page should be empty below header
+       categoryTabs.classList.add('hidden');
        btnLogout.classList.remove('hidden');
+       stopQuizMusic();
     }
 
     function setEducationMode() {
@@ -1773,6 +2149,8 @@
        viewEdit.classList.add('hidden');
        viewMathGame.classList.add('hidden');
        viewPeppaGame.classList.add('hidden');
+       if (viewQuiz) viewQuiz.classList.add('hidden');
+       restoreHeaderFromQuizMode();
        btnEdit.classList.replace('bg-blue-600', 'bg-slate-800');
        btnEdit.classList.replace('text-white', 'text-slate-400');
        btnEducation.classList.replace('bg-slate-800', 'bg-blue-600');
@@ -1780,6 +2158,7 @@
        categoryTabs.classList.remove('hidden');
        displayUser.classList.remove('underline', 'decoration-blue-500/30', 'underline-offset-4');
        btnLogout.classList.add('hidden');
+       stopQuizMusic();
        renderEducationBoard();
     }
 
@@ -1791,12 +2170,15 @@
        viewEdit.classList.remove('hidden');
        viewMathGame.classList.add('hidden');
        viewPeppaGame.classList.add('hidden');
+       if (viewQuiz) viewQuiz.classList.add('hidden');
+       restoreHeaderFromQuizMode();
        btnEducation.classList.replace('bg-blue-600', 'bg-slate-800');
        btnEducation.classList.replace('text-white', 'text-slate-400');
        btnEdit.classList.replace('bg-slate-800', 'bg-blue-600');
        btnEdit.classList.add('text-white');
        categoryTabs.classList.remove('hidden');
        btnLogout.classList.remove('hidden');
+       stopQuizMusic();
        if (user) {
           displayUser.classList.add('underline', 'decoration-blue-500/30', 'underline-offset-4');
        }
@@ -1811,7 +2193,10 @@
        viewEdit.classList.add('hidden');
        viewMathGame.classList.remove('hidden');
        viewPeppaGame.classList.add('hidden');
+       if (viewQuiz) viewQuiz.classList.add('hidden');
+       restoreHeaderFromQuizMode();
        categoryTabs.classList.add('hidden');
+       stopQuizMusic();
        initMathGame();
     }
     
@@ -1904,6 +2289,11 @@
     let peppaAudio = null;
     let peppaCollectedFriends = []; // Indices of friends collected in current trip
     let peppaAnimationFrame = null; // Handle for requestAnimationFrame loop
+    let peppaLoopGen = 0;           // Incremented on each game start; stale RAF loops self-terminate
+    // Module-level RAF state (promoted from setPeppaGameMode to avoid stale closures)
+    let peppaRoadX = 0;
+    let peppaSkylineX = 0;
+    let peppaLastTime = 0;
     // Merge peppa defaults into existing appData (declared earlier)
     if (!appData.peppaSpeed) appData.peppaSpeed = 0.8;
     if (!appData.peppaMusicStyle) appData.peppaMusicStyle = 'instrumental'; 
@@ -2222,6 +2612,9 @@
        }
     };
 
+    // Module-level reference so stopPeppaGame can always clean up the win listener
+    let _peppaWinOverlayHandler = null;
+
     function stopPeppaGame() {
         peppaIntervals.forEach(val => {
            if (typeof val === 'number') {
@@ -2245,6 +2638,12 @@
        const victoryLayer = document.getElementById('peppa-victory-layer');
        if (victoryLayer) victoryLayer.innerHTML = '';
        document.removeEventListener('mousemove', peppaMouseMove);
+       // Always remove the win-overlay key/click listener to prevent ghost keystrokes
+       if (_peppaWinOverlayHandler) {
+          document.removeEventListener('keydown', _peppaWinOverlayHandler);
+          document.removeEventListener('click', _peppaWinOverlayHandler);
+          _peppaWinOverlayHandler = null;
+       }
     }
 
     function initPeppaGame() {
@@ -2276,10 +2675,18 @@
        if (hz2 && laneScreenBounds.length >= 2) hz2.style.height = (laneScreenBounds[1].bottom - laneScreenBounds[1].top) + 'px';
        if (hz3 && laneScreenBounds.length >= 3) hz3.style.height = (laneScreenBounds[2].bottom - laneScreenBounds[2].top) + 'px';
     }
-    window.addEventListener('resize', () => { if (mode === 'peppa-game') computeLaneScreenBounds(); });
+    // Guard: only attach resize listener once to avoid accumulation across restarts
+    if (!window._peppaResizeListenerAdded) {
+       window._peppaResizeListenerAdded = true;
+       window.addEventListener('resize', () => { if (mode === 'peppa-game') computeLaneScreenBounds(); });
+    }
 
     function peppaMouseMove(e) {
-       if (mode !== 'peppa-game' || peppaPaused) { if (peppaPaused) { lastTime = performance.now(); requestAnimationFrame(move); } return; }
+       if (mode !== 'peppa-game') return;
+       // NOTE: do NOT call requestAnimationFrame(move) here — the module-level RAF loop
+       // already runs continuously while the game is active. Doing so would spawn
+       // a second (stale-closure) loop that outlives stopPeppaGame and causes ghost keypresses.
+       if (peppaPaused) return;
        const viewport = document.getElementById('peppa-game-viewport');
        if (!viewport) return;
        
@@ -2461,13 +2868,16 @@
         const showWinOverlay = () => {
            if (winOverlay && !winOverlay.classList.contains('show')) {
               winOverlay.classList.add('show');
-              document.removeEventListener('keydown', showWinOverlay);
-              document.removeEventListener('click', showWinOverlay);
            }
+           // Always clean up after first trigger
+           document.removeEventListener('keydown', showWinOverlay);
+           document.removeEventListener('click', showWinOverlay);
+           _peppaWinOverlayHandler = null;
         };
         
         // Delay enabling interaction slightly to allow celebration animations to start
         setTimeout(() => {
+           _peppaWinOverlayHandler = showWinOverlay; // store so stopPeppaGame can clean up
            document.addEventListener('keydown', showWinOverlay);
            document.addEventListener('click', showWinOverlay);
         }, 1200);
@@ -2521,71 +2931,74 @@
        peppaBusX = viewWidth * 0.45; // Starting position: midpoint of 25%-60%
        targetMouseX = viewWidth * 0.45;
 
-       // Start horizontal movement loop
-        // Start silky-smooth movement loop via requestAnimationFrame
-        let peppaRoadX = 0;
-        let peppaSkylineX = 0;
-        let lastTime = 0;
+       // Reset module-level RAF state and bump generation so any stale loop self-terminates
+       peppaRoadX = 0;
+       peppaSkylineX = 0;
+       peppaLastTime = 0;
+       const myGen = ++peppaLoopGen;
 
-        // Cache DOM elements for performance
-        const lanes = document.querySelectorAll('.peppa-lane');
-        const sidewalks = document.querySelectorAll('.peppa-sidewalk');
-        const skylines = document.querySelectorAll('.peppa-skyline');
-        const bus = document.getElementById('peppa-bus');
+       // Cache DOM elements for performance
+       const lanes = document.querySelectorAll('.peppa-lane');
+       const sidewalks = document.querySelectorAll('.peppa-sidewalk');
+       const skylines = document.querySelectorAll('.peppa-skyline');
+       const bus = document.getElementById('peppa-bus');
 
-        function move(timestamp) {
-           if (mode !== 'peppa-game') return;
-           
-           if (peppaPaused) {
-              lastTime = 0; // Reset so next frame has valid dt after resume
-              peppaAnimationFrame = requestAnimationFrame(move);
-              return;
-           }
+       // Module-level RAF loop — uses peppaLoopGen to self-terminate if stale
+       function peppaMove(timestamp) {
+          // Self-terminate if this is not the current game generation
+          if (myGen !== peppaLoopGen) return;
+          if (mode !== 'peppa-game') return;
 
-           if (!lastTime) lastTime = timestamp;
-           const dt = Math.min(0.1, (timestamp - lastTime) / 1000); // Cap DT to prevent huge jumps
-           lastTime = timestamp;
+          if (peppaPaused) {
+             peppaLastTime = 0; // Reset so next frame has valid dt after resume
+             peppaAnimationFrame = requestAnimationFrame(peppaMove);
+             return;
+          }
 
-           if (!bus) return;
+          if (!peppaLastTime) peppaLastTime = timestamp;
+          const dt = Math.min(0.1, (timestamp - peppaLastTime) / 1000); // Cap DT to prevent huge jumps
+          peppaLastTime = timestamp;
 
-           // 1. World Movement (Road & Skyline)
-           const baseSpeed = 750; // px/s
-           peppaRoadX += baseSpeed * appData.peppaSpeed * dt;
-           peppaSkylineX += (baseSpeed / 10) * appData.peppaSpeed * dt;
-           
-           peppaRoadX %= 600;
-           
-           lanes.forEach(m => {
-              m.style.setProperty('--road-x', `-${peppaRoadX}px`);
-           });
-           sidewalks.forEach(s => {
-              s.style.backgroundPosition = `-${peppaRoadX}px 0`;
-           });
-           skylines.forEach(s => {
-              s.style.backgroundPosition = `-${peppaSkylineX}px 0`;
-           });
+          if (!bus) return;
 
-           // 2. Bus Horizontal Movement
-           const vw = window.innerWidth;
-           const roadOffset = vw * 0.25;
-           const minX = vw * 0.25;
-           const maxX = vw * 0.60;
+          // 1. World Movement (Road & Skyline)
+          const baseSpeed = 750; // px/s
+          peppaRoadX += baseSpeed * appData.peppaSpeed * dt;
+          peppaSkylineX += (baseSpeed / 10) * appData.peppaSpeed * dt;
 
-           const clampedTargetX = Math.max(minX, Math.min(maxX, targetMouseX));
-           const dist = clampedTargetX - peppaBusX;
-           const speed = getBusMoveSpeedMultiplier() * appData.peppaSpeed; 
-           
-           if (Math.abs(dist) > speed) {
-              peppaBusX += Math.sign(dist) * speed;
-           } else {
-              peppaBusX = clampedTargetX;
-           }
-           
-           bus.style.left = (peppaBusX + roadOffset) + "px";
-           
-           peppaAnimationFrame = requestAnimationFrame(move);
-        }
-        peppaAnimationFrame = requestAnimationFrame(move);
+          peppaRoadX %= 600;
+
+          lanes.forEach(m => {
+             m.style.setProperty('--road-x', `-${peppaRoadX}px`);
+          });
+          sidewalks.forEach(s => {
+             s.style.backgroundPosition = `-${peppaRoadX}px 0`;
+          });
+          skylines.forEach(s => {
+             s.style.backgroundPosition = `-${peppaSkylineX}px 0`;
+          });
+
+          // 2. Bus Horizontal Movement
+          const vw = window.innerWidth;
+          const roadOffset = vw * 0.25;
+          const minX = vw * 0.25;
+          const maxX = vw * 0.60;
+
+          const clampedTargetX = Math.max(minX, Math.min(maxX, targetMouseX));
+          const dist = clampedTargetX - peppaBusX;
+          const speed = getBusMoveSpeedMultiplier() * appData.peppaSpeed;
+
+          if (Math.abs(dist) > speed) {
+             peppaBusX += Math.sign(dist) * speed;
+          } else {
+             peppaBusX = clampedTargetX;
+          }
+
+          bus.style.left = (peppaBusX + roadOffset) + "px";
+
+          peppaAnimationFrame = requestAnimationFrame(peppaMove);
+       }
+       peppaAnimationFrame = requestAnimationFrame(peppaMove);
 
        const spawnInt = setInterval(() => {
           if (mode === 'peppa-game' && Math.random() > 0.4) spawnPeppaFriend();
@@ -2608,7 +3021,8 @@
        if (mode === 'peppa-game' && newMode !== 'peppa-game') {
           stopPeppaGame();
        }
-       
+       if (newMode !== 'quiz') stopQuizMusic();
+
        // Allow any authenticated user (including anonymous quests) to edit
        if (newMode === 'edit' && !user) {
           showToast("You must be signed in to edit.", "error");
@@ -2620,8 +3034,874 @@
       else if (mode === 'edit') setEditMode();
       else if (mode === 'math-game') setMathGameMode();
       else if (mode === 'peppa-game') setPeppaGameMode();
+      else if (mode === 'quiz') setQuizMode();
     }
     window.setMode = setMode;
+
+    // ============================================================
+    // QUIZ MODE
+    // ============================================================
+    const QUIZ_SUBJECTS = ['English', 'Chinese', 'Pure Chinese', 'Math', 'Science', 'General Knowledge'];
+    let quizSettings = {
+      subjects: ['English', 'Chinese', 'Math', 'Science', 'General Knowledge'],
+      age: 6,
+      correctTarget: 5,
+      musicVolume: 0.2,
+      musicOn: true,
+      dwellTimeMs: 2000,
+      qReadEnabled: true,
+      qReadTimeMs: 1000,
+      theme: 'normal',
+    };
+    let currentQuizTheme = 'normal'; // resolved per-question (Mixed picks randomly each render)
+    let quizScore = 0;
+    let quizCurrentQ = null;   // { question, answers: [{id,text}], correctId }
+    let quizRenderGen = 0;
+    let quizAudio = null;
+    let quizQReadTimerId = null;
+    let quizQReadOnEnter = null;
+    let quizQReadOnLeave = null;
+    let quizQReadOnClick = null;
+    let quizAskedQuestions = (() => {
+      // Persist seen questions per age group across sessions
+      try {
+        const stored = localStorage.getItem('quizAsked_v2');
+        return stored ? JSON.parse(stored) : [];
+      } catch { return []; }
+    })();  // full history of asked question texts
+    let quizQuestionQueue = [];  // pre-fetched batch queue
+    let quizHistory = [];        // ordered list of shown question objects (for back-nav)
+    let quizHistoryIdx = -1;     // pointer into quizHistory (-1 = nothing shown yet)
+
+    // Persist the asked-questions list to localStorage (cap at 150 per age)
+    function saveQuizAsked() {
+      try { localStorage.setItem('quizAsked_v2', JSON.stringify(quizAskedQuestions)); } catch {}
+    }
+
+    // --- Header button quiz-mode swap helpers ---
+    function enterQuizHeaderMode() {
+      // Replace btn-education with "Settings" (double-click)
+      btnEducation.textContent = '';
+      btnEducation.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg> Settings`;
+      btnEducation.className = 'flex items-center gap-2 px-4 py-2 rounded-lg transition-all bg-violet-900/60 text-violet-300 hover:bg-violet-800/80 border border-violet-700/40';
+      btnEducation.onclick = null;
+      btnEducation.ondblclick = () => window.openQuizSettings();
+      btnEducation.title = 'Double-click to open settings';
+
+      // Replace btn-edit with "Exit" (double-click)
+      btnEdit.textContent = 'Exit';
+      btnEdit.className = 'flex items-center gap-2 px-4 py-2 rounded-lg transition-all bg-slate-800 text-slate-400 hover:bg-slate-700 border border-slate-700';
+      btnEdit.onclick = null;
+      btnEdit.ondblclick = () => setMode('landing');
+      btnEdit.title = 'Double-click to exit Quiz';
+
+      // Update hint text
+      const hint = document.getElementById('header-mode-hint');
+      if (hint) hint.textContent = 'Double-click buttons to use them';
+    }
+
+    function restoreHeaderFromQuizMode() {
+      // Restore btn-education
+      btnEducation.innerHTML = 'Education Mode';
+      btnEducation.className = 'flex items-center gap-2 px-4 py-2 rounded-lg transition-all bg-slate-800 text-slate-400 hover:bg-slate-700';
+      btnEducation.ondblclick = null;
+      btnEducation.title = '';
+      // onclick is wired by setEducationMode / setLandingMode etc — just reset here
+      btnEducation.onclick = () => setMode('education');
+
+      // Restore btn-edit
+      btnEdit.textContent = 'Edit Mode';
+      btnEdit.className = 'flex items-center gap-2 px-4 py-2 rounded-lg transition-all bg-slate-800 text-slate-400 hover:bg-slate-700';
+      btnEdit.ondblclick = null;
+      btnEdit.title = '';
+      btnEdit.onclick = null; // restored by setEditMode binding
+
+      const hint = document.getElementById('header-mode-hint');
+      if (hint) hint.textContent = 'Double-click or Ctrl-e to enter Edit Mode';
+    }
+
+    function initQuizSettingsUI() {
+      // Subjects chips
+      document.querySelectorAll('.quiz-subject-chip').forEach(chip => {
+        const subj = chip.dataset.subject;
+        chip.classList.toggle('active', quizSettings.subjects.includes(subj));
+        chip.onclick = () => {
+          if (quizSettings.subjects.includes(subj)) {
+            if (quizSettings.subjects.length === 1) {
+              showToast('Select at least one subject.', 'info');
+              return;
+            }
+            quizSettings.subjects = quizSettings.subjects.filter(s => s !== subj);
+          } else {
+            quizSettings.subjects.push(subj);
+          }
+          chip.classList.toggle('active', quizSettings.subjects.includes(subj));
+        };
+      });
+
+      // Theme chips
+      document.querySelectorAll('.quiz-theme-chip').forEach(chip => {
+        chip.classList.toggle('active', quizSettings.theme === chip.dataset.theme);
+        chip.onclick = () => {
+          quizSettings.theme = chip.dataset.theme;
+          document.querySelectorAll('.quiz-theme-chip').forEach(c =>
+            c.classList.toggle('active', c.dataset.theme === quizSettings.theme)
+          );
+        };
+      });
+
+      // Age slider
+      const ageSlider = document.getElementById('quiz-age-slider');
+      const ageDisplay = document.getElementById('quiz-age-display');
+      ageSlider.value = quizSettings.age;
+      ageDisplay.textContent = `${quizSettings.age} years old`;
+      ageSlider.oninput = e => {
+        quizSettings.age = parseInt(e.target.value);
+        ageDisplay.textContent = `${quizSettings.age} years old`;
+      };
+
+      // Count slider
+      const countSlider = document.getElementById('quiz-count-slider');
+      const countDisplay = document.getElementById('quiz-count-display');
+      countSlider.value = quizSettings.correctTarget;
+      countDisplay.textContent = quizSettings.correctTarget;
+      countSlider.oninput = e => {
+        quizSettings.correctTarget = parseInt(e.target.value);
+        countDisplay.textContent = quizSettings.correctTarget;
+        updateQuizScoreBar();
+      };
+
+      // Music toggle
+      updateQuizMusicToggleUI();
+
+      // Volume slider
+      const volSlider = document.getElementById('quiz-volume-slider');
+      const volDisplay = document.getElementById('quiz-volume-display');
+      if (volSlider) {
+        volSlider.value = Math.round(quizSettings.musicVolume * 100);
+        volDisplay.textContent = `${Math.round(quizSettings.musicVolume * 100)}%`;
+        volSlider.oninput = e => {
+          const v = parseInt(e.target.value) / 100;
+          quizSettings.musicVolume = v;
+          volDisplay.textContent = `${e.target.value}%`;
+          if (quizAudio) quizAudio.volume = v;
+        };
+      }
+
+      // Dwell time
+      const dwellInput = document.getElementById('quiz-dwell-input');
+      const dwellSlider = document.getElementById('quiz-dwell-slider');
+      dwellInput.value = quizSettings.dwellTimeMs;
+      dwellSlider.value = quizSettings.dwellTimeMs;
+      const syncDwell = val => {
+        quizSettings.dwellTimeMs = Number(val);
+        dwellInput.value = val;
+        dwellSlider.value = val;
+      };
+      dwellInput.oninput = e => syncDwell(e.target.value);
+      dwellSlider.oninput = e => syncDwell(e.target.value);
+
+      // QRead
+      const qReadChk = document.getElementById('quiz-qread-enabled');
+      const qReadInput = document.getElementById('quiz-qread-input');
+      const qReadSlider = document.getElementById('quiz-qread-slider');
+      const qReadControls = document.getElementById('quiz-qread-controls');
+      qReadChk.checked = quizSettings.qReadEnabled;
+      qReadInput.value = quizSettings.qReadTimeMs;
+      qReadSlider.value = quizSettings.qReadTimeMs;
+      const updateQReadState = () => {
+        qReadControls.classList.toggle('opacity-40', !qReadChk.checked);
+        qReadControls.classList.toggle('pointer-events-none', !qReadChk.checked);
+      };
+      updateQReadState();
+      qReadChk.onchange = e => {
+        quizSettings.qReadEnabled = e.target.checked;
+        updateQReadState();
+      };
+      const syncQRead = val => {
+        quizSettings.qReadTimeMs = Number(val);
+        qReadInput.value = val;
+        qReadSlider.value = val;
+      };
+      qReadInput.oninput = e => syncQRead(e.target.value);
+      qReadSlider.oninput = e => syncQRead(e.target.value);
+    }
+
+    function updateQuizMusicToggleUI() {
+      const toggle = document.getElementById('quiz-music-toggle');
+      const thumb = document.getElementById('quiz-music-thumb');
+      if (!toggle || !thumb) return;
+      if (quizSettings.musicOn) {
+        toggle.style.background = 'rgba(139, 92, 246, 0.6)';
+        thumb.style.transform = 'translateX(28px)';
+        thumb.style.background = '#c4b5fd';
+      } else {
+        toggle.style.background = '';
+        thumb.style.transform = '';
+        thumb.style.background = '';
+      }
+    }
+
+    window.toggleQuizMusic = () => {
+      quizSettings.musicOn = !quizSettings.musicOn;
+      updateQuizMusicToggleUI();
+      if (mode === 'quiz') {
+        if (quizSettings.musicOn) startQuizMusic();
+        else stopQuizMusic();
+      }
+    };
+
+    function startQuizMusic() {
+      if (!quizSettings.musicOn) return;
+      if (quizAudio) { quizAudio.play().catch(() => {}); return; }
+      // Reuse peppa instrumental theme as background music
+      quizAudio = new Audio('assets/peppa/quiz_music.webm');
+      quizAudio.loop = true;
+      quizAudio.volume = quizSettings.musicVolume;
+      quizAudio.play().catch(e => console.log('Quiz audio deferred', e));
+    }
+
+    function stopQuizMusic() {
+      if (quizAudio) {
+        quizAudio.pause();
+        quizAudio.currentTime = 0;
+        quizAudio = null;
+      }
+    }
+
+    window.openQuizSettings = () => {
+      initQuizSettingsUI();
+      document.getElementById('quiz-settings-overlay').classList.add('show');
+    };
+    window.closeQuizSettings = () => {
+      document.getElementById('quiz-settings-overlay').classList.remove('show');
+    };
+
+    function updateQuizScoreBar() {
+      const bar = document.getElementById('quiz-score-bar');
+      if (!bar) return;
+      bar.innerHTML = '';
+      for (let i = 0; i < quizSettings.correctTarget; i++) {
+        const dot = document.createElement('div');
+        dot.className = `w-3 h-3 rounded-full transition-all duration-300 ${
+          i < quizScore
+            ? 'bg-violet-400 shadow-md shadow-violet-400/40'
+            : 'bg-slate-700'
+        }`;
+        bar.appendChild(dot);
+      }
+    }
+
+    // Fetch a batch of questions from Gemini — one per selected subject (round-robin)
+    async function fetchQuizBatch() {
+      const subjects = quizSettings.subjects.length > 0 ? quizSettings.subjects : ['General Knowledge'];
+      // Build 5 slots, cycling through subjects so every selected subject appears
+      const slots = Array.from({ length: 5 }, (_, i) => subjects[i % subjects.length]);
+
+      // Build rich per-subject instructions
+      const subjectHints = {
+        'English':           'English language: grammar rules, vocabulary, spelling, synonyms/antonyms, sentence structure, punctuation, idioms — age-appropriate',
+        'Chinese':           'Chinese language (Mandarin): vocabulary, pinyin, stroke order, simple characters, sentence structure, opposites, colours/numbers in Chinese — age-appropriate',
+        'Pure Chinese':      'PURE MANDARIN CHINESE — CRITICAL: Write EVERY question AND every answer choice ENTIRELY in Simplified Chinese characters (\u6c49\u5b57). Absolutely NO English, NO pinyin ever. Topics: vocabulary, colours, numbers, animals, food, opposites, family, body parts, actions, nature. Example: \"\u4e0b\u9762\u54ea\u4e2a\u662f\u6c34\u679c\uff1f\"  \"\u82f9\u679c\" \"\u72d7\" \"\u4e66\" \"\u6905\u5b50\"',
+        'Math':              'Mathematics: arithmetic, shapes, patterns, simple algebra, measurement — age-appropriate',
+        'Science':           'Science: nature, animals, plants, physics, chemistry, body, space — age-appropriate',
+        'General Knowledge': 'General Knowledge: world geography, history, culture, sports, famous people — age-appropriate',
+      };
+
+      const slotDescriptions = slots
+        .map((s, i) => `  Question ${i+1}: subject = "${s}" (${subjectHints[s] || s})`)
+        .join('\n');
+
+      const usedList = quizAskedQuestions.length > 0
+        ? `\n\nNEVER repeat or paraphrase any of these already-asked questions:\n${quizAskedQuestions.slice(-80).map((q, i) => `${i+1}. ${q}`).join('\n')}`
+        : '';
+
+      const prompt = `You are a children's quiz generator. The child is ${quizSettings.age} years old.
+Generate exactly 5 multiple-choice questions. Each question MUST come from the subject specified below:
+${slotDescriptions}${usedList}
+
+Rules:
+- Every question MUST strictly match its assigned subject.
+- For "English": ask about grammar (e.g. plurals, tenses, parts of speech), vocabulary, spelling, or reading comprehension — NOT general knowledge.
+- For "Chinese": ask about Mandarin words, pinyin, simple characters, or Chinese phrases — NOT general knowledge.
+- Make questions genuinely different in topic and format.
+- Use simple child-friendly language for age ${quizSettings.age}.
+- Provide exactly 4 answer choices per question.
+
+Return ONLY valid JSON with no markdown. Use this exact format:
+{"questions": [
+  {"question": "<q1>", "answers": [{"id":"1","text":"<a>"},{"id":"2","text":"<b>"},{"id":"3","text":"<c>"},{"id":"4","text":"<d>"}], "correctId": "<1-4>"},
+  {"question": "<q2>", "answers": [{"id":"1","text":"<a>"},{"id":"2","text":"<b>"},{"id":"3","text":"<c>"},{"id":"4","text":"<d>"}], "correctId": "<1-4>"},
+  {"question": "<q3>", "answers": [{"id":"1","text":"<a>"},{"id":"2","text":"<b>"},{"id":"3","text":"<c>"},{"id":"4","text":"<d>"}], "correctId": "<1-4>"},
+  {"question": "<q4>", "answers": [{"id":"1","text":"<a>"},{"id":"2","text":"<b>"},{"id":"3","text":"<c>"},{"id":"4","text":"<d>"}], "correctId": "<1-4>"},
+  {"question": "<q5>", "answers": [{"id":"1","text":"<a>"},{"id":"2","text":"<b>"},{"id":"3","text":"<c>"},{"id":"4","text":"<d>"}], "correctId": "<1-4>"}
+]}`;
+
+      console.log('[Quiz] fetchQuizBatch — slots:', slots, '| known:', quizAskedQuestions.length);
+      const resp = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: {
+              responseMimeType: 'application/json',
+              temperature: 0.95,  // high variety; stay below 1.0 to avoid JSON-mode edge-case failures
+              maxOutputTokens: 2048,
+            }
+          })
+        }
+      );
+      if (!resp.ok) {
+        const errText = await resp.text();
+        throw new Error(`Gemini API ${resp.status}: ${errText.slice(0,200)}`);
+      }
+      const data = await resp.json();
+      const raw = (data.candidates?.[0]?.content?.parts?.[0]?.text || '')
+        .replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      const parsed = JSON.parse(raw);
+      // Accept either {questions:[...]} wrapper or a bare array
+      const batch = Array.isArray(parsed) ? parsed : (parsed.questions || []);
+      if (!batch.length) throw new Error('Empty batch from AI');
+      return batch;
+    }
+
+    async function generateQuizQuestion() {
+      const grid = document.getElementById('quiz-answers-grid');
+      const questionEl = document.getElementById('quiz-display-question');
+      if (!grid || !questionEl) return;
+
+      // If queue has items, use next one immediately (no loading flicker)
+      if (quizQuestionQueue.length > 0) {
+        quizCurrentQ = quizQuestionQueue.shift();
+        // Push to history
+        quizHistory.push(quizCurrentQ);
+        quizHistoryIdx = quizHistory.length - 1;
+        updateQuizNavButtons();
+        renderQuizBoard();
+        // Kick off background refill when queue gets low
+        if (quizQuestionQueue.length === 0) {
+          fetchQuizBatch().then(batch => {
+            batch.forEach(q => {
+              quizQuestionQueue.push(q);
+              if (!quizAskedQuestions.includes(q.question)) {
+                quizAskedQuestions.push(q.question);
+                if (quizAskedQuestions.length > 150) quizAskedQuestions.shift();
+              }
+            });
+            saveQuizAsked();
+          }).catch(console.error);
+        }
+        return;
+      }
+
+      // Queue empty — show loading and fetch a fresh batch
+      questionEl.textContent = 'Thinking...';
+      grid.innerHTML = `
+        <div class="quiz-generating col-span-full">
+          <div class="quiz-spinner"></div>
+          <p class="text-slate-400 text-sm font-medium">Generating questions...</p>
+        </div>`;
+
+      try {
+        const batch = await fetchQuizBatch();
+        // Record asked questions and persist to localStorage
+        batch.forEach(q => {
+          if (q?.question && !quizAskedQuestions.includes(q.question)) {
+            quizAskedQuestions.push(q.question);
+            if (quizAskedQuestions.length > 150) quizAskedQuestions.shift();
+          }
+        });
+        saveQuizAsked();
+        // Use first; queue the rest
+        quizCurrentQ = batch[0];
+        quizQuestionQueue = batch.slice(1);
+      } catch (err) {
+        console.error('Quiz generation error:', err);
+        // Comprehensive fallback bank covering all subjects
+        const fallbacks = [
+          // English — grammar
+          { question: 'Which word is a noun?', answers: [{id:'1',text:'Run'},{id:'2',text:'Happy'},{id:'3',text:'Apple'},{id:'4',text:'Quickly'}], correctId:'3' },
+          { question: 'What is the plural of "child"?', answers: [{id:'1',text:'Childs'},{id:'2',text:'Children'},{id:'3',text:'Childes'},{id:'4',text:'Child\'s'}], correctId:'2' },
+          { question: 'Which sentence uses the correct past tense?', answers: [{id:'1',text:'She runned fast'},{id:'2',text:'She run fast'},{id:'3',text:'She ran fast'},{id:'4',text:'She runs fast'}], correctId:'3' },
+          { question: 'What does the word "enormous" mean?', answers: [{id:'1',text:'Very small'},{id:'2',text:'Very fast'},{id:'3',text:'Very large'},{id:'4',text:'Very loud'}], correctId:'3' },
+          { question: 'Which word is an adjective in this sentence: "The big dog barked."?', answers: [{id:'1',text:'The'},{id:'2',text:'Big'},{id:'3',text:'Dog'},{id:'4',text:'Barked'}], correctId:'2' },
+          { question: 'What punctuation mark ends a question?', answers: [{id:'1',text:'Full stop'},{id:'2',text:'Comma'},{id:'3',text:'Question mark'},{id:'4',text:'Exclamation mark'}], correctId:'3' },
+          { question: 'Which word is a synonym for "happy"?', answers: [{id:'1',text:'Sad'},{id:'2',text:'Angry'},{id:'3',text:'Joyful'},{id:'4',text:'Tired'}], correctId:'3' },
+          { question: 'How do you spell the opposite of "noisy"?', answers: [{id:'1',text:'Quite'},{id:'2',text:'Quiet'},{id:'3',text:'Kwiet'},{id:'4',text:'Quyet'}], correctId:'2' },
+          // English — vocabulary
+          { question: 'What does "curious" mean?', answers: [{id:'1',text:'Bored'},{id:'2',text:'Eager to know things'},{id:'3',text:'Very tired'},{id:'4',text:'Very hungry'}], correctId:'2' },
+          { question: 'Which word is an antonym of "hot"?', answers: [{id:'1',text:'Warm'},{id:'2',text:'Boiling'},{id:'3',text:'Cold'},{id:'4',text:'Spicy'}], correctId:'3' },
+          // Chinese — vocabulary & characters
+          { question: 'What does "你好" (nǐ hǎo) mean?', answers: [{id:'1',text:'Good night'},{id:'2',text:'Thank you'},{id:'3',text:'Hello'},{id:'4',text:'Goodbye'}], correctId:'3' },
+          { question: 'How do you say "cat" in Mandarin Chinese?', answers: [{id:'1',text:'Gǒu (狗)'},{id:'2',text:'Māo (猫)'},{id:'3',text:'Niǎo (鸟)'},{id:'4',text:'Yú (鱼)'}], correctId:'2' },
+          { question: 'What number does "五" (wǔ) represent?', answers: [{id:'1',text:'3'},{id:'2',text:'4'},{id:'3',text:'5'},{id:'4',text:'6'}], correctId:'3' },
+          { question: 'What does "谢谢" (xièxiè) mean?', answers: [{id:'1',text:'Sorry'},{id:'2',text:'Please'},{id:'3',text:'Hello'},{id:'4',text:'Thank you'}], correctId:'4' },
+          { question: 'What colour is "红色" (hóngsè)?', answers: [{id:'1',text:'Blue'},{id:'2',text:'Green'},{id:'3',text:'Red'},{id:'4',text:'Yellow'}], correctId:'3' },
+          { question: 'What does "大" (dà) mean?', answers: [{id:'1',text:'Small'},{id:'2',text:'Big'},{id:'3',text:'Fast'},{id:'4',text:'Old'}], correctId:'2' },
+          { question: 'How do you say "goodbye" in Mandarin?', answers: [{id:'1',text:'Nǐ hǎo'},{id:'2',text:'Xièxiè'},{id:'3',text:'Duìbuqǐ'},{id:'4',text:'Zàijiàn'}], correctId:'4' },
+          { question: 'What does "水" (shuǐ) mean?', answers: [{id:'1',text:'Fire'},{id:'2',text:'Air'},{id:'3',text:'Water'},{id:'4',text:'Earth'}], correctId:'3' },
+          // Math
+          { question: 'What is 5 + 3?', answers: [{id:'1',text:'6'},{id:'2',text:'7'},{id:'3',text:'8'},{id:'4',text:'9'}], correctId:'3' },
+          { question: 'How many sides does a triangle have?', answers: [{id:'1',text:'2'},{id:'2',text:'3'},{id:'3',text:'4'},{id:'4',text:'5'}], correctId:'2' },
+          { question: 'What is 4 × 3?', answers: [{id:'1',text:'10'},{id:'2',text:'11'},{id:'3',text:'12'},{id:'4',text:'14'}], correctId:'3' },
+          { question: 'Which is the largest number?', answers: [{id:'1',text:'47'},{id:'2',text:'74'},{id:'3',text:'54'},{id:'4',text:'45'}], correctId:'2' },
+          // Science
+          { question: 'How many legs does a spider have?', answers: [{id:'1',text:'4'},{id:'2',text:'6'},{id:'3',text:'8'},{id:'4',text:'10'}], correctId:'3' },
+          { question: 'Which planet is closest to the Sun?', answers: [{id:'1',text:'Earth'},{id:'2',text:'Venus'},{id:'3',text:'Mars'},{id:'4',text:'Mercury'}], correctId:'4' },
+          { question: 'What do plants need to make food?', answers: [{id:'1',text:'Darkness'},{id:'2',text:'Sunlight'},{id:'3',text:'Salt'},{id:'4',text:'Sugar'}], correctId:'2' },
+          // General Knowledge
+          { question: 'What color do you get when you mix red and blue?', answers: [{id:'1',text:'Green'},{id:'2',text:'Purple'},{id:'3',text:'Orange'},{id:'4',text:'Yellow'}], correctId:'2' },
+          { question: 'How many days are in a week?', answers: [{id:'1',text:'5'},{id:'2',text:'6'},{id:'3',text:'7'},{id:'4',text:'8'}], correctId:'3' },
+          { question: 'Which country has the Great Wall?', answers: [{id:'1',text:'Japan'},{id:'2',text:'India'},{id:'3',text:'China'},{id:'4',text:'Korea'}], correctId:'3' },
+        ];
+        const unusedFallbacks = fallbacks.filter(f => !quizAskedQuestions.includes(f.question));
+        const pool = unusedFallbacks.length > 0 ? unusedFallbacks : fallbacks;
+        quizCurrentQ = pool[Math.floor(Math.random() * pool.length)];
+      }
+
+      if (quizCurrentQ?.question && !quizAskedQuestions.includes(quizCurrentQ.question)) {
+        quizAskedQuestions.push(quizCurrentQ.question);
+        if (quizAskedQuestions.length > 150) quizAskedQuestions.shift();
+        saveQuizAsked();
+      }
+      // Push to history
+      quizHistory.push(quizCurrentQ);
+      quizHistoryIdx = quizHistory.length - 1;
+      updateQuizNavButtons();
+      renderQuizBoard();
+    }
+
+    function updateQuizNavButtons() {
+      const prev = document.getElementById('btn-quiz-prev');
+      const next = document.getElementById('btn-quiz-next');
+      if (!prev || !next) return;
+      prev.disabled = quizHistoryIdx <= 0;
+      // Next is always enabled (can always generate a new question forward)
+      next.disabled = false;
+    }
+
+    function quizNavPrev() {
+      if (quizHistoryIdx <= 0) return;
+      quizHistoryIdx--;
+      quizCurrentQ = quizHistory[quizHistoryIdx];
+      updateQuizNavButtons();
+      renderQuizBoard();
+    }
+
+    function quizNavNext() {
+      if (quizHistoryIdx < quizHistory.length - 1) {
+        // Navigate forward in history (already-fetched question)
+        quizHistoryIdx++;
+        quizCurrentQ = quizHistory[quizHistoryIdx];
+        updateQuizNavButtons();
+        renderQuizBoard();
+      } else {
+        // At the latest — generate a new question
+        generateQuizQuestion();
+      }
+    }
+
+    function renderQuizBoard() {
+      quizRenderGen++;
+      const currentGen = quizRenderGen;
+      const q = quizCurrentQ;
+      if (!q) return;
+
+      const questionEl = document.getElementById('quiz-display-question');
+      const grid = document.getElementById('quiz-answers-grid');
+      if (!questionEl || !grid) return;
+
+      // Resolve theme for this question (Mixed picks randomly once per question)
+      if (quizSettings.theme === 'mixed') {
+        const pool = ['normal','ben-holly','peppa','kung-fu-panda'];
+        currentQuizTheme = pool[Math.floor(Math.random() * pool.length)];
+      } else {
+        currentQuizTheme = quizSettings.theme;
+      }
+
+      questionEl.textContent = q.question;
+      grid.innerHTML = '';
+      grid.className = 'grid grid-cols-1 sm:grid-cols-2 gap-8 w-full max-w-2xl';
+
+      // Question read time
+      const questionContainer = questionEl.parentElement;
+      questionContainer.style.border = '1px solid rgba(139, 92, 246, 0.2)';
+      questionContainer.style.borderRadius = '1rem';
+      questionContainer.style.padding = '1.5rem';
+      questionContainer.style.position = 'relative';
+      questionContainer.style.overflow = 'hidden';
+
+      const existingBar = questionContainer.querySelector('.quiz-qread-bar');
+      if (existingBar) existingBar.remove();
+      if (quizQReadTimerId) { cancelAnimationFrame(quizQReadTimerId); quizQReadTimerId = null; }
+      if (quizQReadOnEnter) questionContainer.removeEventListener('mouseenter', quizQReadOnEnter);
+      if (quizQReadOnLeave) questionContainer.removeEventListener('mouseleave', quizQReadOnLeave);
+      if (quizQReadOnClick) questionContainer.removeEventListener('click', quizQReadOnClick);
+      questionContainer.style.cursor = '';
+
+      const shouldDelay = quizSettings.qReadEnabled && quizSettings.qReadTimeMs > 0;
+      if (shouldDelay) {
+        grid.style.opacity = '0';
+        grid.style.pointerEvents = 'none';
+        grid.style.transition = 'opacity 0.4s ease';
+
+        const bar = document.createElement('div');
+        bar.className = 'quiz-qread-bar';
+        bar.style.cssText = 'position:absolute;bottom:0;left:0;height:3px;background:linear-gradient(90deg,#7c3aed,#a855f7);width:0%;z-index:10;border-radius:0 2px 2px 0;';
+        questionContainer.appendChild(bar);
+
+        let elapsed = 0, hovering = false, lastT = null, done = false;
+        const animate = (t) => {
+          if (currentGen !== quizRenderGen || done) return;
+          if (hovering) {
+            if (!lastT) lastT = t;
+            elapsed += t - lastT;
+            lastT = t;
+          } else { lastT = null; }
+          const pct = Math.min((elapsed / quizSettings.qReadTimeMs) * 100, 100);
+          bar.style.width = `${pct}%`;
+          if (pct >= 100) {
+            done = true;
+            grid.style.opacity = '1';
+            grid.style.pointerEvents = '';
+            bar.style.background = 'linear-gradient(90deg,#10b981,#06b6d4)';
+            setTimeout(() => { if (bar.parentNode) bar.style.opacity = '0'; }, 600);
+            questionContainer.removeEventListener('mouseenter', onEnter);
+            questionContainer.removeEventListener('mouseleave', onLeave);
+            questionContainer.removeEventListener('click', onClick);
+            questionContainer.style.cursor = '';
+            return;
+          }
+          quizQReadTimerId = requestAnimationFrame(animate);
+        };
+        const onEnter = () => { hovering = true; };
+        const onLeave = () => { hovering = false; lastT = null; };
+        const onClick = () => { elapsed = quizSettings.qReadTimeMs; };
+        quizQReadOnEnter = onEnter;
+        quizQReadOnLeave = onLeave;
+        quizQReadOnClick = onClick;
+        questionContainer.addEventListener('mouseenter', onEnter);
+        questionContainer.addEventListener('mouseleave', onLeave);
+        questionContainer.addEventListener('click', onClick);
+        questionContainer.style.cursor = 'pointer';
+        quizQReadTimerId = requestAnimationFrame(animate);
+      } else {
+        grid.style.opacity = '1';
+        grid.style.pointerEvents = '';
+        grid.style.transition = '';
+      }
+
+      // Render answer cards
+      q.answers.forEach((answer, idx) => {
+        const isCorrect = answer.id === q.correctId;
+        const card = document.createElement('div');
+        card.className = 'relative overflow-hidden rounded-2xl p-6 h-48 flex items-center justify-center cursor-pointer transition-all duration-300 transform outline outline-2 outline-offset-4 select-none bg-slate-800 outline-transparent hover:bg-slate-700 hover:shadow-xl';
+
+        const textSpan = document.createElement('span');
+        textSpan.className = 'text-3xl font-semibold text-center text-slate-100 transition-colors z-10 pointer-events-none';
+        textSpan.textContent = answer.text;
+        card.appendChild(textSpan);
+
+        // Progress bar
+        const progressBar = document.createElement('div');
+        progressBar.className = 'absolute bottom-0 left-0 h-1.5 bg-violet-500/40 transition-none z-10';
+        progressBar.style.width = '0%';
+        card.appendChild(progressBar);
+
+        // SVG dwell overlay
+        let timer = null;
+        let svgOverlay = null;
+        const removeOverlay = () => { if (svgOverlay && svgOverlay.parentNode === card) { card.removeChild(svgOverlay); svgOverlay = null; } };
+        const addOverlay = () => {
+          if (!svgOverlay) {
+            svgOverlay = document.createElement('div');
+            svgOverlay.className = 'absolute inset-0 flex items-center justify-center z-20 pointer-events-none';
+            svgOverlay.innerHTML = `<svg class="w-28 h-28 transform -rotate-90"><circle cx="56" cy="56" r="44" class="text-slate-700/80" stroke-width="7" stroke="currentColor" fill="transparent" /><circle cx="56" cy="56" r="44" class="text-violet-400" style="opacity:0.55" stroke-width="7" stroke-dasharray="276.46" stroke-dashoffset="276.46" stroke-linecap="round" stroke="currentColor" fill="transparent" /></svg>`;
+            card.appendChild(svgOverlay);
+          }
+        };
+
+        // One-shot guard: prevent double-counting if mouse clicks/dwell fires multiple times
+        let quizQuestionAnswered = false;
+
+        const doSelect = () => {
+          if (isCorrect) {
+            if (quizQuestionAnswered) return; // already counted — ignore repeat triggers
+            quizQuestionAnswered = true;
+            // Flash green + celebrate (always)
+            card.classList.add('animate-success', 'quiz-correct-pulse');
+            burstConfetti(card);
+            playQuizCorrectSound();
+            // Ben & Holly bonus: Ben Elf walks in on top of the normal celebration
+            if (currentQuizTheme === 'ben-holly') {
+              triggerBenElfCelebration();
+            }
+            quizScore++;
+            updateQuizScoreBar();
+            if (quizScore >= quizSettings.correctTarget) {
+              setTimeout(() => showQuizWin(), 900);
+            } else {
+              setTimeout(() => generateQuizQuestion(), 1100);
+            }
+          } else {
+            // Flash red + wrong
+            card.style.background = '#1e293b';
+            card.style.outlineColor = 'rgba(239,68,68,0.5)';
+            card.classList.add('wrong-cross');
+            playWrongSound();
+            // Allow retrying after brief animation
+            setTimeout(() => {
+              card.style.background = '';
+              card.style.outlineColor = '';
+              card.classList.remove('wrong-cross');
+            }, 800);
+          }
+        };
+
+        const startDwell = () => {
+          if (quizSettings.dwellTimeMs === 0) return;
+          let start = null;
+          const animate = (t) => {
+            if (currentGen !== quizRenderGen) return;
+            if (!start) start = t;
+            const elapsed = t - start;
+            const progress = Math.min((elapsed / quizSettings.dwellTimeMs) * 100, 100);
+            progressBar.style.width = `${progress}%`;
+            if (progress > 0) {
+              addOverlay();
+              const circle = svgOverlay.querySelector('circle:last-child');
+              if (circle) {
+                const circ = 44 * 2 * Math.PI;
+                circle.style.strokeDashoffset = circ - (progress / 100) * circ;
+              }
+            }
+            if (progress >= 100) { doSelect(); } else { timer = requestAnimationFrame(animate); }
+          };
+          timer = requestAnimationFrame(animate);
+        };
+        const stopDwell = () => {
+          if (timer) cancelAnimationFrame(timer);
+          progressBar.style.width = '0%';
+          removeOverlay();
+        };
+
+        card.addEventListener('mouseenter', startDwell);
+        card.addEventListener('mouseleave', stopDwell);
+        card.addEventListener('click', doSelect);
+        card.addEventListener('touchstart', (e) => { e.preventDefault(); startDwell(); });
+        card.addEventListener('touchend', (e) => { e.preventDefault(); stopDwell(); doSelect(); });
+        card.addEventListener('touchcancel', (e) => { e.preventDefault(); stopDwell(); });
+
+        grid.appendChild(card);
+      });
+    }
+
+    // ── Quiz card theme decoration ──────────────────────────────────────────
+    const _BH_CHAR_POSITIONS = ['0% 0%','100% 0%','0% 100%','100% 100%'];
+    const _PEPPA_CHARS = ['assets/peppa/peppa.png','assets/peppa/suzy.png','assets/peppa/george.png','assets/peppa/friends.png'];
+    const _KFP_DECOS = ['🍭','🐼','⚡','🥋'];
+
+    function applyQuizCardTheme(card, answer, idx) {
+      // Card backgrounds are always dark slate — theme only affects the celebration animation.
+      // (Character image overlays removed per user request.)
+    }
+
+    // ── Ben Elf celebration (Ben & Holly theme) ────────────────────────
+    let _benElfT = null;
+    function triggerBenElfCelebration() {
+      playBenElfHorn();
+      const el = document.getElementById('quiz-ben-elf');
+      if (!el) return;
+      if (_benElfT) { clearTimeout(_benElfT); }
+      el.classList.remove('walk-in','walk-out');
+      void el.offsetWidth; // force reflow
+      el.classList.add('walk-in');
+      _benElfT = setTimeout(() => {
+        el.classList.remove('walk-in');
+        el.classList.add('walk-out');
+        _benElfT = setTimeout(() => {
+          el.classList.remove('walk-out');
+          el.style.opacity = '0';
+        }, 600);
+      }, 2700);
+    }
+
+    // ── Ben Elf horn fanfare (sawtooth + square for brass texture) ───────
+    function playBenElfHorn() {
+      try {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return;
+        const ctx = new AC();
+        const master = ctx.createGain();
+        master.gain.setValueAtTime(0.30, ctx.currentTime);
+        master.connect(ctx.destination);
+        // Ta-ta-ta-TAAA fanfare (horn melody)
+        const fanfare = [
+          [392, 0.00, 0.20], // G4
+          [392, 0.22, 0.18], // G4
+          [392, 0.42, 0.18], // G4
+          [523, 0.62, 0.38], // C5
+          [659, 1.02, 0.22], // E5
+          [784, 1.26, 0.55], // G5 long
+        ];
+        fanfare.forEach(([freq, delay, dur]) => {
+          const t = ctx.currentTime + delay;
+          ['sawtooth','square'].forEach((type, ti) => {
+            const osc = ctx.createOscillator(), gain = ctx.createGain();
+            osc.type = type; osc.frequency.setValueAtTime(freq, t);
+            if (ti === 1) osc.detune.value = 8;
+            gain.gain.setValueAtTime(0, t);
+            gain.gain.linearRampToValueAtTime(ti === 0 ? 0.4 : 0.1, t + 0.04);
+            gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+            osc.connect(gain); gain.connect(master);
+            osc.start(t); osc.stop(t + dur + 0.05);
+          });
+        });
+      } catch(_) {}
+    }
+
+    // ── Confetti burst ──────────────────────────────────────────────────────
+    function burstConfetti(sourceEl) {
+      const COLORS = ['#a78bfa','#f59e0b','#34d399','#f472b6','#60a5fa','#fbbf24','#fb7185'];
+      const rect = sourceEl ? sourceEl.getBoundingClientRect() : { left: window.innerWidth/2, top: window.innerHeight/2, width: 0, height: 0 };
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top  + rect.height / 2;
+      const COUNT = 28;
+      for (let i = 0; i < COUNT; i++) {
+        const el = document.createElement('div');
+        el.className = 'quiz-confetti-piece';
+        const angle = (Math.PI * 2 * i) / COUNT + (Math.random() - 0.5) * 0.4;
+        const dist  = 90 + Math.random() * 120;
+        el.style.setProperty('--cx', `${Math.cos(angle) * dist}px`);
+        el.style.setProperty('--cy', `${Math.sin(angle) * dist - 40}px`);
+        el.style.setProperty('--cr', `${Math.random() * 540 - 270}deg`);
+        el.style.background = COLORS[i % COLORS.length];
+        el.style.borderRadius = Math.random() > 0.5 ? '50%' : '2px';
+        el.style.width  = `${7 + Math.random() * 7}px`;
+        el.style.height = `${7 + Math.random() * 7}px`;
+        el.style.left = `${cx - 5}px`;
+        el.style.top  = `${cy - 5}px`;
+        el.style.animationDelay = `${Math.random() * 0.12}s`;
+        document.body.appendChild(el);
+        el.addEventListener('animationend', () => el.remove());
+      }
+    }
+
+    // ── Quiz correct-answer fanfare (richer than basic success chirp) ────────
+    function playQuizCorrectSound() {
+      if (peppaMuted) return;
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        const ctx = new AudioCtx();
+        const masterGain = ctx.createGain();
+        masterGain.gain.setValueAtTime(0.28, ctx.currentTime);
+        masterGain.connect(ctx.destination);
+
+        // Ascending arpeggio: C5 → E5 → G5 → C6 → E6
+        const notes = [523.25, 659.25, 783.99, 1046.50, 1318.51];
+        notes.forEach((freq, i) => {
+          const osc  = ctx.createOscillator();
+          const gain = ctx.createGain();
+          const t = ctx.currentTime + i * 0.1;
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, t);
+          gain.gain.setValueAtTime(0, t);
+          gain.gain.linearRampToValueAtTime(0.6, t + 0.04);
+          gain.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+          osc.connect(gain); gain.connect(masterGain);
+          osc.start(t); osc.stop(t + 0.36);
+        });
+
+        // Sparkle layer — high twinkling overtones
+        [2093, 2637, 3136].forEach((freq, i) => {
+          const osc  = ctx.createOscillator();
+          const gain = ctx.createGain();
+          const t = ctx.currentTime + 0.25 + i * 0.07;
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(freq, t);
+          gain.gain.setValueAtTime(0, t);
+          gain.gain.linearRampToValueAtTime(0.15, t + 0.03);
+          gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+          osc.connect(gain); gain.connect(masterGain);
+          osc.start(t); osc.stop(t + 0.26);
+        });
+      } catch(_) {}
+    }
+
+    function showQuizWin() {
+      const overlay = document.getElementById('quiz-win-overlay');
+      const msg = document.getElementById('quiz-win-message');
+      if (msg) msg.textContent = `Amazing! You got ${quizScore} correct answer${quizScore !== 1 ? 's' : ''} in a row!`;
+      if (overlay) overlay.classList.add('show');
+      stopQuizMusic();
+    }
+
+    window.startQuiz = () => {
+      // Close settings if open
+      document.getElementById('quiz-settings-overlay').classList.remove('show');
+      // Hide win overlay
+      const winOverlay = document.getElementById('quiz-win-overlay');
+      if (winOverlay) winOverlay.classList.remove('show');
+
+      // Ensure quiz view is showing and mode is set (prevents landing-page jump)
+      mode = 'quiz';
+      viewLanding.classList.add('hidden');
+      viewEducation.classList.add('hidden');
+      viewEdit.classList.add('hidden');
+      viewMathGame.classList.add('hidden');
+      viewPeppaGame.classList.add('hidden');
+      if (viewQuiz) viewQuiz.classList.remove('hidden');
+
+      // Reset per-game state — DO NOT clear quizAskedQuestions (persisted across games)
+      quizScore = 0;
+      quizCurrentQ = null;
+      quizQuestionQueue = [];  // discard pre-fetched queue from prior settings
+      quizHistory = []; quizHistoryIdx = -1;
+      quizRenderGen++;
+      updateQuizScoreBar();
+      // Start music
+      startQuizMusic();
+      // Log active subjects for debugging
+      console.log('[Quiz] Starting with subjects:', quizSettings.subjects, '| Known questions:', quizAskedQuestions.length);
+      // Generate first question
+      generateQuizQuestion();
+    };
+
+    function setQuizMode() {
+      mode = 'quiz';
+      isEditMode = false;
+      viewLanding.classList.add('hidden');
+      viewEducation.classList.add('hidden');
+      viewEdit.classList.add('hidden');
+      viewMathGame.classList.add('hidden');
+      viewPeppaGame.classList.add('hidden');
+      if (viewQuiz) viewQuiz.classList.remove('hidden');
+      categoryTabs.classList.add('hidden');
+      btnLogout.classList.add('hidden');
+
+      // Swap header buttons to quiz controls (double-click required)
+      enterQuizHeaderMode();
+
+      // Show settings first, let user configure before starting
+      initQuizSettingsUI();
+      quizScore = 0;
+      quizCurrentQ = null;
+      // DO NOT clear quizAskedQuestions here — it is persisted across sessions
+      quizQuestionQueue = [];
+      quizHistory = []; quizHistoryIdx = -1;
+      quizRenderGen++;
+      updateQuizScoreBar();
+      // Show a placeholder while settings are visible
+      const questionEl = document.getElementById('quiz-display-question');
+      if (questionEl) questionEl.textContent = 'Configure your quiz below and press Start!';
+      const grid = document.getElementById('quiz-answers-grid');
+      if (grid) grid.innerHTML = '';
+      // Open settings automatically
+      document.getElementById('quiz-settings-overlay').classList.add('show');
+    }
 
     // Navigation Event Listeners
     const logoElement = document.getElementById('logo');
@@ -2630,11 +3910,19 @@
     }
 
     if (btnEducation) {
-       btnEducation.addEventListener('click', () => setMode('education'));
+       // Context-aware: in quiz mode single click does nothing (need dblclick),
+       // in all other modes single click goes to education mode.
+       btnEducation.addEventListener('click', () => {
+         if (mode !== 'quiz') setMode('education');
+       });
     }
     
     if (btnEdit) {
-       btnEdit.addEventListener('dblclick', () => setMode('edit'));
+       // Context-aware: in quiz mode single click does nothing (need dblclick for Exit),
+       // in all other modes double-click goes to edit mode.
+       btnEdit.addEventListener('dblclick', () => {
+         if (mode !== 'quiz') setMode('edit');
+       });
     }
 
     btnPrevEdu.addEventListener('dblclick', () => {
@@ -2653,6 +3941,12 @@
           renderEducationBoard();
        }
     });
+
+    // Quiz nav arrows (dblclick, same as edu mode)
+    const btnQuizPrev = document.getElementById('btn-quiz-prev');
+    const btnQuizNext = document.getElementById('btn-quiz-next');
+    if (btnQuizPrev) btnQuizPrev.addEventListener('dblclick', () => quizNavPrev());
+    if (btnQuizNext) btnQuizNext.addEventListener('dblclick', () => quizNavNext());
 
     // Edit nav
     btnPrevEdit.addEventListener('click', () => {
@@ -3237,6 +4531,9 @@
                 renderEducationBoard();
              }
           }
+       } else if (mode === 'quiz') {
+          if (e.key === 'ArrowRight') { e.preventDefault(); quizNavNext(); }
+          else if (e.key === 'ArrowLeft') { e.preventDefault(); quizNavPrev(); }
        } else if (mode === 'edit') {
           // Check if typing in a text field
           if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA' || document.activeElement.tagName === 'SELECT') {
