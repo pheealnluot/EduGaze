@@ -811,13 +811,19 @@
     flex: 1;
     min-height: 0;
     overflow: hidden;
+    /* Override Tailwind's items-center and justify-center so the quiz grid stretches */
     align-items: stretch !important;
     justify-content: flex-start !important;
+    /* align-self ensures it fills the cross axis even with body's align-items:center */
+    align-self: stretch !important;
+    width: 100% !important;
+    max-width: 100% !important;
   }
   /* view-quiz: outer CSS Grid with auto/1fr rows.
      Guarantees the answer grid gets a truly definite height for 1fr rows. */
   body.quiz-active #view-quiz {
     flex: 1;
+    align-self: stretch;
     min-height: 0;
     overflow: hidden;
     display: grid !important;
@@ -1106,7 +1112,7 @@
     <!-- Landing Page (Hub) -->
     <div id="view-landing" class="w-full flex flex-col items-center gap-12 transition-all duration-500">
       <div class="text-center space-y-4 mb-4">
-        <p style="font-size:0.6rem;color:#1f2937;font-family:monospace;letter-spacing:0.06em;margin-bottom:-0.5rem">v 18-Apr-26 23:41:00</p>
+        <p style="font-size:0.6rem;color:#1f2937;font-family:monospace;letter-spacing:0.06em;margin-bottom:-0.5rem">v 19-Apr-26 13:56:00</p>
         <h2 class="text-5xl md:text-6xl font-black text-white tracking-tight">Welcome, <span class="bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-400">Explorer</span></h2>
         <p class="text-slate-400 text-lg md:text-xl font-medium">Choose an activity to begin your journey.</p>
       </div>
@@ -1604,8 +1610,8 @@
         <h2 class="text-4xl font-black text-white mb-3">Quiz Complete!</h2>
         <p id="quiz-win-message" class="text-slate-400 text-base mb-8">You answered all questions correctly!</p>
         <div class="flex flex-col gap-4">
-          <button onclick="window.startQuiz()" class="w-full py-4 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white font-black rounded-2xl transition-all shadow-xl text-lg">Play Again</button>
-          <button onclick="window.openQuizSettings()" class="w-full py-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-2xl transition-all">Settings / Play Again</button>
+          <button onclick="document.getElementById('quiz-win-overlay').classList.remove('show'); window.openQuizSettings();" class="w-full py-4 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white font-black rounded-2xl transition-all shadow-xl text-lg">▶ Play Again</button>
+          <button onclick="document.getElementById('quiz-win-overlay').classList.remove('show'); setMode('landing');" class="w-full py-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-2xl transition-all">Exit</button>
         </div>
       </div>
     </div>
@@ -4100,6 +4106,10 @@ Return this structure:
       // Class reset — quiz-active CSS overrides sizing in viewport-fill mode
       grid.className = 'grid grid-cols-2 gap-4 w-full max-w-4xl mx-auto px-4';
       grid.style.height = '100%';
+      // Always reset visibility — prevents opacity:0 from a previous question getting stuck
+      grid.style.opacity = '1';
+      grid.style.pointerEvents = '';
+      grid.style.transition = '';
 
       // Question read time
       const questionContainer = questionEl.parentElement;
@@ -4130,7 +4140,12 @@ Return this structure:
 
         let elapsed = 0, hovering = false, lastT = null, done = false;
         const animate = (t) => {
-          if (currentGen !== quizRenderGen || done) return;
+          if (currentGen !== quizRenderGen || done) {
+            // Safety: always restore opacity if we bail out early
+            grid.style.opacity = '1';
+            grid.style.pointerEvents = '';
+            return;
+          }
           if (hovering) {
             if (!lastT) lastT = t;
             elapsed += t - lastT;
@@ -4315,18 +4330,11 @@ Return this structure:
 
     let _bhToastT = null;
     function triggerBenElfCelebration() {
-      // Play horn sound "on top of" existing sounds
+      // Pick one celebration sound randomly from the pool of 3
       try {
-        const horn = new Audio('assets/bh/08_elf_horn_hit.mp3');
-        horn.volume = 0.9;
-        horn.play().catch(() => {});
-
-        // Randomly pick either fairy_wow or recorder for the secondary layer
-        const otherPool = ['assets/bh/fairy_wow.mp3', 'assets/bh/recorder.mp3'];
-        const snd = new Audio(otherPool[Math.floor(Math.random() * otherPool.length)]);
+        const snd = new Audio(_BH_SOUNDS[Math.floor(Math.random() * _BH_SOUNDS.length)]);
         snd.volume = 0.85;
-        // Stagger slightly for richer soundscape
-        setTimeout(() => snd.play().catch(() => {}), 150);
+        snd.play().catch(err => console.error("Celebration sound failed:", err));
       } catch(_) {}
 
       const toast = document.getElementById('bh-toast');
