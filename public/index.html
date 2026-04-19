@@ -830,10 +830,12 @@
     grid-template-rows: auto 1fr;
     align-items: stretch;
     justify-items: center;
-    gap: 1vh;
+    /* Gap between question row and answer grid — grows when screen is tall */
+    gap: clamp(8px, 2.5vh, 32px);
     width: 100%;
     max-width: none !important;
-    padding: 0 clamp(10px, 2vw, 30px);
+    /* Side padding — wider on large screens so answers don't touch the edges */
+    padding: 0 clamp(12px, 4vw, 80px);
     box-sizing: border-box;
   }
   /* Question row: natural height */
@@ -850,9 +852,10 @@
     display: grid !important;
     grid-template-columns: 1fr 1fr;
     grid-template-rows: 1fr 1fr;
-    /* Gaps scale with viewport height for that "larger distance" feel */
-    gap: clamp(16px, 4vh, 60px) clamp(16px, 3vw, 50px);
-    padding: 0 0 clamp(12px, 2vh, 24px);
+    /* Gaps between cards — scale with viewport */
+    gap: clamp(12px, 3vh, 48px) clamp(12px, 2.5vw, 40px);
+    /* Side padding keeps cards away from screen edges; bottom gives breathing room */
+    padding: 0 clamp(8px, 2vw, 40px) clamp(12px, 2vh, 28px);
     box-sizing: border-box;
   }
   /* Answer cards: display:flex ensures content is centered when boxes are huge */
