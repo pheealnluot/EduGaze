@@ -78,6 +78,7 @@
       gap: 2rem;
       width: 100%;
       max-width: 1000px;
+      margin: 0 auto;
     }
     .hub-card {
       background: rgba(30, 41, 59, 0.4);
@@ -797,7 +798,7 @@
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    align-items: stretch !important;
+    align-items: center !important;
   }
   body.quiz-active header {
     margin-bottom: 0.25rem !important;
@@ -822,6 +823,7 @@
     display: grid !important;
     grid-template-rows: auto 1fr;
     align-items: stretch;
+    justify-items: center;
     gap: 1vh;
     width: 100%;
     max-width: none !important;
@@ -848,6 +850,27 @@
     box-sizing: border-box;
   }
   /* Answer cards: display:flex ensures content is centered when boxes are huge */
+  .quiz-font-small { font-size: 0.875rem !important; } /* text-sm */
+  .quiz-font-medium { font-size: clamp(1.25rem, 3vh, 2rem) !important; font-weight: 700; line-height: 1.2; } /* default-ish */
+  .quiz-font-large { font-size: clamp(1.875rem, 5vh, 2.75rem) !important; font-weight: 800; line-height: 1.1; }
+  .quiz-font-extra-large { font-size: clamp(2.5rem, 8vh, 4.5rem) !important; font-weight: 900; line-height: 1.0; }
+
+  body.quiz-active #quiz-answers-grid > div {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    height: 100% !important;
+    padding: 1.5rem !important;
+    box-sizing: border-box;
+    text-align: center;
+  }
+  body.quiz-active #quiz-answers-grid > div span {
+    display: block;
+    width: 100%;
+    overflow-wrap: break-word;
+    word-wrap: break-word;
+    hyphens: auto;
+  }
   body.quiz-active #quiz-answers-grid > div {
     height: 100% !important;
     min-height: 0 !important;
@@ -1049,7 +1072,7 @@
       </feMerge>
     </filter>
   </svg>
-  <header class="w-full max-w-4xl flex justify-between items-center mb-10 z-50">
+  <header class="w-full max-w-4xl mx-auto flex justify-between items-center mb-10 z-50">
     <div class="flex items-center gap-6">
       <h1 id="logo" onclick="setMode('landing')" class="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-emerald-400 cursor-pointer hover:opacity-80 transition-opacity">
         EduGaze
@@ -1077,9 +1100,9 @@
     </div>
   </header>
 
-  <nav id="category-tabs" class="w-full max-w-6xl flex justify-center gap-2 mb-8 flex-wrap"></nav>
+  <nav id="category-tabs" class="w-full max-w-6xl mx-auto flex justify-center gap-2 mb-8 flex-wrap"></nav>
 
-  <main class="w-full max-w-6xl flex-1 flex flex-col items-center justify-center relative">
+  <main class="w-full max-w-6xl mx-auto flex-1 flex flex-col items-center justify-center relative">
     <!-- Landing Page (Hub) -->
     <div id="view-landing" class="w-full flex flex-col items-center gap-12 transition-all duration-500">
       <div class="text-center space-y-4 mb-4">
@@ -1310,11 +1333,13 @@
     <!-- Quiz View -->
     <div id="view-quiz" class="w-full flex flex-col items-center gap-4 transition-opacity hidden">
       <!-- Score + question section -->
-      <div class="quiz-question-section w-full max-w-5xl px-4 flex flex-col gap-1">
+      <div class="quiz-question-section w-full max-w-5xl mx-auto px-4 flex flex-col gap-1">
         <!-- Score dots -->
-        <div class="quiz-score-row flex items-center gap-3 justify-center mb-1">
+        <div class="quiz-score-row flex items-center gap-3 justify-center mb-1 relative">
           <span class="text-xs font-bold uppercase tracking-[0.2em] text-violet-400">Quiz</span>
           <div id="quiz-score-bar" class="flex items-center gap-1.5"><!-- filled by JS --></div>
+          <!-- AI/FB badge - moved here to save vertical space -->
+          <div id="quiz-source-badge" class="absolute right-0 top-1/2 -translate-y-1/2"></div>
         </div>
         <!-- Question text with arrows -->
         <div class="flex items-center gap-3">
@@ -1328,8 +1353,7 @@
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
           </button>
         </div>
-        <!-- AI/FB badge -->
-        <div id="quiz-source-badge" style="padding-left:3.5rem;margin-top:0.2rem;min-height:1.2rem"></div>
+
       </div>
       <!-- Answer grid -->
       <div id="quiz-answers-grid" class="grid grid-cols-2 gap-4 w-full max-w-4xl px-4">
@@ -1393,6 +1417,18 @@
             </div>
           </div>
 
+          <!-- Font Size Selection -->
+          <div class="space-y-3 border-t border-slate-800 pt-5">
+            <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">🔤 Font Size</label>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2" id="quiz-font-size-chips">
+              <button class="qsrc-pill" data-size="small">Small</button>
+              <button class="qsrc-pill active-source" data-size="medium">Medium</button>
+              <button class="qsrc-pill" data-size="large">Large</button>
+              <button class="qsrc-pill" data-size="extra-large">Extra</button>
+            </div>
+            <p class="text-[10px] text-slate-500">Adjust the answer text size for better visibility.</p>
+          </div>
+
           <!-- Correct answers to win -->
           <div class="space-y-3 border-t border-slate-800 pt-5">
             <div class="flex justify-between items-center">
@@ -1439,6 +1475,16 @@
               <input type="range" id="quiz-dwell-slider" min="0" max="6000" step="100" value="2000" class="flex-1 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-violet-500">
             </div>
             <p class="text-[10px] text-slate-500">How long the cursor must stay over an answer to select it. (0 = instant click)</p>
+          </div>
+
+          <!-- Hint System -->
+          <div class="space-y-3 border-t border-slate-800 pt-5">
+            <div class="flex justify-between items-center">
+              <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">💡 Hint after X Wrongs</label>
+              <span id="quiz-hint-display" class="text-violet-400 font-black text-lg">4</span>
+            </div>
+            <input type="range" id="quiz-hint-slider" min="1" max="11" step="1" value="4" class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-violet-500">
+            <p class="text-[10px] text-slate-500">Number of wrong attempts before a hint character appears. (11 = Never)</p>
           </div>
 
           <!-- Question Read Time -->
@@ -2365,7 +2411,7 @@
         
         gain.gain.setValueAtTime(0, ctx.currentTime);
         gain.gain.linearRampToValueAtTime(0.15, ctx.currentTime + 0.02);
-        gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.3);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
         
         osc1.connect(gain);
         osc2.connect(gain);
@@ -2378,6 +2424,35 @@
       } catch(e) {
         console.error("Audio playback error", e);
       }
+    }
+
+    function playHintSound() {
+      try {
+        const audio = new Audio('assets/bh/fairy_wow.mp3');
+        audio.volume = 0.4;
+        audio.play().catch(() => {});
+      } catch (e) {}
+    }
+
+    function triggerQuizHint() {
+      const card = window._currentCorrectCard;
+      if (!card || card.querySelector('.quiz-hint-character')) return;
+      
+      const char = document.createElement('img');
+      const idx = Math.floor(Math.random() * 10) + 1;
+      char.src = `assets/peppa/friend${idx}.png`;
+      // Updated: w-28 h-28 and bottom-4 right-[12%] to be larger and closer to middle
+      char.className = 'quiz-hint-character absolute bottom-4 right-[12%] w-28 h-28 z-20 object-contain pointer-events-none transform scale-0 transition-all duration-500';
+      char.style.maxWidth = '35%';
+      char.style.maxHeight = '50%';
+      
+      card.appendChild(char);
+      // Trigger pop-in animation
+      setTimeout(() => {
+        char.style.transform = 'scale(1) rotate(-5deg)';
+      }, 50);
+      
+      playHintSound();
     }
 
     function resizeImageFileToDataURL(file, maxSize = 400) {
@@ -3388,14 +3463,19 @@
       qReadTimeMs: 1000,
       theme: 'ben-holly',
       questionSource: 'ai',
+      fontSize: 'medium',
+      hintThreshold: 4,
     };
     // Migrate saved settings that are missing the new field
     if (!initialSettings.questionSource) initialSettings.questionSource = 'ai';
+    if (!initialSettings.fontSize) initialSettings.fontSize = 'medium';
+    if (initialSettings.hintThreshold === undefined) initialSettings.hintThreshold = 4;
 
     let quizSettings = initialSettings;
 
     let currentQuizTheme = 'normal'; 
     let quizScore = 0;
+    let quizWrongAttempts = 0;
     let quizCurrentQ = null;
     let quizRenderGen = 0;
     let quizAudio = null;
@@ -3563,6 +3643,47 @@
         qReadSlider.value = val;
         saveQuizSettings();
       };
+      qReadInput.oninput = e => syncQRead(e.target.value);
+      qReadSlider.oninput = e => syncQRead(e.target.value);
+
+      // Font Size chips
+      const applyQuizFontSize = () => {
+        const grid = document.getElementById('quiz-answers-grid');
+        if (!grid) return;
+        const spans = grid.querySelectorAll('span');
+        const sizes = ['small', 'medium', 'large', 'extra-large'];
+        spans.forEach(span => {
+          sizes.forEach(s => span.classList.remove(`quiz-font-${s}`));
+          span.classList.add(`quiz-font-${quizSettings.fontSize}`);
+        });
+      };
+
+      document.querySelectorAll('#quiz-font-size-chips .qsrc-pill').forEach(chip => {
+        chip.classList.toggle('active-source', quizSettings.fontSize === chip.dataset.size);
+        chip.onclick = () => {
+          quizSettings.fontSize = chip.dataset.size;
+          document.querySelectorAll('#quiz-font-size-chips .qsrc-pill').forEach(c =>
+            c.classList.toggle('active-source', c.dataset.size === quizSettings.fontSize)
+          );
+          applyQuizFontSize();
+          saveQuizSettings();
+        };
+      });
+
+      // Hint slider
+      const hintSlider = document.getElementById('quiz-hint-slider');
+      const hintDisplay = document.getElementById('quiz-hint-display');
+      if (hintSlider && hintDisplay) {
+        hintSlider.value = quizSettings.hintThreshold;
+        hintDisplay.textContent = quizSettings.hintThreshold === 11 ? 'Never' : quizSettings.hintThreshold;
+        hintSlider.oninput = e => {
+          const val = parseInt(e.target.value);
+          quizSettings.hintThreshold = val;
+          hintDisplay.textContent = val === 11 ? 'Never' : val;
+          saveQuizSettings();
+        };
+      }
+
       // Question Source toggle
       const updateQSourceUI = () => {
         document.getElementById('qsrc-btn-ai').classList.toggle('active-source', quizSettings.questionSource === 'ai');
@@ -3977,13 +4098,14 @@ Return this structure:
       }
       grid.innerHTML = '';
       // Class reset — quiz-active CSS overrides sizing in viewport-fill mode
-      grid.className = 'grid grid-cols-2 gap-4 w-full max-w-4xl px-4';
+      grid.className = 'grid grid-cols-2 gap-4 w-full max-w-4xl mx-auto px-4';
+      grid.style.height = '100%';
 
       // Question read time
       const questionContainer = questionEl.parentElement;
-      questionContainer.style.border = '1px solid rgba(139, 92, 246, 0.2)';
-      questionContainer.style.borderRadius = '1rem';
-      questionContainer.style.padding = '1.5rem';
+      questionContainer.style.border = '1px solid rgba(139, 92, 246, 0.12)';
+      questionContainer.style.borderRadius = '0.75rem';
+      questionContainer.style.padding = '0.75rem 1rem';
       questionContainer.style.position = 'relative';
       questionContainer.style.overflow = 'hidden';
 
@@ -4047,16 +4169,20 @@ Return this structure:
         grid.style.transition = '';
       }
 
+      quizWrongAttempts = 0; // Reset counter for new question
       // Render answer cards
       q.answers.forEach((answer, idx) => {
         const isCorrect = answer.id === q.correctId;
         const card = document.createElement('div');
         card.className = 'relative overflow-hidden rounded-2xl p-5 flex items-center justify-center cursor-pointer transition-all duration-300 transform outline outline-2 outline-offset-4 select-none bg-slate-800 outline-transparent hover:bg-slate-700 hover:shadow-xl';
 
+        const fontSizeClass = `quiz-font-${quizSettings.fontSize}`;
         const textSpan = document.createElement('span');
-        textSpan.className = 'text-xl md:text-2xl font-semibold text-center text-slate-100 transition-colors z-10 pointer-events-none';
+        textSpan.className = `font-semibold text-center text-slate-100 transition-colors z-10 pointer-events-none ${fontSizeClass}`;
         textSpan.textContent = answer.text;
         card.appendChild(textSpan);
+
+        if (isCorrect) window._currentCorrectCard = card; // Store for hint logic
 
         // Progress bar
         const progressBar = document.createElement('div');
@@ -4101,10 +4227,20 @@ Return this structure:
             }
           } else {
             // Flash red + wrong
+            if (card.classList.contains('wrong-cross')) return; // Already marked wrong
             card.style.background = '#1e293b';
             card.style.outlineColor = 'rgba(239,68,68,0.5)';
             card.classList.add('wrong-cross');
             playWrongSound();
+            
+            // Handle Hint System
+            if (quizSettings.hintThreshold <= 10) {
+              quizWrongAttempts++;
+              if (quizWrongAttempts >= quizSettings.hintThreshold) {
+                triggerQuizHint();
+              }
+            }
+
             // Allow retrying after brief animation
             setTimeout(() => {
               card.style.background = '';
@@ -4175,15 +4311,22 @@ Return this structure:
       'assets/bh/hollywand.png',
       'assets/bh/benhorn.png',
     ];
-    const _BH_SOUNDS = ['assets/bh/fairy_wow.mp3', 'assets/bh/recorder.mp3'];
+    const _BH_SOUNDS = ['assets/bh/fairy_wow.mp3', 'assets/bh/recorder.mp3', 'assets/bh/08_elf_horn_hit.mp3'];
 
     let _bhToastT = null;
     function triggerBenElfCelebration() {
-      // Random sound
+      // Play horn sound "on top of" existing sounds
       try {
-        const snd = new Audio(_BH_SOUNDS[Math.floor(Math.random() * _BH_SOUNDS.length)]);
+        const horn = new Audio('assets/bh/08_elf_horn_hit.mp3');
+        horn.volume = 0.9;
+        horn.play().catch(() => {});
+
+        // Randomly pick either fairy_wow or recorder for the secondary layer
+        const otherPool = ['assets/bh/fairy_wow.mp3', 'assets/bh/recorder.mp3'];
+        const snd = new Audio(otherPool[Math.floor(Math.random() * otherPool.length)]);
         snd.volume = 0.85;
-        snd.play().catch(() => {});
+        // Stagger slightly for richer soundscape
+        setTimeout(() => snd.play().catch(() => {}), 150);
       } catch(_) {}
 
       const toast = document.getElementById('bh-toast');
@@ -4226,7 +4369,7 @@ Return this structure:
       void toast.offsetWidth; // force reflow
       toast.classList.add('show');
 
-      // Hold 2.2 s then pop out
+      // Hold 4.4 s then pop out (doubled per user request)
       _bhToastT = setTimeout(() => {
         toast.classList.remove('show');
         toast.classList.add('hide');
@@ -4234,7 +4377,7 @@ Return this structure:
           toast.classList.remove('hide');
           toast.innerHTML = ''; // clean up DOM
         }, 380);
-      }, 2200);
+      }, 4400);
     }
 
     // ── Confetti burst ──────────────────────────────────────────────────────
