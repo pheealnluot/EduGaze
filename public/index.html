@@ -21,7 +21,7 @@
       60% { transform: translateY(-7px) scale(1.02); }
     }
     .animate-success {
-      animation: successBounce 1s ease;
+      animation: successBounce 0.75s ease;
       box-shadow: 0 0 30px rgba(16, 185, 129, 0.6) !important;
       outline-color: #10b981 !important; /* emerald-500 */
       background-color: #059669 !important; /* emerald-600 */
@@ -956,7 +956,7 @@
     70%  { box-shadow: 0 0 0 22px rgba(167,139,250,0); }
     100% { box-shadow: 0 0 0 0 rgba(167,139,250,0); }
   }
-  .quiz-correct-pulse { animation: quizCorrectPulse 0.6s ease-out; }
+  .quiz-correct-pulse { animation: quizCorrectPulse 0.45s ease-out; }
   .quiz-badge {
     width: 120px;
     height: 120px;
@@ -1507,6 +1507,15 @@
               <input type="range" id="quiz-qread-slider" min="0" max="10000" step="100" value="2000" class="flex-1 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-amber-500">
             </div>
             <p class="text-[10px] text-slate-500">Delay before answers appear, giving time to read the question. (0-10000ms)</p>
+          </div>
+
+          <!-- Voice Over -->
+          <div class="space-y-1 border-t border-slate-800 pt-5">
+            <div class="flex items-center gap-3">
+              <input type="checkbox" id="quiz-voiceover-enabled" class="w-4 h-4 text-violet-500 bg-slate-900 border-slate-700 rounded focus:ring-violet-500">
+              <label for="quiz-voiceover-enabled" class="text-xs font-bold text-slate-400 uppercase tracking-wider cursor-pointer select-none">🔊 Voice Over</label>
+            </div>
+            <p class="text-[10px] text-slate-500">Reads the question aloud, then each answer. Says a congratulatory phrase when you get one right!</p>
           </div>
 
           <button onclick="window.startQuiz()" class="w-full py-4 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white font-black rounded-2xl transition-all shadow-lg shadow-violet-500/20 active:scale-95 text-base mt-2">
@@ -3474,11 +3483,13 @@
       questionSource: 'ai',
       fontSize: 'medium',
       hintThreshold: 4,
+      voiceOver: false,
     };
     // Migrate saved settings that are missing the new field
     if (!initialSettings.questionSource) initialSettings.questionSource = 'ai';
     if (!initialSettings.fontSize) initialSettings.fontSize = 'medium';
     if (initialSettings.hintThreshold === undefined) initialSettings.hintThreshold = 4;
+    if (initialSettings.voiceOver === undefined) initialSettings.voiceOver = false;
 
     let quizSettings = initialSettings;
 
@@ -3707,6 +3718,16 @@
         quizSettings.questionSource = 'bank'; updateQSourceUI(); saveQuizSettings();
       };
       updateQSourceUI();
+
+      // Voice Over toggle
+      const voChk = document.getElementById('quiz-voiceover-enabled');
+      if (voChk) {
+        voChk.checked = quizSettings.voiceOver;
+        voChk.onchange = e => {
+          quizSettings.voiceOver = e.target.checked;
+          saveQuizSettings();
+        };
+      }
     }
 
     function updateQuizMusicToggleUI() {
@@ -3751,6 +3772,150 @@
         quizAudio = null;
       }
     }
+
+    // ── Voice Over (TTS) helper ─────────────────────────────────────────────
+    const _VO_CONGRATS = [
+      'Amazing!', 'Fantastic!', 'You got it!', 'Brilliant!',
+      'Super!', 'Excellent!', 'Wonderful!', 'Outstanding!', 'Great job!', 'Correct!'
+    ];
+    let _voiceEnglish = null;  // cached English female voice (Gemini-like)
+    let _voiceChinese = null;  // cached Mandarin female voice
+    let _quizVoiceDelay = 0;   // timestamp: don't speak question before this time
+    let _voAbortGen = 0;       // incremented to cancel stale answer-reading timers
+
+    // Detect Chinese characters in the text
+    function _isChineseText(text) {
+      return /[\u4e00-\u9fff\u3400-\u4dbf]/.test(text);
+    }
+
+    // Pick the best English female voice, closest to Gemini's default
+    function _pickEnglishVoice() {
+      if (_voiceEnglish) return _voiceEnglish;
+      const voices = window.speechSynthesis?.getVoices() || [];
+      if (!voices.length) return null;
+      // Gemini uses Google's US English neural voice — match closest available
+      const preferred = [
+        'Google US English',           // Closest to Gemini default
+        'Google UK English Female',    // Google neural, UK female
+        'Microsoft Aria Online (Natural) - English (United States)', // MS neural
+        'Microsoft Jenny Online (Natural) - English (United States)',
+        'Microsoft Aria - English (United States)',
+        'Microsoft Zira Desktop - English (United States)',
+        'Microsoft Hazel Desktop - English (Great Britain)',
+        'Samantha', 'Karen', 'Victoria', 'Moira', // macOS
+      ];
+      for (const name of preferred) {
+        const v = voices.find(v => v.name === name);
+        if (v) { _voiceEnglish = v; return v; }
+      }
+      const byKeyword = voices.find(v => v.name.toLowerCase().includes('female') && v.lang?.startsWith('en'));
+      if (byKeyword) { _voiceEnglish = byKeyword; return byKeyword; }
+      const enUS = voices.find(v => v.lang === 'en-US');
+      const enAny = voices.find(v => v.lang?.startsWith('en'));
+      _voiceEnglish = enUS || enAny || null;
+      return _voiceEnglish;
+    }
+
+    // Pick a native Mandarin female voice
+    function _pickChineseVoice() {
+      if (_voiceChinese) return _voiceChinese;
+      const voices = window.speechSynthesis?.getVoices() || [];
+      if (!voices.length) return null;
+      const preferred = [
+        'Google \u666e\u901a\u8bdd\uff08\u4e2d\u56fd\u5927\u9646\uff09', // Google 普通话（中国大陆）
+        'Microsoft Yaoyao Desktop - Chinese (Simplified, PRC)',
+        'Microsoft Huihui Desktop - Chinese (Simplified, PRC)',
+        'Ting-Ting',  // macOS
+        'Sin-Ji',     // macOS Cantonese fallback
+      ];
+      for (const name of preferred) {
+        const v = voices.find(v => v.name === name);
+        if (v) { _voiceChinese = v; return v; }
+      }
+      // Any zh-CN voice (prefer female-sounding ones)
+      const zhCN = voices.find(v => v.lang === 'zh-CN');
+      const zhAny = voices.find(v => v.lang?.startsWith('zh'));
+      _voiceChinese = zhCN || zhAny || null;
+      return _voiceChinese;
+    }
+
+    // Re-pick after voices list loads (Chrome loads voices asynchronously)
+    if (window.speechSynthesis) {
+      window.speechSynthesis.onvoiceschanged = () => {
+        _voiceEnglish = null;
+        _voiceChinese = null;
+        _pickEnglishVoice();
+        _pickChineseVoice();
+      };
+    }
+
+    // Core speak function — auto-detects language and picks the right voice.
+    // onEnd callback fires when utterance completes (or immediately if voiceOver off).
+    function quizSpeak(text, { rate = 0.95, pitch = 1.0, delay = 0, onEnd = null } = {}) {
+      if (!quizSettings.voiceOver) { if (onEnd) onEnd(); return; }
+      if (!window.speechSynthesis) { if (onEnd) onEnd(); return; }
+      const isChinese = _isChineseText(text);
+      const speak = () => {
+        const utt = new SpeechSynthesisUtterance(text);
+        if (isChinese) {
+          const v = _pickChineseVoice();
+          if (v) { utt.voice = v; }
+          else { utt.lang = 'zh-CN'; }
+          utt.rate  = rate * 0.95;  // slightly slower for Mandarin clarity
+          utt.pitch = 1.15;         // light pitch lift; Chinese voices don't need high pitch
+        } else {
+          const v = _pickEnglishVoice();
+          if (v) { utt.voice = v; }
+          else { utt.lang = 'en-US'; }
+          utt.rate  = rate;
+          utt.pitch = pitch || 1.2; // moderate lift for Gemini-like warmth
+        }
+        if (onEnd) utt.onend = onEnd;
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(utt);
+      };
+      if (delay > 0) setTimeout(speak, delay); else speak();
+    }
+
+    // Read answers once the grid is visible — each answer spoken separately with a pause.
+    function _speakAnswers(q, gen) {
+      if (!quizSettings.voiceOver) return;
+      if (gen !== quizRenderGen) return;
+      const grid = document.getElementById('quiz-answers-grid');
+      if (!grid) return;
+      if (parseFloat(grid.style.opacity || '1') < 0.99) {
+        setTimeout(() => _speakAnswers(q, gen), 200);
+        return;
+      }
+      // Chain each answer as a separate utterance with a 600ms pause between.
+      // _voAbortGen is incremented when a correct answer is selected, cancelling stale timers.
+      const answers = q.answers.map(a => a.text);
+      const abortGen = _voAbortGen;
+      let idx = 0;
+      const speakNext = () => {
+        if (idx >= answers.length || gen !== quizRenderGen || abortGen !== _voAbortGen) return;
+        const isLast = idx === answers.length - 1;
+        quizSpeak(answers[idx++], {
+          rate: 0.88,
+          onEnd: isLast ? null : () => setTimeout(() => {
+            if (abortGen !== _voAbortGen || gen !== quizRenderGen) return;
+            speakNext();
+          }, 600)
+        });
+      };
+      setTimeout(speakNext, 300);
+    }
+
+    // Speak a congratulatory phrase; celebration logic fires in onEnd
+    function quizSpeakCongrats(correctAnswer, { onEnd = null } = {}) {
+      if (!quizSettings.voiceOver) { if (onEnd) onEnd(); return; }
+      const praise = _VO_CONGRATS[Math.floor(Math.random() * _VO_CONGRATS.length)];
+      quizSpeak(`${praise} The answer is: ${correctAnswer}!`, { rate: 1.0, pitch: 1.25, onEnd });
+    }
+    function quizSpeakCancel() {
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
     window.openQuizSettings = () => {
       initQuizSettingsUI();
@@ -4090,6 +4255,15 @@ Return this structure:
       }
 
       questionEl.textContent = q.question;
+      quizSpeakCancel(); // stop any leftover TTS from the previous question
+      const _speakDelay = Math.max(0, _quizVoiceDelay - Date.now());
+      const _capturedGen = currentGen;
+      // Same voice settings for question and answers (no pitch override)
+      quizSpeak(q.question, {
+        rate: 0.88, delay: _speakDelay,
+        onEnd: () => _speakAnswers(q, _capturedGen)
+      });
+      _quizVoiceDelay = 0; // reset for next question
       // Update source badge — left-aligned, discreet
       const badge = document.getElementById('quiz-source-badge');
       if (badge) {
@@ -4132,33 +4306,34 @@ Return this structure:
 
       const shouldDelay = quizSettings.qReadEnabled && quizSettings.qReadTimeMs > 0;
       if (shouldDelay) {
-        grid.style.opacity = '0';
+        // Answers stay VISIBLE (opacity 1) — only clicks are blocked.
+        // This ensures boxes always fill the space; the bar is the countdown indicator.
+        grid.style.opacity = '1';
         grid.style.pointerEvents = 'none';
-        grid.style.transition = 'opacity 0.4s ease';
+        grid.style.transition = '';
 
         const bar = document.createElement('div');
         bar.className = 'quiz-qread-bar';
         bar.style.cssText = 'position:absolute;bottom:0;left:0;height:3px;background:linear-gradient(90deg,#7c3aed,#a855f7);width:0%;z-index:10;border-radius:0 2px 2px 0;';
         questionContainer.appendChild(bar);
 
+        // Bar auto-fills over qReadTimeMs. Hovering question makes it fill faster (2×).
+        // Clicking the question box skips immediately.
         let elapsed = 0, hovering = false, lastT = null, done = false;
         const animate = (t) => {
           if (currentGen !== quizRenderGen || done) {
-            // Safety: always restore opacity if we bail out early
-            grid.style.opacity = '1';
             grid.style.pointerEvents = '';
             return;
           }
-          if (hovering) {
-            if (!lastT) lastT = t;
-            elapsed += t - lastT;
-            lastT = t;
-          } else { lastT = null; }
+          if (!lastT) lastT = t;
+          const dt = t - lastT;
+          lastT = t;
+          // Advance at 1× normally, 2× when hovering the question
+          elapsed += hovering ? dt * 2 : dt;
           const pct = Math.min((elapsed / quizSettings.qReadTimeMs) * 100, 100);
           bar.style.width = `${pct}%`;
           if (pct >= 100) {
             done = true;
-            grid.style.opacity = '1';
             grid.style.pointerEvents = '';
             bar.style.background = 'linear-gradient(90deg,#10b981,#06b6d4)';
             setTimeout(() => { if (bar.parentNode) bar.style.opacity = '0'; }, 600);
@@ -4166,12 +4341,13 @@ Return this structure:
             questionContainer.removeEventListener('mouseleave', onLeave);
             questionContainer.removeEventListener('click', onClick);
             questionContainer.style.cursor = '';
+            _attachVoOverHoverBar(questionContainer, q, currentGen);
             return;
           }
           quizQReadTimerId = requestAnimationFrame(animate);
         };
         const onEnter = () => { hovering = true; };
-        const onLeave = () => { hovering = false; lastT = null; };
+        const onLeave = () => { hovering = false; };
         const onClick = () => { elapsed = quizSettings.qReadTimeMs; };
         quizQReadOnEnter = onEnter;
         quizQReadOnLeave = onLeave;
@@ -4185,9 +4361,47 @@ Return this structure:
         grid.style.opacity = '1';
         grid.style.pointerEvents = '';
         grid.style.transition = '';
+        // No qRead delay — still attach VoiceOver hover bar
+        _attachVoOverHoverBar(questionContainer, q, currentGen);
       }
 
-      quizWrongAttempts = 0; // Reset counter for new question
+      quizWrongAttempts = 0;
+      // Answer TTS is chained from question onEnd via _speakAnswers() above
+
+      // ── VoiceOver hover-to-re-read helper ──────────────────────────────────
+      // Defined here (before first call) so it's always in scope.
+      // Hovering the question after answers appear shows a teal bar (using dwellTimeMs)
+      // and re-reads the question on completion.
+      function _attachVoOverHoverBar(container, question, gen) {
+        if (!quizSettings.voiceOver || !quizSettings.dwellTimeMs) return;
+        if (gen !== quizRenderGen) return;
+        const old = container.querySelector('.quiz-vo-rebar');
+        if (old) old.remove();
+        const bar = document.createElement('div');
+        bar.className = 'quiz-vo-rebar';
+        bar.style.cssText = 'position:absolute;bottom:0;left:0;height:3px;background:linear-gradient(90deg,#06b6d4,#10b981);width:0%;z-index:10;border-radius:0 2px 2px 0;opacity:0;transition:opacity 0.2s;';
+        container.appendChild(bar);
+        let timer = null, elapsed = 0, lastT = null;
+        const animate = (t) => {
+          if (gen !== quizRenderGen) { cancelAnimationFrame(timer); return; }
+          if (!lastT) lastT = t;
+          elapsed += t - lastT;
+          lastT = t;
+          const pct = Math.min((elapsed / quizSettings.dwellTimeMs) * 100, 100);
+          bar.style.width = `${pct}%`;
+          if (pct >= 100) {
+            bar.style.opacity = '0'; elapsed = 0;
+            quizSpeak(question.question, { rate: 0.88 });
+            return;
+          }
+          timer = requestAnimationFrame(animate);
+        };
+        const onEnter = () => { bar.style.opacity = '1'; lastT = null; timer = requestAnimationFrame(animate); };
+        const onLeave = () => { if (timer) cancelAnimationFrame(timer); elapsed = 0; lastT = null; bar.style.width = '0%'; bar.style.opacity = '0'; };
+        container.addEventListener('mouseenter', onEnter);
+        container.addEventListener('mouseleave', onLeave);
+        container.style.cursor = 'pointer';
+      }
       // Render answer cards
       q.answers.forEach((answer, idx) => {
         const isCorrect = answer.id === q.correctId;
@@ -4228,21 +4442,37 @@ Return this structure:
           if (isCorrect) {
             if (quizQuestionAnswered) return; // already counted — ignore repeat triggers
             quizQuestionAnswered = true;
-            // Flash green + celebrate (always)
+            // Immediate visual: card flashes green right away
             card.classList.add('animate-success', 'quiz-correct-pulse');
-            burstConfetti(card);
-            playQuizCorrectSound();
-            // Ben & Holly bonus: Ben Elf walks in on top of the normal celebration
-            if (currentQuizTheme === 'ben-holly') {
-              triggerBenElfCelebration();
-            }
-            quizScore++;
-            updateQuizScoreBar();
-            if (quizScore >= quizSettings.correctTarget) {
-              setTimeout(() => showQuizWin(), 900);
-            } else {
-              setTimeout(() => generateQuizQuestion(), 1100);
-            }
+
+            // Cancel any ongoing answer TTS immediately
+            _voAbortGen++;
+            quizSpeakCancel();
+
+            // Step 1: Speak congratulatory phrase FIRST
+            // Step 2: All celebration sounds + animations fire AFTER TTS completes
+            const _correctText = q.answers.find(a => a.id === q.correctId)?.text || '';
+            quizSpeakCongrats(_correctText, {
+              onEnd: () => {
+                // Celebration sounds + character pop-in happen after TTS
+                burstConfetti(card);
+                playQuizCorrectSound();
+                if (currentQuizTheme === 'ben-holly') {
+                  triggerBenElfCelebration();
+                  // Ben & Holly toast = 3300ms; generateQuizQuestion fires at 1100ms
+                  _quizVoiceDelay = Date.now() + 3200;
+                } else {
+                  _quizVoiceDelay = Date.now() + 1500;
+                }
+                quizScore++;
+                updateQuizScoreBar();
+                if (quizScore >= quizSettings.correctTarget) {
+                  setTimeout(() => showQuizWin(), 900);
+                } else {
+                  setTimeout(() => generateQuizQuestion(), 1100);
+                }
+              }
+            });
           } else {
             // Flash red + wrong
             if (card.classList.contains('wrong-cross')) return; // Already marked wrong
@@ -4388,7 +4618,7 @@ Return this structure:
           toast.classList.remove('hide');
           toast.innerHTML = ''; // clean up DOM
         }, 380);
-      }, 4400);
+      }, 3300);
     }
 
     // ── Confetti burst ──────────────────────────────────────────────────────
