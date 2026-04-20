@@ -873,23 +873,25 @@
     box-sizing: border-box;
     text-align: center;
   }
-  body.quiz-active #quiz-answers-grid > div span {
+  /* Answer text CONTAINER: block so it fills card width, text wraps naturally inside */
+  body.quiz-active #quiz-answers-grid > div .quiz-answer-text {
     display: block;
     width: 100%;
     overflow-wrap: break-word;
     word-wrap: break-word;
     hyphens: auto;
+    text-align: center;
   }
-  body.quiz-active #quiz-answers-grid > div {
-    height: 100% !important;
-    min-height: 0 !important;
-    display: flex !important;
-    flex-direction: column !important;
-    justify-content: center !important;
-    align-items: center !important;
-    text-align: center !important;
-    padding: clamp(12px, 3vh, 40px) clamp(12px, 2vw, 30px) !important;
-    border-radius: 1.5rem !important;
+  /* Word-level spans inside the answer text MUST stay inline so text flows on one line */
+  body.quiz-active #quiz-answers-grid > div .quiz-answer-text span {
+    display: inline !important;
+    width: auto !important;
+    white-space: normal;
+  }
+  /* Answer text: scale max font size so it "fills" the tall box */
+  body.quiz-active #quiz-answers-grid .quiz-answer-text {
+    font-size: clamp(1rem, 3.5vh, 2.5rem) !important;
+    font-weight: 800 !important;
   }
   /* Question font scales down to stay compact */
   body.quiz-active #quiz-display-question {
@@ -897,11 +899,11 @@
     line-height: 1.2 !important;
     padding: clamp(6px, 1vh, 14px) !important;
   }
-  /* Answer text: scale max font size so it "fills" the tall box */
-  body.quiz-active #quiz-answers-grid span {
-    font-size: clamp(1rem, 3.5vh, 2.5rem) !important;
-    font-weight: 800 !important;
-    width: 100%;
+  /* Word spans inside question must be inline for text flow and underlines to work */
+  body.quiz-active #quiz-display-question span {
+    display: inline !important;
+    width: auto !important;
+    white-space: normal;
   }
   body.quiz-active .quiz-score-row { margin-bottom: 0 !important; }
   /* Quiz Win overlay */
@@ -3786,7 +3788,9 @@
     // ── Voice Over (TTS) helper ─────────────────────────────────────────────
     const _VO_CONGRATS = [
       'Amazing!', 'Fantastic!', 'You got it!', 'Brilliant!',
-      'Super!', 'Excellent!', 'Wonderful!', 'Outstanding!', 'Great job!', 'Correct!'
+      'Super!', 'Excellent!', 'Wonderful!', 'Outstanding!', 'Great job!', 'Correct!',
+      'Incredible!', 'You are a star!', 'Way to go!', 'Way to go!', 'You are a genius!',
+      'Magnificent!', 'Marvelous!', 'Spectacular!'
     ];
     let _voiceEnglish = null;  // cached English female voice (Gemini-like)
     let _voiceChinese = null;  // cached Mandarin female voice
@@ -3798,22 +3802,32 @@
       return /[\u4e00-\u9fff\u3400-\u4dbf]/.test(text);
     }
 
-    // Wraps text in spans for highlighting. Handles English (word-by-word) and Chinese (char-by-char).
+    // Wraps text into inline <span> children for word-level highlighting.
+    // Each child span gets data-start/end so the onboundary event can find it.
+    // LAYOUT CONTRACT:
+    //   - The container element must be block/inline-block with a defined width.
+    //   - Word spans are plain inline — the browser wraps naturally between them.
+    //   - We do NOT set white-space:nowrap on child spans; single-token spans
+    //     (e.g. "don't") already can't break mid-token in normal flow.
     function prepareHighlightableText(element, text) {
+      if (!element) return [];
       element.innerHTML = '';
+      // Let the container wrap normally; do NOT constrain it to nowrap.
+      element.style.whiteSpace = 'normal';
+      element.style.wordBreak = 'normal'; // break only at normal word boundaries
       const tokens = [];
-      
-      // Segment text into Chinese and non-Chinese
-      const segmentRe = /([\u4e00-\u9fff\u3400-\u4dbf]+)|([^\u4e00-\u9fff\u3400-\u4dbf]+)/g;
+
+      // Segment: Chinese runs vs. non-Chinese runs
+      const segmentRe = /([\u4e00-\u9fff\u3400-\u4dbf\u3000-\u303f\uff00-\uffef]+)|([^\u4e00-\u9fff\u3400-\u4dbf\u3000-\u303f\uff00-\uffef]+)/g;
       let match;
       let globalIdx = 0;
 
       while ((match = segmentRe.exec(text)) !== null) {
         const chunk = match[0];
         const isZh = !!match[1];
-        
+
         if (isZh) {
-          // Chinese: wrap each character
+          // Chinese: one span per character (TTS fires per-char boundary)
           for (const char of chunk) {
             const span = document.createElement('span');
             span.textContent = char;
@@ -3824,20 +3838,22 @@
             globalIdx += char.length;
           }
         } else {
-          // English/Other: wrap each word + whitespace separately
-          // This ensures spaces don't get underlined awkwardly but are preserved in order
-          const wordRe = /(\s+)|([^\s]+)/g;
-          let wordMatch;
-          while ((wordMatch = wordRe.exec(chunk)) !== null) {
-            const word = wordMatch[0];
+          // English / mixed: tokenise into (spaces | words-with-apostrophes | punctuation)
+          // Regex group 1 = whitespace (not a token), 2 = word, 3 = punctuation
+          const tokenRe = /([ \t\r\n]+)|([\w][\w'\u2019\-]*)|([^\w\s]+)/g;
+          let tMatch;
+          while ((tMatch = tokenRe.exec(chunk)) !== null) {
+            const token = tMatch[0];
+            const isWord  = !!tMatch[2];
+            const isPunct = !!tMatch[3];
             const span = document.createElement('span');
-            span.textContent = word;
+            span.textContent = token;
             span.dataset.start = globalIdx;
-            span.dataset.end = globalIdx + word.length;
+            span.dataset.end = globalIdx + token.length;
             element.appendChild(span);
-            // Only push to tokens if it's a word (not just whitespace)
-            if (wordMatch[2]) tokens.push(span);
-            globalIdx += word.length;
+            // Only words and punctuation are highlight targets; spaces are silent
+            if (isWord || isPunct) tokens.push(span);
+            globalIdx += token.length;
           }
         }
       }
@@ -3926,9 +3942,17 @@
       const segments = _segmentText(text);
       if (!segments.length) { if (onEnd) onEnd(); return; }
 
+      // If targetElement already has highlight spans, use them. Otherwise, create them.
+      // We check for a special data attribute to avoid "judder" from re-creating spans during speech.
       let tokenSpans = [];
       if (targetElement) {
-        tokenSpans = prepareHighlightableText(targetElement, text);
+        if (targetElement.dataset.prepared === 'true') {
+          // Query existing spans created during render
+          tokenSpans = Array.from(targetElement.querySelectorAll('span')).filter(s => s.dataset.start !== undefined);
+        } else {
+          tokenSpans = prepareHighlightableText(targetElement, text);
+          targetElement.dataset.prepared = 'true';
+        }
       }
 
       const speakSegments = () => {
@@ -3945,7 +3969,10 @@
           }
 
           const seg = segments[currentIdx];
-          const utt = new SpeechSynthesisUtterance(seg.text);
+          // Silence brackets and punctuation by replacing with a space (preserves 1:1 character count
+          // so that event.charIndex still lines up with our span dataset.start/end values).
+          const spokenText = seg.text.replace(/[\(\)\[\]\{\}？！，。：；、\?\!\.\,]/g, ' ');
+          const utt = new SpeechSynthesisUtterance(spokenText);
           
           if (seg.lang === 'zh') {
             const v = _pickChineseVoice();
@@ -3956,29 +3983,42 @@
             const v = _pickEnglishVoice();
             if (v) utt.voice = v; else utt.lang = 'en-US';
             utt.rate = rate;
-            utt.pitch = pitch || 1.2;
+            utt.pitch = pitch || 1.0;
           }
 
-          // Highlighting logic
+          // ── Highlighting ─────────────────────────────────────────────────────
+          // event.charIndex is an offset within the *current* spokenText utterance.
+          // globalCharOffset maps it back to the original full-text indices that
+          // prepareHighlightableText stored in span.dataset.start / .end.
+          // Since we replace each punctuation char with exactly one space, the
+          // length of spokenText === length of seg.text, so indices are 1:1.
           utt.onboundary = (event) => {
-            if (event.name === 'word' && tokenSpans.length) {
-              const charIdx = globalCharOffset + event.charIndex;
-              // Clear previous highlights
+            if (!tokenSpans.length) return;
+            const charIdx = globalCharOffset + event.charIndex;
+            
+            // Primary: exact range match
+            let target = tokenSpans.find(s => {
+              const sStart = parseInt(s.dataset.start);
+              const sEnd   = parseInt(s.dataset.end);
+              return charIdx >= sStart && charIdx < sEnd;
+            });
+
+            // Fallback: nearest token whose start is just ahead of charIdx
+            // (handles browsers that fire boundary at the space before a word)
+            if (!target) {
+              target = tokenSpans.find(s => parseInt(s.dataset.start) === charIdx + 1) ||
+                       tokenSpans.find(s => parseInt(s.dataset.start) === charIdx + 2);
+            }
+
+            if (target) {
               tokenSpans.forEach(s => s.classList.remove('quiz-word-highlight'));
-              // Find and highlight current token
-              const target = tokenSpans.find(s => {
-                const sStart = parseInt(s.dataset.start);
-                const sEnd = parseInt(s.dataset.end);
-                return charIdx >= sStart && charIdx < sEnd;
-              });
-              if (target) target.classList.add('quiz-word-highlight');
+              target.classList.add('quiz-word-highlight');
             }
           };
 
           utt.onend = () => {
-            // Clear highlights for this segment
             tokenSpans.forEach(s => s.classList.remove('quiz-word-highlight'));
-            globalCharOffset += seg.text.length;
+            globalCharOffset += seg.text.length; // advance by ORIGINAL length (same as spoken length)
             currentIdx++;
             speakNext();
           };
@@ -4026,11 +4066,24 @@
       setTimeout(speakNext, 300);
     }
 
-    // Speak a congratulatory phrase; celebration logic fires in onEnd
+    // Speak a congratulatory phrase; celebration logic fires in onEnd.
+    // We split into TWO separate utterances with a real pause so the TTS engine
+    // uses rising inflection on the praise and then a measured announcement.
     function quizSpeakCongrats(correctAnswer, { onEnd = null } = {}) {
       if (!quizSettings.voiceOver) { if (onEnd) onEnd(); return; }
       const praise = _VO_CONGRATS[Math.floor(Math.random() * _VO_CONGRATS.length)];
-      quizSpeak(`${praise} The answer is: ${correctAnswer}!`, { rate: 1.0, pitch: 1.25, onEnd });
+      // Step 1: speak the praise with high energy
+      quizSpeak(praise, {
+        rate: 1.05, pitch: 1.1,
+        onEnd: () => {
+          // Step 2: pause 600 ms then announce the answer at a calmer pace
+          setTimeout(() => {
+            quizSpeak(`The correct answer is: ${correctAnswer}.`, {
+              rate: 0.9, pitch: 1.0, onEnd
+            });
+          }, 600);
+        }
+      });
     }
     function quizSpeakCancel() {
       if (window.speechSynthesis) window.speechSynthesis.cancel();
@@ -4374,7 +4427,8 @@ Return this structure:
         currentQuizTheme = quizSettings.theme;
       }
 
-      questionEl.textContent = q.question;
+      prepareHighlightableText(questionEl, q.question);
+      questionEl.dataset.prepared = 'true';
       quizSpeakCancel(); // stop any leftover TTS from the previous question
       const _speakDelay = Math.max(0, _quizVoiceDelay - Date.now());
       const _capturedGen = currentGen;
@@ -4513,7 +4567,12 @@ Return this structure:
           bar.style.width = `${pct}%`;
           if (pct >= 100) {
             bar.style.opacity = '0'; elapsed = 0;
-            quizSpeak(question.question, { rate: 0.88 });
+            // Re-read question then chain into answers
+            quizSpeak(question.question, {
+              rate: 0.88,
+              targetElement: questionEl,
+              onEnd: () => _speakAnswers(question, gen)
+            });
             return;
           }
           timer = requestAnimationFrame(animate);
@@ -4532,8 +4591,10 @@ Return this structure:
 
         const fontSizeClass = `quiz-font-${quizSettings.fontSize}`;
         const textSpan = document.createElement('span');
-        textSpan.className = `font-semibold text-center text-slate-100 transition-colors z-10 pointer-events-none ${fontSizeClass}`;
-        textSpan.textContent = answer.text;
+        // quiz-answer-text is targeted by CSS for font size; word spans inside use default inline layout
+        textSpan.className = `quiz-answer-text font-semibold text-center text-slate-100 transition-colors z-10 pointer-events-none ${fontSizeClass}`;
+        prepareHighlightableText(textSpan, answer.text);
+        textSpan.dataset.prepared = 'true';
         card.appendChild(textSpan);
 
         if (isCorrect) window._currentCorrectCard = card; // Store for hint logic
@@ -5253,7 +5314,8 @@ Return this structure:
             return;
          }
 
-         displayQuestion.textContent = q.question;
+         prepareHighlightableText(displayQuestion, q.question);
+         displayQuestion.dataset.prepared = 'true';
          displayQCountEdu.textContent = `Question ${currentQuestionIndex + 1} of ${list.length}`;
          
          btnPrevEdu.disabled = currentQuestionIndex === 0;
@@ -5423,7 +5485,8 @@ Return this structure:
         
         const textSpan = document.createElement('span');
         textSpan.className = textClass + (isSelected ? (isCorrect ? 'text-white' : 'text-slate-100 opacity-50') : 'text-slate-100');
-        textSpan.textContent = answer.text;
+        prepareHighlightableText(textSpan, answer.text);
+        textSpan.dataset.prepared = 'true';
         
         if (answer.text.trim().length > 0) {
             innerContainer.appendChild(textSpan);
