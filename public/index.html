@@ -1066,6 +1066,16 @@
     color: white;
     box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
   }
+  
+  /* Word-level highlighting for VoiceOver */
+  .quiz-word-highlight {
+    text-decoration: underline;
+    text-decoration-color: #06b6d4; /* teal-400 */
+    text-decoration-thickness: 3px;
+    text-underline-offset: 4px;
+    color: #fff !important;
+    transition: all 0.1s ease;
+  }
   </style>
 </head>
 <body class="min-h-screen flex flex-col items-center py-10 px-4">
@@ -3788,6 +3798,52 @@
       return /[\u4e00-\u9fff\u3400-\u4dbf]/.test(text);
     }
 
+    // Wraps text in spans for highlighting. Handles English (word-by-word) and Chinese (char-by-char).
+    function prepareHighlightableText(element, text) {
+      element.innerHTML = '';
+      const tokens = [];
+      
+      // Segment text into Chinese and non-Chinese
+      const segmentRe = /([\u4e00-\u9fff\u3400-\u4dbf]+)|([^\u4e00-\u9fff\u3400-\u4dbf]+)/g;
+      let match;
+      let globalIdx = 0;
+
+      while ((match = segmentRe.exec(text)) !== null) {
+        const chunk = match[0];
+        const isZh = !!match[1];
+        
+        if (isZh) {
+          // Chinese: wrap each character
+          for (const char of chunk) {
+            const span = document.createElement('span');
+            span.textContent = char;
+            span.dataset.start = globalIdx;
+            span.dataset.end = globalIdx + char.length;
+            element.appendChild(span);
+            tokens.push(span);
+            globalIdx += char.length;
+          }
+        } else {
+          // English/Other: wrap each word + whitespace separately
+          // This ensures spaces don't get underlined awkwardly but are preserved in order
+          const wordRe = /(\s+)|([^\s]+)/g;
+          let wordMatch;
+          while ((wordMatch = wordRe.exec(chunk)) !== null) {
+            const word = wordMatch[0];
+            const span = document.createElement('span');
+            span.textContent = word;
+            span.dataset.start = globalIdx;
+            span.dataset.end = globalIdx + word.length;
+            element.appendChild(span);
+            // Only push to tokens if it's a word (not just whitespace)
+            if (wordMatch[2]) tokens.push(span);
+            globalIdx += word.length;
+          }
+        }
+      }
+      return tokens;
+    }
+
     // Pick the best English female voice, closest to Gemini's default
     function _pickEnglishVoice() {
       if (_voiceEnglish) return _voiceEnglish;
@@ -3849,32 +3905,91 @@
       };
     }
 
-    // Core speak function — auto-detects language and picks the right voice.
-    // onEnd callback fires when utterance completes (or immediately if voiceOver off).
-    function quizSpeak(text, { rate = 0.95, pitch = 1.0, delay = 0, onEnd = null } = {}) {
+    // Segment text into language-specific chunks for TTS
+    function _segmentText(text) {
+      const parts = [];
+      const segmentRe = /([\u4e00-\u9fff\u3400-\u4dbf]+)|([^\u4e00-\u9fff\u3400-\u4dbf]+)/g;
+      let match;
+      while ((match = segmentRe.exec(text)) !== null) {
+        if (match[1]) parts.push({ text: match[1], lang: 'zh' });
+        else if (match[2]) parts.push({ text: match[2], lang: 'en' });
+      }
+      return parts;
+    }
+
+    // Core speak function — auto-detects language segments and picks the right voices.
+    // Supports word-level highlighting if targetElement is provided.
+    function quizSpeak(text, { rate = 0.95, pitch = 1.0, delay = 0, onEnd = null, targetElement = null } = {}) {
       if (!quizSettings.voiceOver) { if (onEnd) onEnd(); return; }
       if (!window.speechSynthesis) { if (onEnd) onEnd(); return; }
-      const isChinese = _isChineseText(text);
-      const speak = () => {
-        const utt = new SpeechSynthesisUtterance(text);
-        if (isChinese) {
-          const v = _pickChineseVoice();
-          if (v) { utt.voice = v; }
-          else { utt.lang = 'zh-CN'; }
-          utt.rate  = rate * 0.95;  // slightly slower for Mandarin clarity
-          utt.pitch = 1.15;         // light pitch lift; Chinese voices don't need high pitch
-        } else {
-          const v = _pickEnglishVoice();
-          if (v) { utt.voice = v; }
-          else { utt.lang = 'en-US'; }
-          utt.rate  = rate;
-          utt.pitch = pitch || 1.2; // moderate lift for Gemini-like warmth
-        }
-        if (onEnd) utt.onend = onEnd;
+      
+      const segments = _segmentText(text);
+      if (!segments.length) { if (onEnd) onEnd(); return; }
+
+      let tokenSpans = [];
+      if (targetElement) {
+        tokenSpans = prepareHighlightableText(targetElement, text);
+      }
+
+      const speakSegments = () => {
         window.speechSynthesis.cancel();
-        window.speechSynthesis.speak(utt);
+        
+        let globalCharOffset = 0;
+        let currentIdx = 0;
+
+        const speakNext = () => {
+          if (currentIdx >= segments.length) {
+            // All segments finished
+            if (onEnd) onEnd();
+            return;
+          }
+
+          const seg = segments[currentIdx];
+          const utt = new SpeechSynthesisUtterance(seg.text);
+          
+          if (seg.lang === 'zh') {
+            const v = _pickChineseVoice();
+            if (v) utt.voice = v; else utt.lang = 'zh-CN';
+            utt.rate = rate * 0.95;
+            utt.pitch = 1.15;
+          } else {
+            const v = _pickEnglishVoice();
+            if (v) utt.voice = v; else utt.lang = 'en-US';
+            utt.rate = rate;
+            utt.pitch = pitch || 1.2;
+          }
+
+          // Highlighting logic
+          utt.onboundary = (event) => {
+            if (event.name === 'word' && tokenSpans.length) {
+              const charIdx = globalCharOffset + event.charIndex;
+              // Clear previous highlights
+              tokenSpans.forEach(s => s.classList.remove('quiz-word-highlight'));
+              // Find and highlight current token
+              const target = tokenSpans.find(s => {
+                const sStart = parseInt(s.dataset.start);
+                const sEnd = parseInt(s.dataset.end);
+                return charIdx >= sStart && charIdx < sEnd;
+              });
+              if (target) target.classList.add('quiz-word-highlight');
+            }
+          };
+
+          utt.onend = () => {
+            // Clear highlights for this segment
+            tokenSpans.forEach(s => s.classList.remove('quiz-word-highlight'));
+            globalCharOffset += seg.text.length;
+            currentIdx++;
+            speakNext();
+          };
+
+          window.speechSynthesis.speak(utt);
+        };
+
+        speakNext();
       };
-      if (delay > 0) setTimeout(speak, delay); else speak();
+
+      if (delay > 0) setTimeout(speakSegments, delay); else speakSegments();
     }
 
     // Read answers once the grid is visible — each answer spoken separately with a pause.
@@ -3895,8 +4010,13 @@
       const speakNext = () => {
         if (idx >= answers.length || gen !== quizRenderGen || abortGen !== _voAbortGen) return;
         const isLast = idx === answers.length - 1;
-        quizSpeak(answers[idx++], {
+        const answerText = answers[idx];
+        const card = grid.children[idx];
+        const targetEl = card ? card.querySelector('span') : null;
+        idx++;
+        quizSpeak(answerText, {
           rate: 0.88,
+          targetElement: targetEl,
           onEnd: isLast ? null : () => setTimeout(() => {
             if (abortGen !== _voAbortGen || gen !== quizRenderGen) return;
             speakNext();
@@ -4261,6 +4381,7 @@ Return this structure:
       // Same voice settings for question and answers (no pitch override)
       quizSpeak(q.question, {
         rate: 0.88, delay: _speakDelay,
+        targetElement: questionEl,
         onEnd: () => _speakAnswers(q, _capturedGen)
       });
       _quizVoiceDelay = 0; // reset for next question
@@ -4306,34 +4427,36 @@ Return this structure:
 
       const shouldDelay = quizSettings.qReadEnabled && quizSettings.qReadTimeMs > 0;
       if (shouldDelay) {
-        // Answers stay VISIBLE (opacity 1) — only clicks are blocked.
-        // This ensures boxes always fill the space; the bar is the countdown indicator.
-        grid.style.opacity = '1';
+        // Answers stay HIDDEN at first
+        grid.style.opacity = '0';
         grid.style.pointerEvents = 'none';
-        grid.style.transition = '';
+        grid.style.transition = 'opacity 0.6s ease';
 
         const bar = document.createElement('div');
         bar.className = 'quiz-qread-bar';
         bar.style.cssText = 'position:absolute;bottom:0;left:0;height:3px;background:linear-gradient(90deg,#7c3aed,#a855f7);width:0%;z-index:10;border-radius:0 2px 2px 0;';
         questionContainer.appendChild(bar);
 
-        // Bar auto-fills over qReadTimeMs. Hovering question makes it fill faster (2×).
+        // Bar fills over quizSettings.qReadTimeMs. ONLY when hovering.
         // Clicking the question box skips immediately.
         let elapsed = 0, hovering = false, lastT = null, done = false;
         const animate = (t) => {
           if (currentGen !== quizRenderGen || done) {
-            grid.style.pointerEvents = '';
             return;
           }
           if (!lastT) lastT = t;
           const dt = t - lastT;
           lastT = t;
-          // Advance at 1× normally, 2× when hovering the question
-          elapsed += hovering ? dt * 2 : dt;
+          
+          if (hovering) {
+            elapsed += dt;
+          }
+          
           const pct = Math.min((elapsed / quizSettings.qReadTimeMs) * 100, 100);
           bar.style.width = `${pct}%`;
           if (pct >= 100) {
             done = true;
+            grid.style.opacity = '1';
             grid.style.pointerEvents = '';
             bar.style.background = 'linear-gradient(90deg,#10b981,#06b6d4)';
             setTimeout(() => { if (bar.parentNode) bar.style.opacity = '0'; }, 600);
@@ -4361,7 +4484,6 @@ Return this structure:
         grid.style.opacity = '1';
         grid.style.pointerEvents = '';
         grid.style.transition = '';
-        // No qRead delay — still attach VoiceOver hover bar
         _attachVoOverHoverBar(questionContainer, q, currentGen);
       }
 
