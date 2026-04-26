@@ -38,14 +38,12 @@
       }
     }
 
-    .animate-success {
-      animation: successBounce 0.75s ease;
-      box-shadow: 0 0 30px rgba(16, 185, 129, 0.6) !important;
-      outline-color: #10b981 !important;
-      /* emerald-500 */
-      background-color: #059669 !important;
-      /* emerald-600 */
+    @keyframes successBounce {
+      0%, 20%, 50%, 80%, 100% { transform: translateY(0) scale(1.03); }
+      40% { transform: translateY(-15px) scale(1.03); }
+      60% { transform: translateY(-7px) scale(1.03); }
     }
+
 
     .wrong-cross::before,
     .wrong-cross::after {
@@ -1056,35 +1054,67 @@
       color: #e2e8f0;
     }
 
-    /* Theme-specific card styles */
+    /* Theme-specific card styles — no borders, no !important on background
+       so inline JS styles (success green) can override them naturally. */
     .quiz-card-bh {
-      background: linear-gradient(135deg, #dbeafe, #fce7f3) !important;
-      border: 3px solid #93c5fd !important;
-      box-shadow: 0 0 20px rgba(147, 197, 253, 0.4) !important;
+      background: linear-gradient(135deg, #dbeafe, #fce7f3);
     }
-
     .quiz-card-bh span {
-      color: #1e3a5f !important;
+      color: #1e3a5f;
       text-shadow: 0 1px 4px rgba(255, 255, 255, 0.9);
     }
-
     .quiz-card-peppa {
-      background: linear-gradient(135deg, #fce7f3, #ffe4e6) !important;
-      border: 3px solid #f9a8d4 !important;
+      background: linear-gradient(135deg, #fce7f3, #ffe4e6);
     }
-
     .quiz-card-peppa span {
-      color: #831843 !important;
+      color: #831843;
     }
-
     .quiz-card-kfp {
-      background: linear-gradient(135deg, #1c1917, #292524) !important;
-      border: 3px solid #dc2626 !important;
-      box-shadow: 0 0 18px rgba(220, 38, 38, 0.35) !important;
+      background: linear-gradient(135deg, #1c1917, #292524);
+    }
+    .quiz-card-kfp span {
+      color: #fef3c7;
     }
 
-    .quiz-card-kfp span {
-      color: #fef3c7 !important;
+    /* ── Kung Fu Panda celebration toast ──────────────────────────────────── */
+    @keyframes kfpPopIn {
+      0%   { opacity:0; scale:0; rotate:-12deg }
+      60%  { opacity:1; scale:1.18; rotate:4deg }
+      100% { opacity:1; scale:1; rotate:0deg }
+    }
+    @keyframes kfpPopOut {
+      0%   { opacity:1; scale:1 }
+      100% { opacity:0; scale:0; rotate:10deg }
+    }
+    @keyframes kfpFloat {
+      0%,100% { translate:0 0; rotate:0deg }
+      50%      { translate:0 -22px; rotate:-4deg }
+    }
+    @keyframes kfpGlow {
+      0%,100% { filter: drop-shadow(0 0 20px rgba(220,38,38,0.7)) }
+      50%     { filter: drop-shadow(0 0 48px rgba(251,191,36,1)) }
+    }
+
+    #kfp-toast {
+      position: fixed;
+      inset: 0;
+      z-index: 99998;
+      pointer-events: none;
+    }
+    .kfp-toast-char {
+      position: absolute;
+      width: clamp(160px, 32vw, 420px);
+      height: auto;
+      opacity: 0;
+      transform: translate(-50%, -50%);
+    }
+    #kfp-toast.show .kfp-toast-char {
+      animation: kfpPopIn 0.55s cubic-bezier(0.34,1.56,0.64,1) forwards,
+                 kfpFloat 1.8s ease-in-out 0.55s infinite,
+                 kfpGlow  2s ease-in-out 0.55s infinite;
+    }
+    #kfp-toast.hide .kfp-toast-char {
+      animation: kfpPopOut 0.35s ease-in forwards !important;
     }
 
     /* Ben & Holly celebration toast — characters placed by JS */
@@ -1218,17 +1248,15 @@
       flex: 1;
       align-self: stretch;
       min-height: 0;
+      height: 100%;
       overflow: hidden;
-      display: grid !important;
-      grid-template-rows: auto 1fr;
-      align-items: stretch;
-      justify-items: center;
-      /* Gap between question row and answer grid — grows when screen is tall */
-      gap: clamp(8px, 2.5vh, 32px);
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: center;
       width: 100%;
       max-width: none !important;
-      /* Side padding — wider on large screens so answers don't touch the edges */
-      padding: 0 clamp(12px, 4vw, 80px);
+      /* Remove side padding to maximize width */
+      padding: 0;
       box-sizing: border-box;
     }
 
@@ -1236,21 +1264,20 @@
     body.quiz-active #view-quiz>.quiz-question-section {
       width: 100%;
       max-width: 100% !important;
+      margin-bottom: 20px;
     }
 
     /* Answer grid: Fills the 1fr row. Rows are 1fr 1fr to stretch equally. */
     body.quiz-active #quiz-answers-grid {
-      width: 100% !important;
-      max-width: none !important;
-      height: 100%;
+      width: 100%;
+      max-width: none;
+      flex: 1;
       min-height: 0;
-      display: grid !important;
+      display: grid;
       grid-template-columns: 1fr 1fr;
       grid-template-rows: 1fr 1fr;
-      /* Gaps between cards — scale with viewport */
-      gap: clamp(12px, 3vh, 48px) clamp(12px, 2.5vw, 40px);
-      /* Side padding keeps cards away from screen edges; bottom gives breathing room */
-      padding: 0 clamp(8px, 2vw, 40px) clamp(12px, 2vh, 28px);
+      gap: 16px;
+      padding: 0 16px 10px;
       box-sizing: border-box;
     }
 
@@ -1280,13 +1307,23 @@
     }
 
     body.quiz-active #quiz-answers-grid>div {
-      display: flex !important;
+      display: flex;
       align-items: center;
       justify-content: center;
-      height: 100% !important;
-      padding: 1.5rem !important;
+      height: 100%;
+      width: 100%;
+      padding: 1.5rem;
       box-sizing: border-box;
       text-align: center;
+      background: #334155;
+      border: none;
+      border-radius: 20px;
+      transition: transform 0.2s ease, background 0.2s ease;
+    }
+    /* Hover effect only when card is NOT answered */
+    body.quiz-active #quiz-answers-grid>div:not([data-answered]):hover {
+      background: #475569;
+      transform: scale(1.02);
     }
 
     /* Answer text CONTAINER: block so it fills card width, text wraps naturally inside */
@@ -1344,6 +1381,24 @@
       text-decoration-color: #06b6d4 !important;
       text-decoration-thickness: 3px !important;
       text-underline-offset: 4px !important;
+    }
+
+    /* ── Education Mode Space Maximization ─────────────────────────────────── */
+    body.education-active #view-education {
+      height: 100%;
+      flex: 1;
+      justify-content: flex-start;
+      gap: 0 !important; /* Managed by grid sizer */
+    }
+    body.education-active #answers-grid {
+      display: grid !important;
+      align-items: stretch !important;
+    }
+    body.education-active #answers-grid > div {
+      height: 100% !important;
+      display: flex !important;
+      flex-direction: column;
+      justify-content: center;
     }
 
     body.quiz-active .quiz-score-row {
@@ -1973,8 +2028,8 @@
         </div>
 
       </div>
-      <!-- Answer grid -->
-      <div id="quiz-answers-grid" class="grid grid-cols-2 gap-4 w-full max-w-4xl px-4">
+      <!-- Answer grid — maximized for 4 quadrants -->
+      <div id="quiz-answers-grid" class="grid grid-cols-2 w-full">
         <!-- Generated by JS -->
       </div>
     </div>
@@ -2166,6 +2221,7 @@
     <!-- Ben & Holly Quiz Intro Overlay -->
     <div id="bh-intro-overlay"
       style="display:none;position:fixed;inset:0;z-index:99998;background:linear-gradient(160deg,#12003a 0%,#1a1060 35%,#0a2a50 65%,#0d3d20 100%);flex-direction:column;align-items:center;justify-content:space-between;overflow:hidden;padding:2vh 0 0">
+      <div style="position:absolute;inset:0;background:radial-gradient(ellipse at center,rgba(0,0,0,0.2) 0%,rgba(0,0,0,0.6) 100%);z-index:1;pointer-events:none;"></div>
       <div id="bh-stars" style="position:absolute;inset:0;pointer-events:none"></div>
       <!-- Title -->
       <div id="bh-title-banner"
@@ -2345,6 +2401,68 @@
     <!-- Ben & Holly celebration toast — characters injected dynamically by JS -->
     <img id="quiz-ben-elf" src="assets/bh/ben_elf.png" alt="" style="display:none" />
     <div id="bh-toast"></div>
+
+    <!-- Kung Fu Panda celebration toast — characters injected dynamically by JS -->
+    <div id="kfp-toast"></div>
+
+    <!-- Kung Fu Panda Quiz Intro Overlay -->
+    <div id="kfp-intro-overlay"
+      style="display:none;position:fixed;inset:0;z-index:99999;overflow:hidden;flex-direction:column;align-items:center;justify-content:center;">
+      <!-- Background image fills entire overlay — swapped by JS -->
+      <div id="kfp-intro-bg" style="position:absolute;inset:0;background-size:cover;background-position:center;z-index:0;"></div>
+      <!-- Ink-wash vignette to keep title legible -->
+      <div style="position:absolute;inset:0;background:radial-gradient(ellipse at center, rgba(0,0,0,0.15) 0%,rgba(0,0,0,0.65) 100%);z-index:1;pointer-events:none;"></div>
+      <!-- Title -->
+      <div id="kfp-intro-title"
+        style="position:absolute;top:4vh;left:0;width:100%;z-index:3;text-align:center;opacity:0;transform:scale(0.4) translateY(-40px);transition:opacity 0.9s ease,transform 0.9s cubic-bezier(0.175,0.885,0.32,1.275);pointer-events:none;">
+        <div style="font-family:'Arial Black',Impact,sans-serif;font-size:clamp(2rem,7vw,5.5rem);font-weight:900;
+          background:linear-gradient(90deg,#fde68a,#fbbf24,#ef4444,#fde68a);
+          -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+          filter:drop-shadow(0 0 32px rgba(251,191,36,0.9));letter-spacing:0.06em;line-height:1">
+          KUNG FU PANDA</div>
+        <div style="font-family:'Arial Black',Impact,sans-serif;font-size:clamp(1rem,3.5vw,2.2rem);color:#fde68a;font-weight:700;
+          letter-spacing:0.12em;text-shadow:0 0 20px rgba(220,38,38,0.9),0 2px 6px rgba(0,0,0,0.8)">
+          QUIZ</div>
+      </div>
+      <!-- Character stage — images placed by JS -->
+      <div id="kfp-char-stage" style="position:absolute;inset:0;z-index:2;pointer-events:none;"></div>
+      <!-- Skip hint -->
+      <div style="position:absolute;bottom:1.2rem;right:1.5rem;color:rgba(255,255,255,0.4);font-size:0.72rem;
+        font-weight:700;letter-spacing:0.1em;text-transform:uppercase;z-index:5;pointer-events:none">
+        Click or press any key to skip</div>
+    </div>
+
+    <!-- Kung Fu Panda Quiz Outro (Victory) Overlay -->
+    <div id="kfp-outro-overlay"
+      style="display:none;position:fixed;inset:0;z-index:99999;overflow:hidden;flex-direction:column;align-items:center;justify-content:center;">
+      <!-- BG image set by JS -->
+      <div id="kfp-outro-bg" style="position:absolute;inset:0;background-size:cover;background-position:center;z-index:0;"></div>
+      <div style="position:absolute;inset:0;background:rgba(0,0,0,0.25);z-index:1;pointer-events:none;"></div>
+      <!-- Victory text -->
+      <div id="kfp-outro-banner"
+        style="position:relative;z-index:3;text-align:center;opacity:0;transform:scale(0.5);
+          transition:all 1s cubic-bezier(0.175,0.885,0.32,1.275);margin-bottom:3vh;">
+        <div style="font-family:'Arial Black',Impact,sans-serif;font-size:clamp(2.5rem,10vw,7rem);font-weight:900;
+          background:linear-gradient(90deg,#fde68a,#ef4444,#fde68a);
+          -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+          filter:drop-shadow(0 0 40px rgba(251,191,36,1));letter-spacing:0.05em;">SKADOOSH!</div>
+        <div style="font-family:'Arial Black',Impact,sans-serif;font-size:clamp(1rem,4vw,2.5rem);color:#fde68a;font-weight:700;
+          text-shadow:0 0 20px rgba(251,191,36,0.8)">Dragon Warrior — Quiz Champion!</div>
+      </div>
+      <!-- Character poster set by JS -->
+      <div id="kfp-outro-img-wrap" style="position:relative;z-index:2;display:flex;justify-content:center;align-items:center;max-height:80vh;">
+        <img id="kfp-outro-img" src="" alt="" style="max-height:75vh;max-width:90vw;object-fit:contain;
+          filter:drop-shadow(0 0 40px rgba(251,191,36,0.8));animation:kfpOtroBounce 1.2s ease-in-out infinite alternate;">
+      </div>
+      <div style="position:absolute;bottom:2rem;color:rgba(255,255,255,0.4);font-size:0.8rem;font-weight:700;
+        letter-spacing:0.1em;text-transform:uppercase;z-index:4">Click or press any key to finish</div>
+    </div>
+    <style>
+      @keyframes kfpOtroBounce {
+        0%   { transform: translateY(0) rotate(-2deg) scale(1); }
+        100% { transform: translateY(-28px) rotate(2deg) scale(1.06); }
+      }
+    </style>
 
     <!-- Quiz Win Overlay -->
     <div id="quiz-win-overlay">
@@ -3311,6 +3429,7 @@
     function setLandingMode() {
       mode = 'landing';
       isEditMode = false;
+      document.body.classList.remove('quiz-active', 'education-active');
       viewLanding.classList.remove('hidden');
       viewEducation.classList.add('hidden');
       viewEdit.classList.add('hidden');
@@ -3328,6 +3447,8 @@
     function setEducationMode() {
       mode = 'education';
       isEditMode = false;
+      document.body.classList.add('education-active');
+      document.body.classList.remove('quiz-active');
       viewLanding.classList.add('hidden');
       viewEducation.classList.remove('hidden');
       viewEdit.classList.add('hidden');
@@ -3349,6 +3470,7 @@
     function setEditMode() {
       mode = 'edit';
       isEditMode = true;
+      document.body.classList.remove('quiz-active', 'education-active');
       viewLanding.classList.add('hidden');
       viewEducation.classList.add('hidden');
       viewEdit.classList.remove('hidden');
@@ -4209,6 +4331,9 @@
       }
       if (newMode !== 'quiz') stopQuizMusic();
 
+      // Clear active classes
+      document.body.classList.remove('quiz-active', 'education-active');
+
       // Allow any authenticated user (including anonymous quests) to edit
       if (newMode === 'edit' && !user) {
         showToast("You must be signed in to edit.", "error");
@@ -4739,16 +4864,18 @@
         }
       }
 
+      const abortGen = _voAbortGen;
       const speakSegments = () => {
+        if (abortGen !== _voAbortGen) return;
         window.speechSynthesis.cancel();
 
         let globalCharOffset = 0;
         let currentIdx = 0;
 
         const speakNext = () => {
-          if (currentIdx >= segments.length) {
-            // All segments finished
-            if (onEnd) onEnd();
+          if (currentIdx >= segments.length || abortGen !== _voAbortGen) {
+            // All segments finished or aborted
+            if (onEnd && abortGen === _voAbortGen) onEnd();
             return;
           }
 
@@ -4902,10 +5029,10 @@
         quizSpeak(answerText, {
           rate: 0.88,
           targetElement: targetEl,
-          onEnd: isLast ? null : () => setTimeout(() => {
-            if (abortGen !== _voAbortGen || gen !== quizRenderGen) return;
-            speakNext();
-          }, 600)
+          onEnd: () => {
+            if (isLast || abortGen !== _voAbortGen || gen !== quizRenderGen) return;
+            setTimeout(speakNext, 600);
+          }
         });
       };
       setTimeout(speakNext, 300);
@@ -5304,9 +5431,10 @@ Return this structure:
         }
       }
       grid.innerHTML = '';
-      // Class reset — quiz-active CSS overrides sizing in viewport-fill mode
-      grid.className = 'grid grid-cols-2 gap-4 w-full max-w-4xl mx-auto px-4';
-      grid.style.height = '100%';
+      // Ensure the grid maintains its 2x2 quadrant structure and full width.
+      // auto-rows-fr ensures rows stretch to fill the height set by the sizer.
+      grid.className = 'grid grid-cols-2 auto-rows-fr w-full';
+      grid.style.height = '';
       // Always reset visibility — prevents opacity:0 from a previous question getting stuck
       grid.style.opacity = '1';
       grid.style.pointerEvents = '';
@@ -5422,10 +5550,14 @@ Return this structure:
             // Only re-read if the correct answer has NOT yet been accepted
             // (_voAbortGen unchanged since this question was rendered)
             if (_voAbortGen !== _reReadAbortGen) return;
-            // Re-read question only (no answer chain) — don't interrupt congrats/progression
+            // Re-read question followed by answers
             quizSpeak(question.question, {
               rate: 0.88,
               targetElement: questionEl,
+              onEnd: () => {
+                if (_voAbortGen !== _reReadAbortGen || gen !== quizRenderGen) return;
+                _speakAnswers(question, gen);
+              }
             });
             return;
           }
@@ -5441,7 +5573,8 @@ Return this structure:
       q.answers.forEach((answer, idx) => {
         const isCorrect = answer.id === q.correctId;
         const card = document.createElement('div');
-        card.className = 'relative overflow-hidden rounded-2xl p-5 flex items-center justify-center cursor-pointer transition-all duration-300 transform outline outline-2 outline-offset-4 select-none bg-slate-800 outline-transparent hover:bg-slate-700 hover:shadow-xl';
+        // Minimal Tailwind for layout only; visual styling (bg, border, hover) handled by CSS
+        card.className = 'relative overflow-hidden cursor-pointer select-none';
 
         const fontSizeClass = `quiz-font-${quizSettings.fontSize}`;
         const textSpan = document.createElement('span');
@@ -5472,6 +5605,9 @@ Return this structure:
           }
         };
 
+        // Apply theme-specific styling (BH/KFP/Peppa)
+        applyQuizCardTheme(card, answer, idx);
+
         // One-shot guard: prevent double-counting if mouse clicks/dwell fires multiple times
         let quizQuestionAnswered = false;
 
@@ -5479,24 +5615,38 @@ Return this structure:
           if (isCorrect) {
             if (quizQuestionAnswered) return; // already counted — ignore repeat triggers
             quizQuestionAnswered = true;
-            // Immediate visual: card flashes green right away
-            card.classList.add('animate-success', 'quiz-correct-pulse');
+            // IMMEDIATE FEEDBACK: apply green directly via inline styles.
+            // Inline styles naturally override class-based and :hover rules
+            // without needing !important — this is the "logic-based" approach.
+            card.dataset.answered = 'true';
+            card.style.background = '#10b981';
+            card.style.border = 'none';
+            card.style.boxShadow = 'none';
+            card.style.animation = 'successBounce 0.75s ease';
+            card.style.transform = 'scale(1.03)';
+            card.style.cursor = 'default';
+            const cardSpan = card.querySelector('span');
+            if (cardSpan) { cardSpan.style.color = 'white'; cardSpan.style.textShadow = '0 2px 4px rgba(0,0,0,0.3)'; }
+            burstConfetti(card);
+            playQuizCorrectSound();
 
             // Cancel any ongoing answer TTS immediately
             _voAbortGen++;
             quizSpeakCancel();
 
-            // Step 1: Speak congratulatory phrase FIRST
-            // Step 2: All celebration sounds + animations fire AFTER TTS completes
-            const _correctText = q.answers.find(a => a.id === q.correctId)?.text || '';
+            // Step 1: Speak congratulatory phrase
+            // Use correctId fallback to correctAnswerIds for AI compatibility
+            const _correctId = q.correctId || (q.correctAnswerIds?.length ? q.correctAnswerIds[0] : null);
+            const _correctText = q.answers.find(a => a.id === _correctId)?.text || '';
+            
             quizSpeakCongrats(_correctText, {
               onEnd: () => {
-                // Celebration sounds + character pop-in happen after TTS
-                burstConfetti(card);
-                playQuizCorrectSound();
+                // Secondary celebrations (character pop-ins) fire AFTER TTS completes
                 if (currentQuizTheme === 'ben-holly') {
                   triggerBenElfCelebration();
-                  // Ben & Holly toast = 3300ms; generateQuizQuestion fires at 1100ms
+                  _quizVoiceDelay = Date.now() + 3200;
+                } else if (currentQuizTheme === 'kung-fu-panda') {
+                  triggerKfpCelebration();
                   _quizVoiceDelay = Date.now() + 3200;
                 } else {
                   _quizVoiceDelay = Date.now() + 1500;
@@ -5571,7 +5721,44 @@ Return this structure:
 
         grid.appendChild(card);
       });
+      // After a frame, measure remaining viewport and set grid height precisely.
+      requestAnimationFrame(() => _sizeAnswerGrid());
     }
+
+    // ── Dynamic answer-grid sizer ──────────────────────────────────────────
+    // Directly measures remaining viewport height after the question section
+    // and applies it to the grid — works regardless of CSS cascade depth.
+    function _sizeAnswerGrid() {
+      const isQuiz = document.body.classList.contains('quiz-active');
+      const isEdu = document.body.classList.contains('education-active');
+      if (!isQuiz && !isEdu) return;
+
+      const gridId = isQuiz ? 'quiz-answers-grid' : 'answers-grid';
+      const viewId = isQuiz ? 'view-quiz' : 'view-education';
+      const grid = document.getElementById(gridId);
+      const view = document.getElementById(viewId);
+      if (!grid || !view) return;
+
+      const q = isEdu ? getActiveQ() : null;
+      if (isEdu && (!q || !q.maximizeSpacing)) {
+        grid.style.removeProperty('height');
+        return;
+      }
+
+      // Quiz mode header or Education mode header
+      const qSection = isQuiz 
+        ? view.querySelector('.quiz-question-section') 
+        : view.querySelector('div:first-child'); // The header containing prev/next/question
+
+      if (!qSection) return;
+      const qRect = qSection.getBoundingClientRect();
+      // Calculate available height between question bottom and screen bottom
+      // Minimal 4px buffer to practically "fill" the space as requested.
+      const available = window.innerHeight - qRect.bottom - 4;
+      grid.style.setProperty('height', Math.max(120, available) + 'px', 'important');
+    }
+    // Re-size on every viewport change
+    window.addEventListener('resize', _sizeAnswerGrid);
 
     // ── Quiz card theme decoration ──────────────────────────────────────────
     const _BH_CHAR_POSITIONS = ['0% 0%', '100% 0%', '0% 100%', '100% 100%'];
@@ -5579,8 +5766,9 @@ Return this structure:
     const _KFP_DECOS = ['🍭', '🐼', '⚡', '🥋'];
 
     function applyQuizCardTheme(card, answer, idx) {
-      // Card backgrounds are always dark slate — theme only affects the celebration animation.
-      // (Character image overlays removed per user request.)
+      if (currentQuizTheme === 'ben-holly') card.classList.add('quiz-card-bh');
+      else if (currentQuizTheme === 'kung-fu-panda') card.classList.add('quiz-card-kfp');
+      else if (currentQuizTheme === 'peppa') card.classList.add('quiz-card-peppa');
     }
 
     // ── Ben & Holly celebration toast ────────────────────────────────────
@@ -5726,7 +5914,414 @@ Return this structure:
       } catch (_) { }
     }
 
+    // ══════════════════════════════════════════════════════════════════════════
+    // KUNG FU PANDA THEME — Celebration, Intro & Outro
+    // ══════════════════════════════════════════════════════════════════════════
+
+    // All KFP character images (intro = no names popup)
+    const _KFP_CHARS = [
+      'assets/kungfu/panda_kick.png',
+      'assets/kungfu/panda_pose-removebg-preview.png',
+      'assets/kungfu/panda_foldarms.png',
+      'assets/kungfu/tigress_hadoken.png',
+      'assets/kungfu/tigress_face.png',
+      'assets/kungfu/shifu_stand.png',
+      'assets/kungfu/crane_pose-removebg-preview.png',
+      'assets/kungfu/crane_extendwings-removebg-preview.png',
+      'assets/kungfu/mantis_kick.png',
+      'assets/kungfu/mantis_pose-removebg-preview.png',
+      'assets/kungfu/mantis_swing.png',
+      'assets/kungfu/snake_look-removebg-preview.png',
+      'assets/kungfu/snake_loop.png',
+      'assets/kungfu/snake_umbrella-removebg-preview.png',
+      'assets/kungfu/monkey_kick-removebg-preview.png',
+      'assets/kungfu/monkey_sit.png',
+      'assets/kungfu/peacock-removebg-preview.png',
+      'assets/kungfu/tailung_stand-removebg-preview.png',
+      'assets/kungfu/wugui-removebg-preview.png',
+    ];
+
+    // All sfx_ and vo_ sound files available
+    const _KFP_SOUNDS = [
+      'assets/kungfu/sfx_belly_bounce.mp3',
+      'assets/kungfu/sfx_combat_combo.mp3',
+      'assets/kungfu/sfx_combat_swoosh.mp3',
+      'assets/kungfu/sfx_gong_impact.mp3',
+      'assets/kungfu/sfx_heavy_thud.mp3',
+      'assets/kungfu/sfx_impact_punch.mp3',
+      'assets/kungfu/sfx_melee_combo.mp3',
+      'assets/kungfu/sfx_scroll_open.mp3',
+      'assets/kungfu/sfx_skill_ready_sparkle.mp3',
+      'assets/kungfu/vo_dragon_warrior_intro.mp3',
+      'assets/kungfu/vo_hes_a_panda.mp3',
+      'assets/kungfu/vo_po_no_secret.mp3',
+      'assets/kungfu/vo_shifu_limit.mp3',
+      'assets/kungfu/vo_sit_on_me.mp3',
+      'assets/kungfu/vo_skidush.mp3',
+      'assets/kungfu/vo_the_big_fat_panda.mp3',
+      'assets/kungfu/vo_wuxi_finger_hold.mp3',
+    ];
+
+    // vo_ sounds only (for outro)
+    const _KFP_VO_SOUNDS = _KFP_SOUNDS.filter(s => s.includes('/vo_'));
+
+    // Background images for intro
+    const _KFP_BACKGROUNDS = [
+      'assets/kungfu/background1.png',
+      'assets/kungfu/background2.png',
+      'assets/kungfu/background3.png',
+    ];
+
+    // Outro poster images
+    const _KFP_POSTERS = [
+      'assets/kungfu/all_character_poster.png',
+      'assets/kungfu/all_character_poster2.png',
+    ];
+
+    let _kfpToastT = null;
+
+    // ── Correct-answer celebration: 2 random characters pop in ───────────────
+    function triggerKfpCelebration() {
+      // Play a random sfx or vo sound
+      try {
+        const snd = new Audio(_KFP_SOUNDS[Math.floor(Math.random() * _KFP_SOUNDS.length)]);
+        snd.volume = 0.85;
+        snd.play().catch(err => console.error('KFP celebration sound failed:', err));
+      } catch (_) { }
+
+      const toast = document.getElementById('kfp-toast');
+      if (!toast) return;
+
+      if (_kfpToastT) { clearTimeout(_kfpToastT); _kfpToastT = null; }
+      toast.classList.remove('show', 'hide');
+      toast.innerHTML = '';
+
+      // Pick 2 UNIQUE random characters
+      const pool = [..._KFP_CHARS].sort(() => Math.random() - 0.5);
+
+      // Each character is a wrapper div (same pattern as intro) so the
+      // animation fires on the container regardless of image-load timing.
+      pool.slice(0, 2).forEach((src, i) => {
+        // Left char: 15–42%, Right char: 58–85% (centres, because transform:translate(-50%,-50%))
+        const xMin = i === 0 ? 15 : 58;
+        const x = xMin + Math.random() * 27;
+        const y = 25 + Math.random() * 38;  // 25–63% — keeps feet on screen
+
+        const wrap = document.createElement('div');
+        wrap.className = 'kfp-toast-char';
+        wrap.style.left = `${x}%`;
+        wrap.style.top  = `${y}%`;
+        // Stagger the second character slightly
+        if (i === 1) wrap.style.animationDelay = '0.12s, 0.67s, 0.67s';
+
+        const img = document.createElement('img');
+        img.src = src;
+        img.alt = '';
+        img.style.cssText = 'width:100%;height:auto;display:block;';
+        wrap.appendChild(img);
+        toast.appendChild(wrap);
+      });
+
+      void toast.offsetWidth;
+      toast.classList.add('show');
+
+      _kfpToastT = setTimeout(() => {
+        toast.classList.remove('show');
+        toast.classList.add('hide');
+        _kfpToastT = setTimeout(() => {
+          toast.classList.remove('hide');
+          toast.innerHTML = '';
+        }, 380);
+      }, 3300);
+    }
+
+    // ── Intro scene ────────────────────────────────────────────────────────────
+    function playKungFuPandaIntro(onDone) {
+      const overlay  = document.getElementById('kfp-intro-overlay');
+      const bgEl     = document.getElementById('kfp-intro-bg');
+      const titleEl  = document.getElementById('kfp-intro-title');
+      const charStage = document.getElementById('kfp-char-stage');
+      if (!overlay) { onDone(); return; }
+
+      // Close settings overlay
+      const settingsOverlay = document.getElementById('quiz-settings-overlay');
+      if (settingsOverlay) settingsOverlay.classList.remove('show');
+
+      // Pick a random background
+      const bg = _KFP_BACKGROUNDS[Math.floor(Math.random() * _KFP_BACKGROUNDS.length)];
+      bgEl.style.backgroundImage = `url('${bg}')`;
+
+      charStage.innerHTML = '';
+
+      // ── Build guaranteed character list ─────────────────────────────────
+      // Always include at least one of each major character type,
+      // then fill remaining slots with random extras (no repeats).
+      const _KFP_REQUIRED_GROUPS = [
+        ['assets/kungfu/panda_kick.png', 'assets/kungfu/panda_pose-removebg-preview.png', 'assets/kungfu/panda_foldarms.png'],
+        ['assets/kungfu/monkey_kick-removebg-preview.png', 'assets/kungfu/monkey_sit.png'],
+        ['assets/kungfu/crane_pose-removebg-preview.png', 'assets/kungfu/crane_extendwings-removebg-preview.png'],
+        ['assets/kungfu/mantis_kick.png', 'assets/kungfu/mantis_pose-removebg-preview.png', 'assets/kungfu/mantis_swing.png'],
+        ['assets/kungfu/snake_look-removebg-preview.png', 'assets/kungfu/snake_loop.png', 'assets/kungfu/snake_umbrella-removebg-preview.png'],
+      ];
+      const pickedSet = new Set();
+      const sceneChars = [];
+      for (const group of _KFP_REQUIRED_GROUPS) {
+        const choice = group[Math.floor(Math.random() * group.length)];
+        sceneChars.push(choice);
+        pickedSet.add(choice);
+      }
+      // Fill up to 10 slots with unused extras, shuffled
+      const extras = [..._KFP_CHARS].filter(c => !pickedSet.has(c)).sort(() => Math.random() - 0.5);
+      sceneChars.push(...extras.slice(0, 10 - sceneChars.length));
+      // Shuffle the final combined list
+      for (let i = sceneChars.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [sceneChars[i], sceneChars[j]] = [sceneChars[j], sceneChars[i]];
+      }
+
+      const TOTAL_DURATION = 40000; // 40 s max (longer than typical audio)
+      const spawnInterval = 2500; // one character every 2.5 seconds
+
+      // ── Pre-compute 5×2 grid slots (10 cells) — shuffle for random assignment ─
+      const GRID_COLS = 5, GRID_ROWS = 2;
+      const gridSlots = [];
+      for (let row = 0; row < GRID_ROWS; row++)
+        for (let col = 0; col < GRID_COLS; col++)
+          gridSlots.push({ col, row });
+      for (let i = gridSlots.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [gridSlots[i], gridSlots[j]] = [gridSlots[j], gridSlots[i]];
+      }
+      let slotIdx = 0;
+      let _zCounter = 10; // increments so each new character layers on top of older ones
+
+      let spawnTimers = [];
+      let done = false;
+
+      function spawnChar(src) {
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+
+        // ── Character sizing: fit within the grid cell so nothing goes off-screen ────
+        const topOffset = vh * 0.22; // below the title band
+        const cellW = vw / GRID_COLS;
+        const cellH = (vh - topOffset) / GRID_ROWS;
+        // Size character so it comfortably fits its cell (88% of the smaller dimension)
+        const size = Math.floor(Math.min(cellW, cellH) * 0.88);
+        const margin = -size;
+
+        // Start from a random screen edge
+        const edge = Math.floor(Math.random() * 4);
+        let startX, startY;
+        switch (edge) {
+          case 0: startX = Math.random() * vw; startY = margin; break;
+          case 1: startX = vw + Math.abs(margin); startY = Math.random() * vh; break;
+          case 2: startX = Math.random() * vw; startY = vh + Math.abs(margin); break;
+          default: startX = margin; startY = Math.random() * vh; break;
+        }
+
+        // ── Land centred in the pre-assigned grid slot ──────────────────────
+        const slot = gridSlots[slotIdx % gridSlots.length];
+        slotIdx++;
+        // Centre of the cell + small jitter (±10% of cell dimension)
+        const jitterX = (Math.random() - 0.5) * cellW * 0.2;
+        const jitterY = (Math.random() - 0.5) * cellH * 0.2;
+        const endX = Math.max(0, Math.min(vw - size, slot.col * cellW + (cellW - size) * 0.5 + jitterX));
+        const endY = Math.max(topOffset, Math.min(vh - size, topOffset + slot.row * cellH + (cellH - size) * 0.5 + jitterY));
+
+        const wrap = document.createElement('div');
+        wrap.style.position = 'absolute';
+        wrap.style.left = `${startX}px`;
+        wrap.style.top = `${startY}px`;
+        wrap.style.width = `${size}px`;
+        wrap.style.transform = `rotate(${(Math.random()-0.5)*30}deg) scale(0.3)`;
+        wrap.style.opacity = '0';
+        wrap.style.transition = 'left 0.9s cubic-bezier(0.175,0.885,0.32,1.275), top 0.9s cubic-bezier(0.175,0.885,0.32,1.275), opacity 0.5s ease, transform 0.9s cubic-bezier(0.175,0.885,0.32,1.275)';
+        wrap.style.pointerEvents = 'none';
+        wrap.style.zIndex = _zCounter++;
+
+        // Assign a vibrant per-character glow colour cycling through a warm/cool palette
+        const _KFP_GLOW_PALETTE = [
+          'rgba(251,191,36,0.9)',   // golden yellow
+          'rgba(239,68,68,0.85)',   // crimson red
+          'rgba(168,85,247,0.9)',   // violet purple
+          'rgba(34,197,94,0.85)',   // jade green
+          'rgba(249,115,22,0.9)',   // fiery orange
+          'rgba(56,189,248,0.9)',   // sky blue
+          'rgba(244,114,182,0.85)',  // sakura pink
+          'rgba(251,146,60,0.9)',   // warm amber
+          'rgba(52,211,153,0.85)',  // emerald teal
+          'rgba(220,38,38,0.9)',    // deep red
+          'rgba(99,102,241,0.9)',   // indigo
+          'rgba(250,204,21,0.85)',  // bright gold
+        ];
+        const glowColor = _KFP_GLOW_PALETTE[slotIdx % _KFP_GLOW_PALETTE.length];
+        const img = document.createElement('img');
+        img.src = src;
+        img.alt = '';
+        img.style.cssText = `width:100%;height:auto;filter:drop-shadow(0 8px 32px ${glowColor})drop-shadow(0 0 16px ${glowColor})`;
+        // NO name label (per requirement)
+        wrap.appendChild(img);
+        charStage.appendChild(wrap);
+
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          wrap.style.left = `${endX}px`;
+          wrap.style.top  = `${endY}px`;
+          wrap.style.opacity = '1';
+          wrap.style.transform = `rotate(${(Math.random()-0.5)*10}deg) scale(1)`;
+          setTimeout(() => {
+            wrap.style.transition = `transform 2.2s ease-in-out infinite alternate`;
+            wrap.style.transform  = `rotate(${(Math.random()-0.5)*6}deg) scale(${0.96+Math.random()*0.08})`;
+          }, 950);
+        }));
+      }
+
+      // Show overlay
+      overlay.style.opacity = '0';
+      overlay.style.display = 'flex';
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        overlay.style.transition = 'opacity 0.5s ease';
+        overlay.style.opacity = '1';
+        titleEl.style.opacity = '1';
+        titleEl.style.transform = 'scale(1) translateY(0)';
+      }));
+
+      // Play theme music
+      let introAudio = null;
+      try {
+        introAudio = new Audio('assets/kungfu/kfptheme.mp3');
+        introAudio.volume = 0.75;
+        introAudio.play().catch(() => {});
+      } catch (e) {}
+
+      // Spawn first character immediately, then loop continuously via setInterval.
+      // When the pool is exhausted, re-shuffle and cycle again — keeps going until done.
+      let spawnPoolIdx = 0;
+      const spawnNext = () => {
+        if (done) return;
+        // Wrap around: re-shuffle when we've gone through the whole pool
+        if (spawnPoolIdx >= sceneChars.length) {
+          spawnPoolIdx = 0;
+          for (let i = sceneChars.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [sceneChars[i], sceneChars[j]] = [sceneChars[j], sceneChars[i]];
+          }
+          // Also re-shuffle grid slots so positions vary each cycle
+          for (let i = gridSlots.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [gridSlots[i], gridSlots[j]] = [gridSlots[j], gridSlots[i]];
+          }
+          slotIdx = 0;
+        }
+        spawnChar(sceneChars[spawnPoolIdx++]);
+      };
+      spawnNext(); // first one fires immediately
+      const spawnInterval_id = setInterval(spawnNext, spawnInterval);
+      spawnTimers.push(spawnInterval_id); // store so finish() can clearInterval it
+
+      function finish() {
+        if (done) return;
+        done = true;
+        document.removeEventListener('keydown', onKey, true);
+        document.removeEventListener('click', onClickEvt, true);
+        // Clear both setTimeout and setInterval handles
+        spawnTimers.forEach(t => { clearTimeout(t); clearInterval(t); });
+        overlay.style.transition = 'opacity 0.6s ease';
+        overlay.style.opacity = '0';
+        if (introAudio) { try { introAudio.pause(); introAudio.currentTime = 0; } catch(e){} introAudio = null; }
+        setTimeout(() => {
+          overlay.style.display = 'none';
+          overlay.style.opacity = '';
+          overlay.style.transition = '';
+          charStage.innerHTML = '';
+          titleEl.style.opacity = '0';
+          titleEl.style.transform = 'scale(0.4) translateY(-40px)';
+          onDone();
+        }, 650);
+      }
+
+      function onKey(e) { e.stopPropagation(); finish(); }
+      function onClickEvt(e) { e.stopPropagation(); finish(); }
+
+      // Enable skip after 600 ms
+      setTimeout(() => {
+        if (!done) {
+          document.addEventListener('keydown', onKey, true);
+          document.addEventListener('click', onClickEvt, true);
+        }
+      }, 600);
+
+      if (introAudio) introAudio.addEventListener('ended', finish);
+      setTimeout(() => finish(), TOTAL_DURATION + 2000);
+    }
+
+    // ── Outro / Victory scene ─────────────────────────────────────────────────
+    function playKungFuPandaOutro(onDone) {
+      const overlay = document.getElementById('kfp-outro-overlay');
+      const bgEl    = document.getElementById('kfp-outro-bg');
+      const banner  = document.getElementById('kfp-outro-banner');
+      const imgEl   = document.getElementById('kfp-outro-img');
+      if (!overlay) { onDone(); return; }
+
+      // Random background
+      const bg = _KFP_BACKGROUNDS[Math.floor(Math.random() * _KFP_BACKGROUNDS.length)];
+      bgEl.style.backgroundImage = `url('${bg}')`;
+
+      // Random all-characters poster
+      const poster = _KFP_POSTERS[Math.floor(Math.random() * _KFP_POSTERS.length)];
+      imgEl.src = poster;
+
+      overlay.style.display = 'flex';
+      stopQuizMusic();
+
+      // Play gong sound immediately on quiz end
+      try {
+        const gong = new Audio('assets/kungfu/sfx_gong_impact.mp3');
+        gong.volume = 1.0;
+        gong.play().catch(() => {});
+      } catch (e) {}
+
+      // Play a random vo_ sound
+      let outroAudio = null;
+      let themeAudio = null;
+      try {
+        const voSnd = _KFP_VO_SOUNDS[Math.floor(Math.random() * _KFP_VO_SOUNDS.length)];
+        outroAudio = new Audio(voSnd);
+        outroAudio.volume = 0.85;
+        outroAudio.play().catch(() => {});
+        // Also play theme music underneath vo
+        themeAudio = new Audio('assets/kungfu/kfptheme.mp3');
+        themeAudio.volume = 0.7; // louder theme
+        themeAudio.play().catch(() => {});
+      } catch (e) {}
+
+      setTimeout(() => {
+        if (banner) { banner.style.opacity = '1'; banner.style.transform = 'scale(1)'; }
+      }, 400);
+
+      let finished = false;
+      const finish = () => {
+        if (finished) return; finished = true;
+        if (outroAudio) { try { outroAudio.pause(); outroAudio.currentTime = 0; } catch(e){} }
+        if (themeAudio) { try { themeAudio.pause(); themeAudio.currentTime = 0; } catch(e){} }
+        overlay.style.display = 'none';
+        banner.style.opacity = '0'; banner.style.transform = 'scale(0.5)';
+        window.removeEventListener('keydown', finish);
+        window.removeEventListener('click', finish);
+        onDone();
+      };
+
+      setTimeout(() => {
+        window.addEventListener('keydown', finish, { once: true });
+        window.addEventListener('click', finish, { once: true });
+      }, 500);
+
+      if (outroAudio) outroAudio.addEventListener('ended', () => setTimeout(finish, 1500));
+      setTimeout(() => finish(), 25000);
+    }
+
     // ---- Ben & Holly Intro Scene ----
+
     function playBenHollyIntro(onDone) {
       const overlay = document.getElementById('bh-intro-overlay');
       const titleBanner = document.getElementById('bh-title-banner');
@@ -5737,6 +6332,13 @@ Return this structure:
       // Close settings overlay so the intro is unobstructed
       const settingsOverlay = document.getElementById('quiz-settings-overlay');
       if (settingsOverlay) settingsOverlay.classList.remove('show');
+
+      // Random background image (background1–4.png)
+      const _BH_BGS = ['assets/bh/background1.png','assets/bh/background2.png','assets/bh/background3.png','assets/bh/background4.png'];
+      const bhBg = _BH_BGS[Math.floor(Math.random() * _BH_BGS.length)];
+      overlay.style.backgroundImage = `url('${bhBg}')`;
+      overlay.style.backgroundSize  = 'cover';
+      overlay.style.backgroundPosition = 'center';
 
       // Clear any old dynamically-placed chars
       charStage.innerHTML = '';
@@ -5982,6 +6584,7 @@ Return this structure:
         stopQuizMusic();
       };
       if (quizSettings.theme === 'ben-holly') playBenHollyOutro(standardFinish);
+      else if (quizSettings.theme === 'kung-fu-panda') playKungFuPandaOutro(standardFinish);
       else standardFinish();
     }
     function _doStartQuiz() {
@@ -6023,6 +6626,11 @@ Return this structure:
       if (quizSettings.theme === 'ben-holly') {
         // Play intro first; _doStartQuiz fires exactly once when intro ends/is skipped
         playBenHollyIntro(() => _doStartQuiz());
+        return;
+      }
+      if (quizSettings.theme === 'kung-fu-panda') {
+        // Play KFP intro first; _doStartQuiz fires exactly once when intro ends/is skipped
+        playKungFuPandaIntro(() => _doStartQuiz());
         return;
       }
       _doStartQuiz();
@@ -6196,12 +6804,20 @@ Return this structure:
       if (_qReadOnClick) { questionContainer.removeEventListener('click', _qReadOnClick); _qReadOnClick = null; }
       questionContainer.style.cursor = '';
 
-      const colClass = getActiveQ().cols === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2';
-      const gapClass = getActiveQ().maximizeSpacing ? 'gap-16 sm:gap-24' : 'gap-6';
+      const colCount = q.cols || 2;
+      const colClass = colCount === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2';
+      const isMaxSpacing = q.maximizeSpacing;
+      const gapClass = isMaxSpacing ? 'gap-10 md:gap-12' : 'gap-6';
 
-      // Ensure one-page visibility
-      const isMaxSpacing = getActiveQ().maximizeSpacing;
-      answersGrid.className = `grid grid-cols-1 ${colClass} ${gapClass} w-full max-w-5xl flex-1 min-h-0 py-4 ${isMaxSpacing ? 'h-[calc(100vh-280px)] overflow-hidden' : ''}`;
+      answersGrid.className = `grid grid-cols-1 ${colClass} ${gapClass} w-full max-w-5xl flex-1 min-h-0 py-4 ${isMaxSpacing ? 'overflow-hidden' : ''}`;
+      
+      if (isMaxSpacing) {
+        const rowCount = q.rows || 2;
+        answersGrid.style.setProperty('grid-template-rows', `repeat(${rowCount}, 1fr)`, 'important');
+      } else {
+        answersGrid.style.removeProperty('grid-template-rows');
+      }
+
       answersGrid.innerHTML = '';
 
       // Check if question read time is enabled
@@ -6438,6 +7054,8 @@ Return this structure:
 
         answersGrid.appendChild(card);
       });
+      // After a frame, measure remaining viewport and set grid height precisely.
+      requestAnimationFrame(() => _sizeAnswerGrid());
     }
 
     function renderEditBoard() {
