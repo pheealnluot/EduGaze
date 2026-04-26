@@ -1067,32 +1067,10 @@
       color: #e2e8f0;
     }
 
-    /* Theme-specific card styles — no borders, no !important on background
-       so inline JS styles (success green) can override them naturally. */
-    .quiz-card-bh {
-      background: linear-gradient(135deg, #dbeafe, #fce7f3);
-    }
-
-    .quiz-card-bh span {
-      color: #1e3a5f;
-      text-shadow: 0 1px 4px rgba(255, 255, 255, 0.9);
-    }
-
-    .quiz-card-peppa {
-      background: linear-gradient(135deg, #fce7f3, #ffe4e6);
-    }
-
-    .quiz-card-peppa span {
-      color: #831843;
-    }
-
-    .quiz-card-kfp {
-      background: linear-gradient(135deg, #1c1917, #292524);
-    }
-
-    .quiz-card-kfp span {
-      color: #fef3c7;
-    }
+    /* Theme-specific card styles — DISABLED for answer boxes per user request.
+       All themes now use the same dark slate boxes with white text.
+       Theme classes are still added to cards for potential future use
+       (e.g., decorations, emojis) but no background/color overrides. */
 
     /* ── Kung Fu Panda celebration toast ──────────────────────────────────── */
     @keyframes kfpPopIn {
@@ -1338,6 +1316,7 @@
       display: grid;
       grid-template-columns: 1fr 1fr;
       grid-template-rows: 1fr 1fr;
+      grid-auto-rows: 1fr;
       gap: 16px;
       padding: 0 16px 10px;
       box-sizing: border-box;
@@ -1345,25 +1324,25 @@
 
     /* Answer cards: display:flex ensures content is centered when boxes are huge */
     .quiz-font-small {
-      font-size: 0.875rem !important;
+      font-size: 0.875rem;
     }
 
     /* text-sm */
     .quiz-font-medium {
-      font-size: clamp(1.25rem, 3vh, 2rem) !important;
+      font-size: clamp(1.25rem, 3vh, 2rem);
       font-weight: 700;
       line-height: 1.2;
     }
 
     /* default-ish */
     .quiz-font-large {
-      font-size: clamp(1.875rem, 5vh, 2.75rem) !important;
+      font-size: clamp(1.875rem, 5vh, 2.75rem);
       font-weight: 800;
       line-height: 1.1;
     }
 
     .quiz-font-extra-large {
-      font-size: clamp(2.5rem, 8vh, 4.5rem) !important;
+      font-size: clamp(2.5rem, 8vh, 4.5rem);
       font-weight: 900;
       line-height: 1.0;
     }
@@ -1377,19 +1356,24 @@
       padding: 1.5rem;
       box-sizing: border-box;
       text-align: center;
-      background: #334155;
+      background: #20293a;
       border: none;
       border-radius: 20px;
       transition: transform 0.2s ease, background 0.2s ease;
+      position: relative;
+      overflow: hidden;
+      cursor: pointer;
+      -webkit-user-select: none;
+      user-select: none;
     }
 
     /* Hover effect only when card is NOT answered */
     body.quiz-active #quiz-answers-grid>div:not([data-answered]):hover {
-      background: #475569;
+      background: #364154;
       transform: scale(1.02);
     }
 
-    /* Answer text CONTAINER: block so it fills card width, text wraps naturally inside */
+    /* Answer text: high contrast per user spec */
     body.quiz-active #quiz-answers-grid>div .quiz-answer-text {
       display: block;
       width: 100%;
@@ -1397,15 +1381,16 @@
       word-wrap: break-word;
       hyphens: auto;
       text-align: center;
+      color: #f2f5f9;
     }
 
     /* Word-level spans inside the answer text MUST stay inline so text flows on one line.
        text-decoration: none prevents the underline from bleeding into adjacent space spans. */
     body.quiz-active #quiz-answers-grid>div .quiz-answer-text span {
-      display: inline !important;
-      width: auto !important;
+      display: inline;
+      width: auto;
       white-space: normal;
-      text-decoration: none !important;
+      text-decoration: none;
     }
 
     /* Highlighted word: needs higher specificity than the ID-based rule above */
@@ -1714,7 +1699,7 @@
   </svg>
   <header class="w-full max-w-4xl mx-auto flex justify-between items-center mb-10 z-50">
     <div class="flex items-center gap-6">
-      <h1 id="logo" onclick="setMode('landing')"
+      <h1 id="logo" ondblclick="setMode('landing')"
         class="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-emerald-400 cursor-pointer hover:opacity-80 transition-opacity">
         EduGaze
       </h1>
@@ -5509,9 +5494,20 @@ Return this structure:
         }
       }
       grid.innerHTML = '';
-      // Ensure the grid maintains its 2x2 quadrant structure and full width.
-      // auto-rows-fr ensures rows stretch to fill the height set by the sizer.
-      grid.className = 'grid grid-cols-2 auto-rows-fr w-full';
+      // Apply grid layout as inline styles — these always win over any stylesheet
+      // without needing !important. This fixes Tailwind CDN override issues in production.
+      grid.className = 'quiz-answers-grid-inner'; // semantic class for targeting only
+      Object.assign(grid.style, {
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        gridTemplateRows: '1fr 1fr',
+        gap: '16px',
+        padding: '0 16px 10px',
+        boxSizing: 'border-box',
+        width: '100%',
+        flex: '1',
+        minHeight: '0'
+      });
       grid.style.height = '';
       // Always reset visibility — prevents opacity:0 from a previous question getting stuck
       grid.style.opacity = '1';
@@ -5651,13 +5647,51 @@ Return this structure:
       q.answers.forEach((answer, idx) => {
         const isCorrect = answer.id === q.correctId;
         const card = document.createElement('div');
-        // Minimal Tailwind for layout only; visual styling (bg, border, hover) handled by CSS
-        card.className = 'relative overflow-hidden cursor-pointer select-none';
+        // Apply card styles inline — inline styles beat any stylesheet, no !important needed
+        Object.assign(card.style, {
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          height: '100%',
+          width: '100%',
+          padding: '1.5rem',
+          boxSizing: 'border-box',
+          textAlign: 'center',
+          background: '#20293a',
+          border: 'none',
+          borderRadius: '20px',
+          transition: 'transform 0.2s ease, background 0.2s ease',
+          position: 'relative',
+          overflow: 'hidden',
+          cursor: 'pointer',
+          userSelect: 'none'
+        });
+        card.className = 'quiz-answer-card'; // semantic class only
+
+        // Hover: lighten on mouseenter, restore on mouseleave (unless answered)
+        card.addEventListener('mouseenter', () => {
+          if (!card.dataset.answered) card.style.background = '#364154';
+        });
+        card.addEventListener('mouseleave', () => {
+          if (!card.dataset.answered) card.style.background = '#20293a';
+        });
 
         const fontSizeClass = `quiz-font-${quizSettings.fontSize}`;
         const textSpan = document.createElement('span');
-        // quiz-answer-text is targeted by CSS for font size; word spans inside use default inline layout
-        textSpan.className = `quiz-answer-text font-semibold text-center text-slate-100 transition-colors z-10 pointer-events-none ${fontSizeClass}`;
+        textSpan.className = `quiz-answer-text ${fontSizeClass}`;
+        // Set text styles inline for production safety
+        Object.assign(textSpan.style, {
+          color: '#f2f5f9',
+          fontWeight: '700',
+          textAlign: 'center',
+          display: 'block',
+          width: '100%',
+          overflowWrap: 'break-word',
+          wordWrap: 'break-word',
+          pointerEvents: 'none',
+          zIndex: '10',
+          position: 'relative'
+        });
         prepareHighlightableText(textSpan, answer.text);
         textSpan.dataset.prepared = 'true';
         card.appendChild(textSpan);
@@ -6751,7 +6785,7 @@ Return this structure:
     // Navigation Event Listeners
     const logoElement = document.getElementById('logo');
     if (logoElement) {
-      logoElement.onclick = () => setMode('landing');
+      logoElement.ondblclick = () => setMode('landing');
     }
 
     if (btnEducation) {
@@ -6997,7 +7031,7 @@ Return this structure:
 
         if (isSelected) {
           if (isCorrect) {
-            baseClasses += "text-white animate-success ";
+            baseClasses += "text-white ";
           } else {
             // Selected but wrong
             const count = wrongSelectionsCount[answer.id] || 1;
@@ -7013,6 +7047,15 @@ Return this structure:
         }
 
         card.className = baseClasses;
+
+        // Apply persistent green for correctly selected answer via inline styles
+        if (isSelected && isCorrect) {
+          card.style.background = '#10b981';
+          card.style.border = 'none';
+          card.style.outline = 'none';
+          card.style.transform = 'scale(1.03)';
+          card.style.cursor = 'default';
+        }
 
         const innerContainer = document.createElement('div');
         innerContainer.className = 'flex flex-col items-center justify-center gap-3 w-full h-full z-10 pointer-events-none' + (answer.image ? '' : ' p-2');
@@ -7077,12 +7120,23 @@ Return this structure:
           const doSelect = () => {
             selectedId = answer.id;
             if (getActiveQ().correctAnswerIds.includes(answer.id)) {
+              // Immediate green success feedback via inline styles
+              card.style.background = '#10b981';
+              card.style.border = 'none';
+              card.style.outline = 'none';
+              card.style.animation = 'successBounce 0.75s ease';
+              card.style.transform = 'scale(1.03)';
+              card.style.cursor = 'default';
+              const cardSpan = card.querySelector('span');
+              if (cardSpan) { cardSpan.style.color = 'white'; cardSpan.style.textShadow = '0 2px 4px rgba(0,0,0,0.3)'; }
               playSuccessSound();
+              // Delay re-render so the green animation is visible
+              setTimeout(() => renderEducationBoard(), 600);
             } else {
               playWrongSound();
               wrongSelectionsCount[answer.id] = (wrongSelectionsCount[answer.id] || 0) + 1;
+              renderEducationBoard();
             }
-            renderEducationBoard();
           };
 
           const startDwell = () => {
