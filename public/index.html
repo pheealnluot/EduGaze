@@ -20,41 +20,14 @@
     }
 
     @keyframes successBounce {
-
-      0%,
-      20%,
-      50%,
-      80%,
-      100% {
-        transform: translateY(0) scale(1.02);
-      }
-
-      40% {
-        transform: translateY(-15px) scale(1.02);
-      }
-
-      60% {
-        transform: translateY(-7px) scale(1.02);
-      }
+      0%, 20%, 50%, 80%, 100% { transform: translateY(0) scale(1.03); }
+      40% { transform: translateY(-15px) scale(1.03); }
+      60% { transform: translateY(-7px) scale(1.03); }
     }
 
-    @keyframes successBounce {
-
-      0%,
-      20%,
-      50%,
-      80%,
-      100% {
-        transform: translateY(0) scale(1.03);
-      }
-
-      40% {
-        transform: translateY(-15px) scale(1.03);
-      }
-
-      60% {
-        transform: translateY(-7px) scale(1.03);
-      }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
     }
 
 
@@ -1006,6 +979,32 @@
       color: #e2e8f0;
     }
 
+    /* Education level buttons — compact pill grid */
+    .edu-level-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.3rem 0.2rem;
+      border-radius: 0.5rem;
+      border: 1px solid rgba(100, 116, 139, 0.3);
+      background: rgba(30, 41, 59, 0.6);
+      color: #94a3b8;
+      font-size: 0.7rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .edu-level-btn:hover:not(.active) {
+      border-color: rgba(139, 92, 246, 0.4);
+      color: #e2e8f0;
+      background: rgba(139, 92, 246, 0.1);
+    }
+    .edu-level-btn.active {
+      background: rgba(139, 92, 246, 0.25);
+      border-color: rgba(139, 92, 246, 0.7);
+      color: #c4b5fd;
+    }
+
     /* Theme selection chips */
     .quiz-theme-chip {
       display: inline-flex;
@@ -1261,22 +1260,109 @@
     }
 
     body.quiz-active header {
-      margin-bottom: 0.25rem !important;
+      margin-bottom: 0.25rem;
+    }
+
+    /* ── Image-sidebar mode: header moves to a narrow left strip ───────────── */
+    body.quiz-img-sidebar {
+      flex-direction: row !important;
+      padding: 0 !important;
+      align-items: stretch !important;
+      gap: 0;
+    }
+    body.quiz-img-sidebar header {
+      width: 56px;
+      min-width: 56px;
+      height: 100dvh;
+      flex-shrink: 0;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 0;
+      background: rgba(15,23,42,0.96);
+      border-right: 1px solid rgba(255,255,255,0.06);
+      z-index: 10;
+      gap: 0;
+    }
+    body.quiz-img-sidebar header > * { display: none; }  /* hide all header children */
+    #quiz-sidebar-controls {
+      display: none;  /* hidden by default */
+    }
+    body.quiz-img-sidebar #quiz-sidebar-controls {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      height: 100%;
+      width: 100%;
+      padding: 8px 0;
+      gap: 0;
+    }
+    body.quiz-img-sidebar main {
+      flex: 1;
+      min-width: 0;
+      height: 100dvh;
+      max-width: none !important;
+      padding: 0;
+      align-items: stretch !important;
+      justify-content: flex-start !important;
+      align-self: stretch !important;
+      width: auto !important;
+    }
+    .quiz-sidebar-btn {
+      width: 40px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 10px;
+      color: #94a3b8;
+      cursor: pointer;
+      transition: background 0.2s, color 0.2s;
+      background: transparent;
+      border: none;
+      flex-shrink: 0;
+    }
+    .quiz-sidebar-btn:hover { background: rgba(255,255,255,0.08); color: #fff; }
+    .quiz-sidebar-logo {
+      font-size: 0.65rem;
+      font-weight: 900;
+      letter-spacing: 0.04em;
+      color: #60a5fa;
+      writing-mode: vertical-rl;
+      transform: rotate(180deg);
+      padding: 4px 0;
+      user-select: none;
+    }
+    .quiz-sidebar-user {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: rgba(99,102,241,0.25);
+      border: 1px solid rgba(99,102,241,0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.6rem;
+      font-weight: 700;
+      color: #a78bfa;
     }
 
     body.quiz-active nav#category-tabs {
       display: none !important;
     }
 
-    /* main fills remaining height after header */
+    /* main fills remaining height after header — must be a flex column so children use flex:1 */
     body.quiz-active main {
+      display: flex !important;
+      flex-direction: column !important;
       flex: 1;
       min-height: 0;
       overflow: hidden;
-      /* Override Tailwind's items-center and justify-center so the quiz grid stretches */
       align-items: stretch !important;
       justify-content: flex-start !important;
-      /* align-self ensures it fills the cross axis even with body's align-items:center */
       align-self: stretch !important;
       width: 100% !important;
       max-width: 100% !important;
@@ -1300,25 +1386,70 @@
       box-sizing: border-box;
     }
 
-    /* Question row: natural height */
-    body.quiz-active #view-quiz>.quiz-question-section {
+    /* Question row: shrinks to content, never taller than 45% of viewport */
+    body.quiz-active #view-quiz > .quiz-question-section {
       width: 100%;
       max-width: 100% !important;
-      margin-bottom: 20px;
+      margin-bottom: 8px;
+      max-height: 45vh;
+      overflow: hidden;
+      flex-shrink: 0;
+      flex-grow: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+    /* The inner question row is flex-column when image present (set by JS) */
+    /* Question image inside questionContainer: explicit 25dvh height set by JS */
+    body.quiz-active .quiz-question-img-wrap {
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    body.quiz-active .quiz-question-img-wrap img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;   /* scale to fit — no cropping */
+      border-radius: 10px;
+      display: block;
+    }
+    /* Answer card images: capped at 25vh — !important overrides flex grow */
+    body.quiz-active #quiz-answers-grid > div .quiz-answer-img {
+      flex: 0 0 auto;
+      min-height: 0;
+      max-height: 25vh !important;
+      height: 25vh;
+      width: 100%;
+      overflow: hidden;
+      border-radius: 12px;
+    }
+    body.quiz-active #quiz-answers-grid > div .quiz-answer-img img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      border-radius: 12px;
+      display: block;
     }
 
-    /* Answer grid: Fills the 1fr row. Rows are 1fr 1fr to stretch equally. */
+    /* Answer grid: Fills ALL remaining space after the question section */
     body.quiz-active #quiz-answers-grid {
       width: 100%;
       max-width: none;
-      flex: 1;
-      min-height: 0;
+      flex: 1 1 0;       /* grow to fill remaining height */
+      min-height: 0;     /* allow shrinking below content size */
       display: grid;
       grid-template-columns: 1fr 1fr;
       grid-template-rows: 1fr 1fr;
-      grid-auto-rows: 1fr;
+      align-content: stretch;
+      align-items: stretch;
       gap: 16px;
       padding: 0 16px 10px;
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+    /* Answer cards must fill their grid cell */
+    body.quiz-active #quiz-answers-grid > div.quiz-answer-card {
+      height: 100% !important;
+      min-height: 0 !important;
       box-sizing: border-box;
     }
 
@@ -2128,21 +2259,41 @@
               <span class="quiz-subject-chip" data-subject="Science">🔬 Science</span>
               <span class="quiz-subject-chip" data-subject="General Knowledge">🌍 General Knowledge</span>
             </div>
-            <p class="text-[10px] text-slate-500">Select one or more subjects.</p>
+            <!-- Custom subject free text -->
+            <div class="mt-2">
+              <input type="text" id="quiz-custom-subject" placeholder="✏️ Custom topic (e.g. Space, Dinosaurs, Coding)…"
+                class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/40 transition-all">
+            </div>
+            <p class="text-[10px] text-slate-500">Select subjects and/or type a custom topic.</p>
           </div>
 
-          <!-- Age Range -->
+          <!-- Content Type -->
+          <div class="space-y-3 border-t border-slate-800 pt-5">
+            <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">🖼️ Content Type</label>
+            <div class="flex gap-4">
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" id="quiz-content-text" class="w-4 h-4 rounded accent-violet-500">
+                <span class="text-sm text-slate-300">📝 Text</span>
+              </label>
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" id="quiz-content-image" class="w-4 h-4 rounded accent-violet-500">
+                <span class="text-sm text-slate-300">🖼️ Image</span>
+              </label>
+            </div>
+            <p class="text-[10px] text-slate-500">Questions and answers will use the selected format(s). Selecting both mixes text and images.</p>
+          </div>
+
+
+          <!-- Education Level -->
           <div class="space-y-3 border-t border-slate-800 pt-5" id="quiz-age-section">
             <div class="flex justify-between items-center">
-              <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">Target Age</label>
-              <span id="quiz-age-display" class="text-violet-400 font-black text-lg">6 years old</span>
+              <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">🎓 Education Level</label>
+              <span id="quiz-edu-level-display" class="text-violet-400 font-black text-lg">P2</span>
             </div>
-            <input type="range" id="quiz-age-slider" min="3" max="30" step="1" value="6"
-              class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-violet-500">
-            <div class="flex justify-between text-[10px] text-slate-600 font-bold">
-              <span>3 yrs</span><span>12 yrs</span><span>21 yrs</span><span>30 yrs</span>
-            </div>
+            <div id="quiz-edu-level-grid" class="grid grid-cols-6 gap-1.5"></div>
+            <p class="text-[10px] text-slate-500">Singapore education levels: N=Nursery, K=Kindergarten, P=Primary, S=Secondary, J=Junior College, U=University.</p>
           </div>
+
 
           <!-- Font Size Selection -->
           <div class="space-y-3 border-t border-slate-800 pt-5">
@@ -3449,6 +3600,14 @@
       playHintSound();
     }
 
+    // showQuizHint: public entry point called when wrong-attempt threshold is reached.
+    // Works for both text-only and image answer cards.
+    function showQuizHint(q) {
+      // Threshold 11 means 'Never' in settings
+      if (!quizSettings.hintThreshold || quizSettings.hintThreshold >= 11) return;
+      triggerQuizHint();
+    }
+
     function resizeImageFileToDataURL(file, maxSize = 400) {
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -4456,6 +4615,9 @@
     let initialSettings = loadQuizSettings() || {
       subjects: [...QUIZ_SUBJECTS],
       age: 6,
+      eduLevel: 'P2',
+      contentTypes: ['text'],
+      customSubject: '',
       correctTarget: 5,
       musicVolume: 0.2,
       musicOn: false,
@@ -4468,11 +4630,14 @@
       hintThreshold: 4,
       voiceOver: false,
     };
-    // Migrate saved settings that are missing the new field
+    // Migrate saved settings that are missing new fields
     if (!initialSettings.questionSource) initialSettings.questionSource = 'ai';
     if (!initialSettings.fontSize) initialSettings.fontSize = 'medium';
     if (initialSettings.hintThreshold === undefined) initialSettings.hintThreshold = 4;
     if (initialSettings.voiceOver === undefined) initialSettings.voiceOver = false;
+    if (!initialSettings.eduLevel) initialSettings.eduLevel = 'P2';
+    if (!initialSettings.contentTypes) initialSettings.contentTypes = ['text'];
+    if (initialSettings.customSubject === undefined) initialSettings.customSubject = '';
 
     let quizSettings = initialSettings;
 
@@ -4494,34 +4659,68 @@
 
     // --- Header button quiz-mode swap helpers ---
     function enterQuizHeaderMode() {
-      // Replace btn-education with "Settings" (double-click)
-      btnEducation.textContent = '';
-      btnEducation.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg> Settings`;
-      btnEducation.className = 'flex items-center gap-2 px-4 py-2 rounded-lg transition-all bg-violet-900/60 text-violet-300 hover:bg-violet-800/80 border border-violet-700/40';
-      btnEducation.onclick = null;
-      btnEducation.ondblclick = () => window.openQuizSettings();
-      btnEducation.title = 'Double-click to open settings';
+      const hasImage = (quizSettings.contentTypes || []).includes('image');
 
-      // Replace btn-edit with "Exit" (double-click)
-      btnEdit.textContent = 'Exit';
-      btnEdit.className = 'flex items-center gap-2 px-4 py-2 rounded-lg transition-all bg-slate-800 text-slate-400 hover:bg-slate-700 border border-slate-700';
-      btnEdit.onclick = null;
-      btnEdit.ondblclick = () => setMode('landing');
-      btnEdit.title = 'Double-click to exit Quiz';
+      if (hasImage) {
+        // Image mode: collapse header into a vertical left sidebar
+        document.body.classList.add('quiz-img-sidebar');
 
-      // Update hint text
-      const hint = document.getElementById('header-mode-hint');
-      if (hint) hint.textContent = 'Double-click buttons to use them';
+        // Build sidebar if not already present
+        let sidebar = document.getElementById('quiz-sidebar-controls');
+        if (!sidebar) {
+          sidebar = document.createElement('div');
+          sidebar.id = 'quiz-sidebar-controls';
+          document.querySelector('header').appendChild(sidebar);
+        }
+
+        // Get user initial for avatar
+        const userEl = document.getElementById('display-user');
+        const userInitial = (userEl?.textContent?.trim() || 'G')[0].toUpperCase();
+
+        sidebar.innerHTML = `
+          <div style="display:flex;flex-direction:column;align-items:center;gap:10px;">
+            <span class="quiz-sidebar-logo" ondblclick="setMode('landing')" title="Double-click: back to home">EduGaze</span>
+            <div class="quiz-sidebar-user" title="${userEl?.textContent?.trim() || 'Guest'}">${userInitial}</div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
+            <button class="quiz-sidebar-btn" ondblclick="window.openQuizSettings()" title="Double-click: Settings">
+              <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+            </button>
+            <button class="quiz-sidebar-btn" ondblclick="setMode('landing')" title="Double-click: Exit Quiz" style="color:#f87171;">
+              <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+          </div>`;
+      } else {
+        // Normal mode: standard header buttons
+        document.body.classList.remove('quiz-img-sidebar');
+        // Replace btn-education with "Settings" (double-click)
+        btnEducation.textContent = '';
+        btnEducation.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg> Settings`;
+        btnEducation.className = 'flex items-center gap-2 px-4 py-2 rounded-lg transition-all bg-violet-900/60 text-violet-300 hover:bg-violet-800/80 border border-violet-700/40';
+        btnEducation.onclick = null;
+        btnEducation.ondblclick = () => window.openQuizSettings();
+        btnEducation.title = 'Double-click to open settings';
+
+        // Replace btn-edit with "Exit" (double-click)
+        btnEdit.textContent = 'Exit';
+        btnEdit.className = 'flex items-center gap-2 px-4 py-2 rounded-lg transition-all bg-slate-800 text-slate-400 hover:bg-slate-700 border border-slate-700';
+        btnEdit.onclick = null;
+        btnEdit.ondblclick = () => setMode('landing');
+        btnEdit.title = 'Double-click to exit Quiz';
+
+        // Update hint text
+        const hint = document.getElementById('header-mode-hint');
+        if (hint) hint.textContent = 'Double-click buttons to use them';
+      }
     }
 
     function restoreHeaderFromQuizMode() {
-      document.body.classList.remove('quiz-active');
+      document.body.classList.remove('quiz-active', 'quiz-img-sidebar');
       // Restore btn-education
       btnEducation.innerHTML = 'Education Mode';
       btnEducation.className = 'flex items-center gap-2 px-4 py-2 rounded-lg transition-all bg-slate-800 text-slate-400 hover:bg-slate-700';
       btnEducation.ondblclick = null;
       btnEducation.title = '';
-      // onclick is wired by setEducationMode / setLandingMode etc — just reset here
       btnEducation.onclick = () => setMode('education');
 
       // Restore btn-edit
@@ -4529,10 +4728,14 @@
       btnEdit.className = 'flex items-center gap-2 px-4 py-2 rounded-lg transition-all bg-slate-800 text-slate-400 hover:bg-slate-700';
       btnEdit.ondblclick = null;
       btnEdit.title = '';
-      btnEdit.onclick = null; // restored by setEditMode binding
+      btnEdit.onclick = null;
 
       const hint = document.getElementById('header-mode-hint');
       if (hint) hint.textContent = 'Double-click or Ctrl-e to enter Edit Mode';
+
+      // Remove sidebar if present
+      const sidebar = document.getElementById('quiz-sidebar-controls');
+      if (sidebar) sidebar.remove();
     }
 
     function initQuizSettingsUI() {
@@ -4542,7 +4745,7 @@
         chip.classList.toggle('active', quizSettings.subjects.includes(subj));
         chip.onclick = () => {
           if (quizSettings.subjects.includes(subj)) {
-            if (quizSettings.subjects.length === 1) {
+            if (quizSettings.subjects.length === 1 && !quizSettings.customSubject) {
               showToast('Select at least one subject.', 'info');
               return;
             }
@@ -4554,6 +4757,31 @@
           saveQuizSettings();
         };
       });
+
+      // Custom subject input
+      const customSubjInput = document.getElementById('quiz-custom-subject');
+      if (customSubjInput) {
+        customSubjInput.value = quizSettings.customSubject || '';
+        customSubjInput.oninput = e => {
+          quizSettings.customSubject = e.target.value.trim();
+          saveQuizSettings();
+        };
+      }
+
+      // Content type checkboxes
+      ['text', 'image'].forEach(type => {
+        const chk = document.getElementById(`quiz-content-${type}`);
+        if (chk) {
+          chk.checked = quizSettings.contentTypes.includes(type);
+          chk.onchange = () => {
+            const types = ['text', 'image'].filter(t => document.getElementById(`quiz-content-${t}`)?.checked);
+            if (types.length === 0) { chk.checked = true; return; } // must keep at least one
+            quizSettings.contentTypes = types;
+            saveQuizSettings();
+          };
+        }
+      });
+
 
       // Theme chips
       document.querySelectorAll('.quiz-theme-chip').forEach(chip => {
@@ -4567,16 +4795,49 @@
         };
       });
 
-      // Age slider
-      const ageSlider = document.getElementById('quiz-age-slider');
-      const ageDisplay = document.getElementById('quiz-age-display');
-      ageSlider.value = quizSettings.age;
-      ageDisplay.textContent = `${quizSettings.age} years old`;
-      ageSlider.oninput = e => {
-        quizSettings.age = parseInt(e.target.value);
-        ageDisplay.textContent = `${quizSettings.age} years old`;
-        saveQuizSettings();
-      };
+      // Education level selector
+      const EDU_LEVELS = [
+        { id:'N1', label:'N1', age:3, diff:'Very simple nursery-level — colours, shapes, animals, basic counting to 5' },
+        { id:'N2', label:'N2', age:4, diff:'Nursery 2 — simple words, numbers 1-10, basic body parts, common objects' },
+        { id:'K1', label:'K1', age:5, diff:'Kindergarten 1 — basic phonics, numbers to 20, simple sentences, Singapore context' },
+        { id:'K2', label:'K2', age:6, diff:'Kindergarten 2 — sight words, addition/subtraction to 10, simple stories, days/months' },
+        { id:'P1', label:'P1', age:7, diff:'Primary 1 Singapore syllabus — simple grammar, numbers to 100, basic science concepts' },
+        { id:'P2', label:'P2', age:8, diff:'Primary 2 Singapore syllabus — word families, multiplication intro, plants and animals' },
+        { id:'P3', label:'P3', age:9, diff:'Primary 3 Singapore syllabus — grammar, fractions, matter and energy' },
+        { id:'P4', label:'P4', age:10, diff:'Primary 4 Singapore syllabus — complex grammar, decimals, ecosystems' },
+        { id:'P5', label:'P5', age:11, diff:'Primary 5 Singapore syllabus — essays, percentages/ratio, electricity/magnets' },
+        { id:'P6', label:'P6', age:12, diff:'PSLE level — comprehension, algebra intro, full Singapore primary science' },
+        { id:'S1', label:'S1', age:13, diff:'Secondary 1 Singapore — O-level foundation, algebra, biology/chemistry/physics intro' },
+        { id:'S2', label:'S2', age:14, diff:'Secondary 2 Singapore — O-level intermediate, geometry, human biology' },
+        { id:'S3', label:'S3', age:15, diff:'Secondary 3 Singapore — O-level core, trigonometry, pure sciences' },
+        { id:'S4', label:'S4', age:16, diff:'O-level year — exam-level difficulty, full secondary Singapore curriculum' },
+        { id:'J1', label:'J1', age:17, diff:'Junior College 1 Singapore — A-level foundation, calculus, advanced sciences/humanities' },
+        { id:'J2', label:'J2', age:18, diff:'A-level year — exam-level difficulty, full JC Singapore curriculum' },
+        { id:'U',  label:'U',  age:20, diff:'University level — undergraduate academic difficulty, critical thinking, research-based' },
+      ];
+      window._EDU_LEVELS = EDU_LEVELS;
+      const levelGrid = document.getElementById('quiz-edu-level-grid');
+      if (levelGrid) {
+        levelGrid.innerHTML = '';
+        EDU_LEVELS.forEach(lvl => {
+          const btn = document.createElement('button');
+          btn.className = 'edu-level-btn' + (quizSettings.eduLevel === lvl.id ? ' active' : '');
+          btn.textContent = lvl.label;
+          btn.title = lvl.diff;
+          btn.onclick = () => {
+            quizSettings.eduLevel = lvl.id;
+            quizSettings.age = lvl.age; // keep age in sync for fallback bank
+            levelGrid.querySelectorAll('.edu-level-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            const display = document.getElementById('quiz-edu-level-display');
+            if (display) display.textContent = lvl.label;
+            saveQuizSettings();
+          };
+          levelGrid.appendChild(btn);
+        });
+      }
+      const lvlDisplay = document.getElementById('quiz-edu-level-display');
+      if (lvlDisplay) lvlDisplay.textContent = quizSettings.eduLevel;
 
       // Count slider
       const countSlider = document.getElementById('quiz-count-slider');
@@ -5184,78 +5445,388 @@
       }
     }
 
-    // Fetch a batch of questions from Gemini — one per selected subject (round-robin)
+    // ── AI Helper (Gemini Proxy) ──────────────────────────────────────────
+    window.callGemini = async (prompt, config = {}) => {
+      try {
+        const resp = await fetch('/api/quiz-generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: {
+              temperature: config.temperature || 0.8,
+              maxOutputTokens: config.maxOutputTokens || 8192,
+            }
+          })
+        });
+        if (!resp.ok) return null;
+        const data = await resp.json();
+        return data.candidates?.[0]?.content?.parts?.[0]?.text || null;
+      } catch (e) {
+        console.error('[Quiz] callGemini failed', e);
+        return null;
+      }
+    };
 
+    // ── Quiz Visual Pipeline (Pre-loading & Caching) ────────────────────────
+    // Stores resolved URLs or raw SVG code for questions/answers
+    const quizResolvedVisuals = new Map(); // key: keyword, value: { url, svg }
+
+    async function resolveVisual(keyword, context = [], questionText = '') {
+      if (!keyword) return null;
+      if (quizResolvedVisuals.has(keyword)) return quizResolvedVisuals.get(keyword);
+
+      // LOGIC GUARD: For counting/measuring/geometry, ALWAYS use AI SVG to ensure accuracy.
+      const qtxt = (questionText || '').toLowerCase();
+      const kw = keyword.toLowerCase(); // FIX: was 'kw' which was undefined
+      const isPrecise = qtxt.includes('how many') || qtxt.includes('count') || qtxt.includes('measure') || 
+                        qtxt.includes('ruler') || qtxt.includes('protractor') || qtxt.includes('clock') || 
+                        qtxt.includes('length') || qtxt.includes('time') || qtxt.includes('fraction') || 
+                        qtxt.includes('decimal') || qtxt.includes('graph') || qtxt.includes('chart') ||
+                        qtxt.includes('pattern') || qtxt.includes('sequence') || qtxt.includes('comes next') ||
+                        qtxt.includes('what comes') || qtxt.includes('which comes') || qtxt.includes('number line') ||
+                        kw.includes('flag');
+
+      if (!isPrecise) {
+        // For non-Latin keywords (e.g. Chinese), try to find English equivalent for WikiMedia
+        // Chinese chars are in the range \u4e00-\u9fff
+        const hasChinese = /[\u4e00-\u9fff]/.test(keyword);
+        const searchKeyword = hasChinese ? keyword + ' photo' : keyword;
+        
+        // Try Wiki first only for general objects (animals, plants, scenes, buildings)
+        const wikiUrl = await fetchWikiImage(searchKeyword);
+        if (wikiUrl) {
+          const res = { url: wikiUrl, svg: null };
+          quizResolvedVisuals.set(keyword, res);
+          return res;
+        }
+      }
+
+      // Fallback to AI SVG (no container needed for background generation)
+      const aiSvg = await generateAISVG(keyword, null, context);
+      if (aiSvg) {
+        const res = { url: null, svg: aiSvg };
+        quizResolvedVisuals.set(keyword, res);
+        return res;
+      }
+      // Do NOT cache null — allow retry on next render
+      return null;
+    }
+
+    async function preLoadBatchVisuals(batch) {
+      if (!batch || !batch.length) return;
+      console.log('[Quiz] Pre-loading visuals for batch...');
+      for (const q of batch) {
+        // Resolve question image
+        if (q.questionImageKeyword) {
+          resolveVisual(q.questionImageKeyword, q.answers.map(a => a.text), q.question);
+        }
+        // Resolve answer images
+        if (q.answers) {
+          for (const ans of q.answers) {
+            if (ans.imageKeyword) resolveVisual(ans.imageKeyword, [], q.question);
+          }
+        }
+      }
+    }
+
+    // ── AI Graphic Generator (SVG) ───────────────────────────────────────────
+    async function generateAISVG(keyword, container, answerContext = []) {
+      if (!keyword) return null;
+      
+      let loader = null;
+      let timerInt = null;
+
+      // Only show loader if we are in an active render (container provided)
+      if (container) {
+        loader = document.createElement('div');
+        loader.className = 'quiz-ai-drawing-msg';
+        loader.style.cssText = 'position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(15,23,42,0.8);color:#a78bfa;font-family:inherit;z-index:10;gap:8px;pointer-events:none;';
+        loader.innerHTML = `<div class="shimmer" style="width:40px;height:40px;border-radius:50%;border:3px solid #7c3aed;border-top-color:transparent;animation:spin 1s linear infinite;"></div>
+                            <div style="font-weight:600;font-size:0.9rem;">AI is generating diagram...</div>
+                            <div class="quiz-ai-timer" style="font-size:0.8rem;opacity:0.8;">0s</div>`;
+        container.appendChild(loader);
+        
+        let seconds = 0;
+        timerInt = setInterval(() => {
+          seconds++;
+          const tEl = loader.querySelector('.quiz-ai-timer');
+          if (tEl) tEl.innerText = `${seconds}s`;
+        }, 1000);
+      }
+
+      const cleanup = () => { if (timerInt) clearInterval(timerInt); if (loader) loader.remove(); };
+
+      const prompt = `Generate a simple, clean, educational SVG diagram for a Primary 2 student for the keyword: "${keyword}".
+Rules:
+- Use clear lines and high contrast (use a dark theme: lines should be light colors like white, yellow, or cyan).
+- Make it visually accurate for a math/science problem.
+- ${answerContext.length > 0 
+    ? 'IMPORTANT: This is a labeled diagram/graph. You MUST include short category labels: ' + answerContext.join(', ') + '.' 
+    : 'DO NOT include the names of any objects in the image. DO NOT write any text labels except for axis numbers on a graph or markings on a ruler/clock. ABSOLUTELY NEVER write any of the following words anywhere in the image: the answer to the question.'}
+- DO NOT label the diagram with the correct answer or any of the answer choices.
+- Viewbox should be 200x150 or similar.
+- Return ONLY the raw <svg>...</svg> code. No markdown, no triple backticks.`;
+
+      const response = await window.callGemini(prompt, { temperature: 0.2 });
+      cleanup();
+      
+      if (!response) return null;
+      const match = response.match(/<svg[\s\S]*?<\/svg>/i);
+      return match ? match[0] : null;
+    }
+
+    // Fetch a batch of questions from Gemini — one per selected subject (round-robin)
     async function fetchQuizBatch() {
-      const subjects = quizSettings.subjects.length > 0 ? quizSettings.subjects : ['General Knowledge'];
-      // Build 5 slots, cycling through subjects so every selected subject appears
-      const slots = Array.from({ length: 5 }, (_, i) => subjects[i % subjects.length]);
+      // Build subject list — include custom topic if provided
+      const baseSubjects = quizSettings.subjects.length > 0 ? quizSettings.subjects : ['General Knowledge'];
+      const customTopic = (quizSettings.customSubject || '').trim();
+      const allSubjects = customTopic ? [...baseSubjects, customTopic] : baseSubjects;
+      // Build 5 slots, cycling through all subjects so every one appears
+      const slots = Array.from({ length: 5 }, (_, i) => allSubjects[i % allSubjects.length]);
+
+      // Education level lookup
+      const eduLevel = quizSettings.eduLevel || 'P2';
+      const EDU_LEVELS = window._EDU_LEVELS || [];
+      const lvlInfo = EDU_LEVELS.find(l => l.id === eduLevel) || { diff: 'Primary 2 Singapore syllabus', age: 8 };
+      const levelDesc = `${eduLevel} — ${lvlInfo.diff}`;
 
       // Build rich per-subject instructions
       const subjectHints = {
-        'English': 'English language: grammar rules, vocabulary, spelling, synonyms/antonyms, sentence structure, punctuation, idioms — age-appropriate',
-        'Chinese': 'Chinese language (Mandarin): vocabulary, pinyin, stroke order, simple characters, sentence structure, opposites, colours/numbers in Chinese — age-appropriate',
-        'Pure Chinese': 'PURE MANDARIN CHINESE — CRITICAL: Write EVERY question AND every answer choice ENTIRELY in Simplified Chinese characters (\u6c49\u5b57). Absolutely NO English, NO pinyin ever. Topics: vocabulary, colours, numbers, animals, food, opposites, family, body parts, actions, nature. Example: \"\u4e0b\u9762\u54ea\u4e2a\u662f\u6c34\u679c\uff1f\"  \"\u82f9\u679c\" \"\u72d7\" \"\u4e66\" \"\u6905\u5b50\"',
-        'Math': 'Mathematics: arithmetic, shapes, patterns, simple algebra, measurement — age-appropriate',
-        'Science': 'Science: nature, animals, plants, physics, chemistry, body, space — age-appropriate',
-        'General Knowledge': 'General Knowledge: world geography, history, culture, sports, famous people — age-appropriate',
+        'English': 'English language: grammar rules, vocabulary, spelling, synonyms/antonyms, sentence structure, punctuation, idioms',
+        'Chinese': 'Chinese language (Mandarin): vocabulary, pinyin, stroke order, simple characters, sentence structure, opposites, colours/numbers in Chinese',
+        'Pure Chinese': 'PURE MANDARIN CHINESE — CRITICAL: Write EVERY question AND every answer choice ENTIRELY in Simplified Chinese characters. Absolutely NO English, NO pinyin ever. Topics: vocabulary, colours, numbers, animals, food, opposites, family.',
+        'Math': 'Mathematics: arithmetic, shapes, patterns, algebra, measurement',
+        'Science': 'Science: nature, animals, plants, physics, chemistry, body, space',
+        'General Knowledge': 'General Knowledge: world geography, history, culture, sports, famous people',
       };
 
       const slotDescriptions = slots
-        .map((s, i) => `  Question ${i + 1}: subject = "${s}" (${subjectHints[s] || s})`)
+        .map((s, i) => `  Question ${i + 1}: subject = "${s}" (${subjectHints[s] || `custom topic: ${s}`})`)
         .join('\n');
 
       const usedList = quizAskedQuestions.length > 0
         ? `\n\nNEVER repeat or paraphrase any of these already-asked questions:\n${quizAskedQuestions.slice(-80).map((q, i) => `${i + 1}. ${q}`).join('\n')}`
         : '';
 
-      const diff = quizSettings.age >= 18 ? 'advanced/adult' : (quizSettings.age >= 12 ? 'academic/teen' : 'child-friendly');
+      // Content type instructions
+      const types = quizSettings.contentTypes || ['text'];
+      const hasText = types.includes('text');
+      const hasImage = types.includes('image');
+      const imageOnly = hasImage && !hasText;
+      let mediumRule = '';
+      if (hasText && !hasImage) {
+        mediumRule = `CONTENT FORMAT — TEXT ONLY: All questions and all answer choices must be plain text.`;
+      } else if (imageOnly) {
+        mediumRule = `CONTENT FORMAT — IMAGE ONLY: This is the most important rule in the entire prompt. EVERY SINGLE one of the 5 questions MUST use an image — either in the question box or in the answer cards. It is STRICTLY FORBIDDEN to generate a word problem, an arithmetic equation, a grammar question, or any question that could be answered without looking at a picture. ONLY generate questions that are genuinely visual: identifying objects, animals, shapes, flags, scenes, colours, comparing diagrams. Step 1 does NOT apply — skip it entirely for all 5 questions.`;
+      } else {
+        mediumRule = `CONTENT FORMAT — MIXED: Some questions are text-only, some are image-based. Use your judgment per question.`;
+      }
 
-      const prompt = `You are an educational quiz generator for a ${quizSettings.age}-year-old.
-Difficulty level: ${diff}.
-Generate exactly 5 multiple-choice questions. Each question MUST match its assigned subject:
+      const imageKeywordInstruction = hasImage
+        ? `
+- IMAGE PLACEMENT — follow this 3-step decision for EVERY question:
+
+  STEP 1: Does this question need any image?
+${imageOnly
+  ? `    IMAGE ONLY MODE — SKIP STEP 1 ENTIRELY. Every question MUST have an image.
+    Do NOT generate word problems or pure arithmetic. Only generate questions that are visual
+    (identifying objects/animals/flags/shapes/scenes). Proceed directly to Step 2 or Step 3.`
+  : `    Skip images (text-only question) for:
+      * Word problems fully described in text ("Mr Tan bought 5.85 kg of apples...")
+      * Pattern/sequence problems described in text ("Figure 1 has 1 square, Figure 2 has 3...")
+      * Grammar, vocabulary, spelling, abstract reasoning
+      * English: If the question is about matching sounds/phonetics, use "Which word rhymes with [word]?" instead of "word family".
+      * Pure arithmetic or algebra (fractions, decimals, equations)
+      * ANY question where the image would be decorative and unrelated to answering`}
+
+  STEP 2 (Visual in Question): Use ONLY for "Look at this [object]" or "How many [objects] are there?".
+    - FORBIDDEN: NEVER use Step 2 for Fractions, Decimals, or "Which of these..." comparisons.
+    - Set 'questionImageKeyword'. Answers MUST be text-only.
+
+  STEP 3 (Visual in Answers): MANDATORY for ALL comparison questions ("Which of these...?", "Identify the...").
+    - MANDATORY for: Fractions, Decimals, Geometry shapes.
+    - DO NOT set 'questionImageKeyword'. Every answer MUST have an 'imageKeyword'.
+
+- CRITICAL XOR RULE: NEVER generate both 'questionImageKeyword' AND answer 'imageKeyword' in the same question. If one is present, the other MUST be null/absent.
+
+- KEYWORD QUALITY: Be concrete and specific. 
+  - Good: "analog clock face diagram", "transparent protractor", "5cm ruler", "labrador retriever".
+  - Bad: "clock", "ruler", "figure", "math problem".
+`
+        : '';
+
+      // JSON templates — note: in image mode the AI may choose text-only (no image fields) per step 1 above.
+      // We provide all three template shapes so the AI can use the correct one per question.
+      const answerTemplateWithImg = `{"id":"1","text":"[answer]","imageKeyword":"[kw]"},{"id":"2","text":"[answer]","imageKeyword":"[kw]"},{"id":"3","text":"[answer]","imageKeyword":"[kw]"},{"id":"4","text":"[answer]","imageKeyword":"[kw]"}`;
+      const answerTemplateTextOnly = `{"id":"1","text":"[answer]"},{"id":"2","text":"[answer]"},{"id":"3","text":"[answer]"},{"id":"4","text":"[answer]"}`;
+
+      // Odd question: questionImageKeyword set, answers text-only
+      const questionTemplateImgInQ = `{"question":"[text]","questionImageKeyword":"[kw]","answers":[${answerTemplateTextOnly}],"correctId":"1"}`;
+      // Even question: no questionImageKeyword, answers have imageKeyword
+      const questionTemplateImgInA = `{"question":"[text]","answers":[${answerTemplateWithImg}],"correctId":"2"}`;
+      // Text-only question (no images at all — correct choice for word problems)
+      const questionTemplateText = `{"question":"[text]","answers":[${answerTemplateTextOnly}],"correctId":"1"}`;
+
+      // In image mode: alternate ODD/EVEN as default, but the AI may override to text-only per step 1
+      // In IMAGE ONLY mode: force ALL questions to ODD pattern (every question has an image stimulus)
+      const questionTemplate = hasImage
+        ? (imageOnly
+            ? `${questionTemplateImgInQ},${questionTemplateImgInA},${questionTemplateImgInQ},${questionTemplateImgInA},${questionTemplateImgInQ}`
+            : `${questionTemplateImgInQ},${questionTemplateImgInA},${questionTemplateImgInQ},${questionTemplateImgInA},${questionTemplateImgInQ}`)
+        : `${questionTemplateText},${questionTemplateText},${questionTemplateText},${questionTemplateText},${questionTemplateText}`;
+
+      const prompt = `You are an educational quiz generator aligned to the Singapore school curriculum.
+Education Level: ${levelDesc}
+Generate exactly 5 multiple-choice questions at this exact difficulty. Each question MUST match its assigned subject:
 ${slotDescriptions}${usedList}
 
-Rules:
-- Age ${quizSettings.age}: For adults (18+), ask challenging academic or general knowledge questions. For children, keep it simple and fun.
-- JSON MUST be strictly parsable. Use single quotes (') for any internal quotes (e.g. they called him 'the great'). 
-- ESCAPE any double quotes with a backslash (\").
-- No markdown wrappers. No "Here is the JSON". Return ONLY the raw object.
-- MANDATORY Chinese Word Order: Topic FIRST, then question word. ✅ "天空是什么颜色?" ❌ "什么颜色是天空?".
+${mediumRule}
 
-Return this structure:
-{"questions": [
-  {"question": "...", "answers": [{"id":"1","text":"..."},{"id":"2","text":"..."},{"id":"3","text":"..."},{"id":"4","text":"..."}], "correctId": "1-4"}
-]}`;
+CRITICAL OUTPUT RULES:
+- Return ONLY a raw JSON object. No markdown, no explanation, no backtick wrapper.
+- JSON must be 100% valid. All string values must contain only simple characters.
+- Do NOT use double quotes inside string values. Rephrase to avoid them.
+- Strictly match education level ${eduLevel}.
+- Chinese: Topic FIRST, then question word.${imageKeywordInstruction}
+
+Return exactly this JSON (replace [text], [answer], [kw] with real values — follow the image-XOR rule strictly):
+{"questions":[${questionTemplate}]}`;
+
 
       // Secure proxy call — key lives in Firebase Secret Manager, never in the browser
-      console.log('[Quiz] fetchQuizBatch — subjects:', quizSettings.subjects, '| age:', quizSettings.age);
-      let resp = await fetch('/api/quiz-generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: 0.9,
-            maxOutputTokens: 4096,
-          }
-        })
-      });
-      if (!resp.ok) {
-        const errText = await resp.text();
-        throw new Error(`Gemini API ${resp.status}: ${errText.slice(0, 200)}`);
-      }
-      const ct = resp.headers.get('content-type') || '';
-      if (!ct.includes('application/json')) throw new Error('Gemini response was not JSON (got: ' + ct + ')');
-      const data = await resp.json();
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      console.log('[Quiz] fetchQuizBatch — subjects:', allSubjects, '| level:', eduLevel, '| types:', types);
+
+
+      let text = await window.callGemini(prompt, { temperature: 0.8 });
+      if (!text) throw new Error('AI returned no content');
       const parsed = extractJSON(text);
       if (!parsed) throw new Error('AI returned malformed data');
 
-      // Accept either {questions:[...]} wrapper or a bare array
       const batch = Array.isArray(parsed) ? parsed : (parsed.questions || []);
       if (!batch.length) throw new Error('Empty batch from AI');
+
+      // Kick off background visual pre-loading
+      preLoadBatchVisuals(batch);
+      
       return batch;
+    }
+
+    // ── Wikimedia Commons image search helper ─────────────────────────────────
+    // Searches Commons for JPEG/PNG photos only — explicitly rejects SVGs, diagrams,
+    // worksheets, and tiny thumbnails so we always get real photographic content.
+    const _wikiImageCache = {};
+    async function fetchWikiImage(keyword) {
+      if (!keyword) return null;
+      const kw = keyword.toLowerCase().trim();
+      if (_wikiImageCache[kw] !== undefined) return _wikiImageCache[kw];
+
+      // Context map: expand ambiguous single terms to more specific photo queries
+      const contextMap = {
+        'triangle': 'equilateral triangle shape',
+        'circle': 'circle shape',
+        'square': 'geometric square shape',
+        'rectangle': 'rectangle shape',
+        'hexagon': 'hexagon geometry shape',
+        'pentagon': 'pentagon geometry shape',
+        'octagon': 'octagon geometry shape',
+        'star': 'five pointed star shape',
+        'heart': 'red heart symbol',
+        'cube': 'cube 3d shape diagram',
+        'sphere': 'sphere 3d shape diagram',
+        'cylinder': 'cylinder 3d shape diagram',
+        'pyramid': 'pyramid 3d shape diagram',
+        'cone': 'cone 3d shape diagram',
+        'flowers': 'colorful flowers garden photo',
+        'flower': 'flower blossom photo',
+        'apple': 'red apple fruit photo',
+        'dog': 'dog photo',
+        'cat': 'cat photo',
+        'fish': 'fish swimming photo',
+        'bird': 'bird photo',
+        'tree': 'tree nature photo',
+        'sun': 'sun sky photo',
+        'rain': 'rain drops photo',
+        'cloud': 'clouds sky photo',
+        // Geometry/Math context bias
+        'ruler': 'ruler measurement diagram',
+        'number line': 'number line mathematics diagram',
+        'protractor': 'protractor geometry diagram',
+        'pentagon': 'pentagon geometry shape',
+        'hexagon': 'hexagon geometry shape',
+        'octagon': 'octagon geometry shape',
+        'cylinder': 'cylinder 3d shape diagram',
+        'sphere': 'sphere 3d shape diagram',
+        'pyramid': 'pyramid 3d shape diagram',
+        'cube': 'cube 3d shape diagram',
+        'cone': 'cone 3d shape diagram',
+        'analog clock': 'analog clock face diagram',
+        'clock face': 'analog clock face diagram',
+        'clock': 'analog clock face diagram',
+        '5 identical squares': 'square grid diagram',
+        'identical squares': 'square grid diagram',
+        'square': 'geometric square shape'
+      };
+      const baseQuery = contextMap[kw] || kw;
+
+      // Try fetching with a given query string. Returns a usable thumb URL or null.
+      async function _trySearch(query) {
+        // Request MIME type + dimensions so we can filter quality
+        const apiUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(query)}&gsrnamespace=6&gsrlimit=10&prop=imageinfo&iiprop=url|mime|size&iiurlwidth=600&format=json&origin=*`;
+        const resp = await fetch(apiUrl);
+        const data = await resp.json();
+        const pages = data?.query?.pages;
+        if (!pages) return null;
+
+        // Build a scored candidate list.
+        // Accept JPEG/PNG photos AND SVG diagrams — Wikimedia renders SVG→PNG via thumburl.
+        // Educational tools (protractors, number lines, shapes) are primarily SVG on Commons.
+        const candidates = Object.values(pages)
+          .map(p => {
+            const ii = p?.imageinfo?.[0];
+            if (!ii) return null;
+            const mime = (ii.mime || '').toLowerCase();
+            const url = ii.thumburl || ii.url || '';
+            const w = ii.width || 0;
+            if (!url) return null;
+            const isPhoto = mime.startsWith('image/jpeg') || mime.startsWith('image/png');
+            const isSvg   = mime.startsWith('image/svg');
+            if (!isPhoto && !isSvg) return null;  // reject PDF, OGG, audio, video
+            // For general subjects (landmarks, animals, objects) PREFER real photos.
+            // SVGs are only good for educational diagrams — give them low priority here.
+            if (isPhoto && w < 200) return null;
+            const score = isPhoto ? w : 50; // photos win by pixel width; SVGs are last resort
+            return { url, score };
+          })
+          .filter(Boolean)
+          .sort((a, b) => b.score - a.score);
+
+        return candidates[0]?.url || null;
+      }
+
+      try {
+        // Attempt 1: exact keyword
+        let result = await _trySearch(baseQuery);
+
+        // Attempt 2: add 'photo' suffix to bias towards real photographs
+        if (!result) result = await _trySearch(baseQuery + ' photo');
+
+        // Attempt 3: try a simplified keyword (drop words like 'of', 'the', 'famous')
+        if (!result) {
+          const simplified = baseQuery
+            .replace(/\b(famous|the|of|a|an|historical|ancient|modern)\b/gi, '')
+            .replace(/\s+/g, ' ').trim();
+          if (simplified && simplified !== baseQuery) {
+            result = await _trySearch(simplified + ' photo');
+          }
+        }
+
+        _wikiImageCache[kw] = result || null;
+        return _wikiImageCache[kw];
+      } catch (e) {
+        _wikiImageCache[kw] = null;
+        return null;
+      }
     }
 
     // ── Built-in question bank (Bank mode + AI error fallback) ────────────────
@@ -5356,14 +5927,51 @@ Return this structure:
         }
         return;
       }
+      // Queue empty — check if intro pre-fetch is already running
+      if (_introPrefetchPromise) {
+        questionEl.textContent = 'Thinking...';
+        const prefetchedBatch = await _introPrefetchPromise.catch(() => null);
+        _introPrefetchPromise = null; // consume it
+        if (prefetchedBatch && prefetchedBatch.length > 0) {
+          prefetchedBatch.forEach(q => {
+            q._source = 'ai';
+            if (q?.question && !quizAskedQuestions.includes(q.question)) {
+              quizAskedQuestions.push(q.question);
+              if (quizAskedQuestions.length > 150) quizAskedQuestions.shift();
+            }
+            quizQuestionQueue.push(q);
+          });
+          saveQuizAsked();
+          quizCurrentQ = quizQuestionQueue.shift();
+          quizHistory.push(quizCurrentQ);
+          quizHistoryIdx = quizHistory.length - 1;
+          updateQuizNavButtons();
+          renderQuizBoard();
+          return;
+        }
+      }
 
-      // Queue empty — show loading and fetch a fresh batch
       questionEl.textContent = 'Thinking...';
       const startTime = Date.now();
+
+      // Build a human-readable summary of what's being generated
+      const loadSubjects = (() => {
+        const custom = (quizSettings.customSubject || '').trim();
+        const chips = (quizSettings.subjects || []).join(', ');
+        return custom ? `${chips}, ${custom}` : chips;
+      })();
+      const loadLevel = quizSettings.eduLevel || 'P2';
+      const loadTypes = (quizSettings.contentTypes || ['text'])
+        .map(t => t === 'text' ? '📝 Text' : '🖼️ Image').join(' + ');
+
       grid.innerHTML = `
         <div class="quiz-generating col-span-full">
           <div class="quiz-spinner"></div>
           <p class="text-slate-400 text-sm font-medium">Generating questions... <span id="quiz-loading-timer" class="text-violet-400 ml-1">0s</span></p>
+          <div style="margin-top:10px;display:flex;flex-direction:column;gap:4px;align-items:center;">
+            <p style="font-size:0.7rem;color:#64748b;">📚 <span style="color:#a78bfa">${loadLevel}</span> &nbsp;·&nbsp; ${loadSubjects.split(', ').map(s => `<span style="color:#94a3b8">${s}</span>`).join(' <span style="color:#475569">·</span> ')}</p>
+            <p style="font-size:0.7rem;color:#64748b;">Format: <span style="color:#a78bfa">${loadTypes}</span></p>
+          </div>
         </div>`;
 
       const timerInterval = setInterval(() => {
@@ -5468,6 +6076,69 @@ Return this structure:
 
       prepareHighlightableText(questionEl, q.question);
       questionEl.dataset.prepared = 'true';
+
+      // Question image: rendered INSIDE questionContainer as a flex-column child,
+      // so it appears below the question text and hover naturally contributes to qread bar.
+      // First clean up any old image from EITHER location.
+      const qSection = questionEl.closest('.quiz-question-section');
+      if (qSection) {
+        const old1 = qSection.querySelector('.quiz-question-img-wrap');
+        if (old1) old1.remove();
+      }
+      // RUNTIME XOR GUARD: Strict mutual exclusion — image in question OR answers, never both
+      const hasAnswerImages = q.answers.some(a => !!a.imageKeyword);
+      const hasQuestionImage = !!(quizSettings.contentTypes || []).includes('image') && !!q.questionImageKeyword;
+      
+      if (hasAnswerImages && hasQuestionImage) {
+        // Question image wins only if explicitly a 'Look at the picture' type
+        const qtxtLower = (q.question || '').toLowerCase();
+        const questionImageTakesOverride = qtxtLower.includes('look at the picture') || 
+                                           qtxtLower.includes('look at this') ||
+                                           qtxtLower.includes('how many') ||
+                                           qtxtLower.includes('what is shown');
+        if (questionImageTakesOverride) {
+          // Keep question image, strip all answer images
+          console.log('[XOR] Kept questionImage, cleared answer imageKeywords');
+          q.answers.forEach(a => { a.imageKeyword = null; });
+        } else {
+          // Answers win — strip question image
+          console.log('[XOR] Kept answer images, cleared questionImageKeyword');
+          q.questionImageKeyword = null;
+        }
+      }
+
+      let _hasQImg = (quizSettings.contentTypes || []).includes('image') && !!q.questionImageKeyword;
+
+      // Fallback: extract keyword from question text if AI forgot it.
+      // CRITICAL: Only run if answers do NOT have images — otherwise we'd re-break XOR.
+      if (!_hasQImg && !hasAnswerImages && (quizSettings.contentTypes || []).includes('image')) {
+        const qtxt = (q.question || '').toLowerCase();
+        // 1. Try patterns: "Look at the [subject]", "Examine the [subject]", "The [subject] below..."
+        // Priority capture for "figure made up of..."
+        const compositeMatch = qtxt.match(/(?:the|this) (figure|shape) (?:below |shown )?(?:is )?made up of ([^.\?,!]{3,})/i);
+        if (compositeMatch) {
+          const extracted = compositeMatch[2].trim();
+          if (extracted) { q.questionImageKeyword = extracted; _hasQImg = true; }
+        }
+
+        if (!_hasQImg) {
+          const obsMatch = qtxt.match(/(?:look at|examine|study|observe|shown in|identify the|what is|find the|draw the|sketch the|the) (?:the |this |a |an )?([^.\?,!]{3,})(?: below| shown| indicated| represented)?/i);
+          if (obsMatch) {
+            let extracted = obsMatch[1].trim();
+            // Cleanup trailing noise and generic terms
+            extracted = extracted.replace(/\s+(?:shown|below|indicated|represented|is made up of.*|model|models|figure|figures|diagram|diagrams)$/i, '');
+            if (extracted) { q.questionImageKeyword = extracted; _hasQImg = true; }
+          }
+        }
+        // 2. If still no keyword, scan for specific educational tools
+        if (!_hasQImg) {
+          const tools = ['number line', 'protractor', 'ruler', 'pentagon', 'hexagon', 'octagon', 'cylinder', 'sphere', 'pyramid', 'cube', 'cone', 'clock', 'thermometer', 'fraction bar', 'geometry', 'shape', 'identical squares'];
+          for (const t of tools) {
+            if (qtxt.includes(t)) { q.questionImageKeyword = t; _hasQImg = true; break; }
+          }
+        }
+      }
+
       quizSpeakCancel(); // stop any leftover TTS from the previous question
       const _speakDelay = Math.max(0, _quizVoiceDelay - Date.now());
       const _capturedGen = currentGen;
@@ -5494,33 +6165,181 @@ Return this structure:
         }
       }
       grid.innerHTML = '';
-      // Apply grid layout as inline styles — these always win over any stylesheet
-      // without needing !important. This fixes Tailwind CDN override issues in production.
-      grid.className = 'quiz-answers-grid-inner'; // semantic class for targeting only
+      // Apply grid layout as inline styles
+      grid.className = 'quiz-answers-grid-inner';
       Object.assign(grid.style, {
         display: 'grid',
         gridTemplateColumns: '1fr 1fr',
         gridTemplateRows: '1fr 1fr',
+        alignContent: 'stretch',
+        justifyContent: 'stretch',
         gap: '16px',
         padding: '0 16px 10px',
         boxSizing: 'border-box',
         width: '100%',
-        flex: '1',
         minHeight: '0'
       });
-      grid.style.height = '';
-      // Always reset visibility — prevents opacity:0 from a previous question getting stuck
+      // Reset to let CSS flex:1 fill, then immediately size via JS for accuracy
+      grid.style.removeProperty('height');
+      // Always reset visibility
       grid.style.opacity = '1';
-      grid.style.pointerEvents = '';
+      grid.style.pointerEvents = 'auto';
       grid.style.transition = '';
+      // Fire sizer immediately (before image loads) so grid fills space from the start
+      requestAnimationFrame(() => _sizeAnswerGrid());
 
-      // Question read time
-      const questionContainer = questionEl.parentElement;
+      // Question read time — questionContainer is always flex-row (← text →).
+      // The image goes AFTER questionContainer inside qSection (the outer flex-column section).
+      const questionContainer = questionEl.parentElement;        
+      // Handle Question Image (Non-blocking)
+      (async () => {
+        if (!_hasQImg) {
+          qImgWrap.style.display = 'none';
+          requestAnimationFrame(() => requestAnimationFrame(() => _sizeAnswerGrid()));
+          return;
+        }
+
+        // ANTI-LEAK: Only pass category labels if the question is a graph or chart.
+        // For identification/counting questions, NEVER pass answer texts to prevent the AI
+        // from writing the answer inside the image (e.g. labelling a pencil case '铅笔盒').
+        const ansTexts = q.answers.map(a => a.text);
+        const qtxtForLabels = (q.question || '').toLowerCase();
+        const isGraphQuestion = qtxtForLabels.includes('graph') || qtxtForLabels.includes('chart') || 
+                                qtxtForLabels.includes('bar') || qtxtForLabels.includes('table') ||
+                                qtxtForLabels.includes('pictograph') || qtxtForLabels.includes('tally');
+        const safeLabels = isGraphQuestion ? ansTexts : [];
+
+        // Check cache first
+        const cached = quizResolvedVisuals.get(q.questionImageKeyword);
+        if (cached) {
+          if (cached.url) {
+            qImg.src = cached.url;
+            qImg.onload = () => {
+              qImg.style.opacity = '1'; qImgWrap.style.background = 'transparent';
+              requestAnimationFrame(() => requestAnimationFrame(() => _sizeAnswerGrid()));
+            };
+            qImg.onerror = () => handleImageFail();
+          } else if (cached.svg) {
+            qImgWrap.innerHTML = cached.svg;
+            const svgEl = qImgWrap.querySelector('svg');
+            if (svgEl) {
+              svgEl.style.width = '100%'; svgEl.style.height = '100%';
+              svgEl.style.display = 'block'; qImgWrap.style.background = 'transparent';
+              requestAnimationFrame(() => requestAnimationFrame(() => _sizeAnswerGrid()));
+            }
+          } else { handleImageFail(); }
+        } else {
+          // Cache miss: Resolve now
+          resolveVisual(q.questionImageKeyword, safeLabels, q.question).then(res => {
+            if (res?.url) {
+              qImg.src = res.url;
+              qImg.onload = () => {
+                qImg.style.opacity = '1'; qImgWrap.style.background = 'transparent';
+                requestAnimationFrame(() => requestAnimationFrame(() => _sizeAnswerGrid()));
+              };
+            } else if (res?.svg) {
+              qImgWrap.innerHTML = res.svg;
+              const svgEl = qImgWrap.querySelector('svg');
+              if (svgEl) {
+                svgEl.style.width = '100%'; svgEl.style.height = '100%';
+                svgEl.style.display = 'block'; qImgWrap.style.background = 'transparent';
+                requestAnimationFrame(() => requestAnimationFrame(() => _sizeAnswerGrid()));
+              }
+            } else { handleImageFail(); }
+          }).catch(() => handleImageFail());
+        }
+      })();
+
+      function handleImageFail() {
+        qImgWrap.style.display = 'none';
+        requestAnimationFrame(() => requestAnimationFrame(() => _sizeAnswerGrid()));
+      }
+
+      questionContainer.style.flexDirection = '';   // always row — never change this
+      questionContainer.style.alignItems = '';
+      questionContainer.style.gap = '';
       questionContainer.style.border = '1px solid rgba(139, 92, 246, 0.12)';
       questionContainer.style.borderRadius = '0.75rem';
       questionContainer.style.padding = '0.75rem 1rem';
       questionContainer.style.position = 'relative';
       questionContainer.style.overflow = 'hidden';
+
+      // Inject question image into qSection (below questionContainer)
+      let _qImgWrapRef = null;
+      if (_hasQImg && qSection) {
+        // Ensure qSection is a flex column and its existing children have correct order
+        qSection.style.display = 'flex';
+        qSection.style.flexDirection = 'column';
+        qSection.style.gap = '8px';
+
+        // Force order: score (0), question row (1), image (2)
+        const scoreRow = qSection.querySelector('.quiz-score-row');
+        if (scoreRow) scoreRow.style.order = '0';
+        questionContainer.style.order = '1';
+
+        const qImgWrap = document.createElement('div');
+        qImgWrap.className = 'quiz-question-img-wrap';
+        qImgWrap.style.order = '2'; // always below question
+        _qImgWrapRef = qImgWrap;
+
+        Object.assign(qImgWrap.style, {
+          width: '100%',
+          maxHeight: Math.floor(window.innerHeight * 0.30) + 'px', // max 30vh
+          height: Math.floor(window.innerHeight * 0.30) + 'px',
+          flexShrink: '1', // allow shrinking if other content needs space
+          borderRadius: '10px',
+          overflow: 'hidden',
+          background: 'linear-gradient(90deg,#1e2d42 25%,#243553 50%,#1e2d42 75%)'
+        });
+        const qImg = document.createElement('img');
+        Object.assign(qImg.style, {
+          width: '100%', height: '100%', objectFit: 'contain',
+          borderRadius: '10px', display: 'block', opacity: '0',
+          transition: 'opacity 0.3s ease', pointerEvents: 'none'
+        });
+        qImg.alt = q.questionImageKeyword;
+
+        // Fetch asynchronously
+        fetchWikiImage(q.questionImageKeyword).then(async url => {
+          if (url) {
+            qImg.src = url;
+            qImg.onload = () => {
+              qImg.style.opacity = '1';
+              qImgWrap.style.background = 'transparent';
+              requestAnimationFrame(() => requestAnimationFrame(() => _sizeAnswerGrid()));
+            };
+            qImg.onerror = () => handleImageFail();
+          } else {
+            // FALLBACK: If Wiki search failed, ask AI to generate an SVG diagram
+            const ansTexts = q.answers.map(a => a.text);
+            const aiSvg = await generateAISVG(q.questionImageKeyword, qImgWrap, []); // never leak answers into SVG
+            if (aiSvg) {
+              qImgWrap.innerHTML = aiSvg;
+              const svgEl = qImgWrap.querySelector('svg');
+              if (svgEl) {
+                svgEl.style.width = '100%';
+                svgEl.style.height = '100%';
+                svgEl.style.display = 'block';
+                qImgWrap.style.background = 'transparent';
+                requestAnimationFrame(() => requestAnimationFrame(() => _sizeAnswerGrid()));
+                return;
+              }
+            }
+            handleImageFail();
+          }
+        }).catch(() => handleImageFail());
+
+        function handleImageFail() {
+          qImgWrap.style.display = 'none';
+          requestAnimationFrame(() => requestAnimationFrame(() => _sizeAnswerGrid()));
+        }
+
+        qImgWrap.appendChild(qImg);
+        qSection.appendChild(qImgWrap);
+        requestAnimationFrame(() => requestAnimationFrame(() => _sizeAnswerGrid()));
+      } else {
+        if (qSection) { qSection.style.gap = ''; }
+      }
 
       const existingBar = questionContainer.querySelector('.quiz-qread-bar');
       if (existingBar) existingBar.remove();
@@ -5532,10 +6351,10 @@ Return this structure:
 
       const shouldDelay = quizSettings.qReadEnabled && quizSettings.qReadTimeMs > 0;
       if (shouldDelay) {
-        // Answers stay HIDDEN at first
-        grid.style.opacity = '0';
-        grid.style.pointerEvents = 'none';
-        grid.style.transition = 'opacity 0.6s ease';
+        // Answers remain VISIBLE and INTERACTIVE — qRead timer is advisory only
+        grid.style.opacity = '1';
+        grid.style.pointerEvents = 'auto';
+        grid.style.transition = 'opacity 0.3s ease';
 
         const bar = document.createElement('div');
         bar.className = 'quiz-qread-bar';
@@ -5583,6 +6402,13 @@ Return this structure:
         questionContainer.addEventListener('mouseenter', onEnter);
         questionContainer.addEventListener('mouseleave', onLeave);
         questionContainer.addEventListener('click', onClick);
+        // Also extend hover to question image wrapper (if present)
+        if (_qImgWrapRef) {
+          _qImgWrapRef.addEventListener('mouseenter', onEnter);
+          _qImgWrapRef.addEventListener('mouseleave', onLeave);
+          _qImgWrapRef.addEventListener('click', onClick);
+          _qImgWrapRef.style.cursor = 'pointer';
+        }
         questionContainer.style.cursor = 'pointer';
         quizQReadTimerId = requestAnimationFrame(animate);
       } else {
@@ -5596,11 +6422,6 @@ Return this structure:
       // Answer TTS is chained from question onEnd via _speakAnswers() above
 
       // ── VoiceOver hover-to-re-read helper ──────────────────────────────────
-      // Defined here (before first call) so it's always in scope.
-      // Hovering the question after answers appear shows a teal bar (using dwellTimeMs)
-      // and re-reads the question on completion.
-      // GUARD: we never cancel speech if quizRenderGen has since changed (i.e. next question
-      // is loading) or if a correct answer was already accepted (_voAbortGen has advanced).
       const _reReadAbortGen = _voAbortGen; // capture at render time
       function _attachVoOverHoverBar(container, question, gen) {
         if (!quizSettings.voiceOver || !quizSettings.dwellTimeMs) return;
@@ -5621,10 +6442,7 @@ Return this structure:
           bar.style.width = `${pct}%`;
           if (pct >= 100) {
             bar.style.opacity = '0'; elapsed = 0;
-            // Only re-read if the correct answer has NOT yet been accepted
-            // (_voAbortGen unchanged since this question was rendered)
             if (_voAbortGen !== _reReadAbortGen) return;
-            // Re-read question followed by answers
             quizSpeak(question.question, {
               rate: 0.88,
               targetElement: questionEl,
@@ -5644,15 +6462,18 @@ Return this structure:
         container.style.cursor = 'pointer';
       }
       // Render answer cards
+      // Robust correct answer identification
+      const effectiveCorrectId = q.correctId || (Array.isArray(q.correctAnswerIds) ? q.correctAnswerIds[0] : null);
+
       q.answers.forEach((answer, idx) => {
-        const isCorrect = answer.id === q.correctId;
+        const isCorrect = answer.id === effectiveCorrectId;
         const card = document.createElement('div');
-        // Apply card styles inline — inline styles beat any stylesheet, no !important needed
         Object.assign(card.style, {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           height: '100%',
+          minHeight: '0',
           width: '100%',
           padding: '1.5rem',
           boxSizing: 'border-box',
@@ -5666,45 +6487,98 @@ Return this structure:
           cursor: 'pointer',
           userSelect: 'none'
         });
-        card.className = 'quiz-answer-card'; // semantic class only
+        card.className = 'quiz-answer-card';
 
         // Hover: lighten on mouseenter, restore on mouseleave (unless answered)
         card.addEventListener('mouseenter', () => {
-          if (!card.dataset.answered) card.style.background = '#364154';
+          if (!card.dataset.answered && card.dataset.state !== 'wrong') card.style.background = '#364154';
         });
         card.addEventListener('mouseleave', () => {
-          if (!card.dataset.answered) card.style.background = '#20293a';
+          if (card.dataset.state === 'wrong') {
+            card.style.background = '#7f1d1d';
+          } else if (!card.dataset.answered) {
+            card.style.background = '#20293a';
+          }
         });
 
         const fontSizeClass = `quiz-font-${quizSettings.fontSize}`;
-        const textSpan = document.createElement('span');
-        textSpan.className = `quiz-answer-text ${fontSizeClass}`;
-        // Set text styles inline for production safety
-        Object.assign(textSpan.style, {
-          color: '#f2f5f9',
-          fontWeight: '700',
-          textAlign: 'center',
-          display: 'block',
-          width: '100%',
-          overflowWrap: 'break-word',
-          wordWrap: 'break-word',
-          pointerEvents: 'none',
-          zIndex: '10',
-          position: 'relative'
-        });
-        prepareHighlightableText(textSpan, answer.text);
-        textSpan.dataset.prepared = 'true';
-        card.appendChild(textSpan);
+        const hasImageType = (quizSettings.contentTypes || []).includes('image');
+        const imageKeyword = answer.imageKeyword || '';
 
-        if (isCorrect) window._currentCorrectCard = card; // Store for hint logic
+        if (hasImageType && imageKeyword) {
+          card.style.flexDirection = 'column';
+          card.style.padding = '8px';
+          card.style.gap = '8px';
 
-        // Progress bar
+          const imgWrapper = document.createElement('div');
+          imgWrapper.className = 'quiz-answer-img';
+          Object.assign(imgWrapper.style, {
+            position: 'relative',
+            borderRadius: '12px',
+            overflow: 'hidden',
+            maxHeight: '25vh',
+            height: Math.floor(window.innerHeight * 0.25) + 'px',
+            background: 'linear-gradient(90deg, #1e2d42 25%, #243553 50%, #1e2d42 75%)'
+          });
+
+          const ansImg = document.createElement('img');
+          ansImg.alt = imageKeyword;
+          Object.assign(ansImg.style, {
+            width: '100%', height: '100%', objectFit: 'contain', display: 'block',
+            borderRadius: '12px', pointerEvents: 'none', opacity: '0', transition: 'opacity 0.3s ease'
+          });
+
+          const cachedAns = quizResolvedVisuals.get(imageKeyword);
+          if (cachedAns) {
+            if (cachedAns.url) {
+              ansImg.src = cachedAns.url;
+              ansImg.onload = () => { ansImg.style.opacity = '1'; imgWrapper.style.background = 'transparent'; };
+            } else if (cachedAns.svg) {
+              imgWrapper.innerHTML = cachedAns.svg;
+            }
+          } else {
+            resolveVisual(imageKeyword, [], q.question).then(res => {
+              if (res?.url) {
+                ansImg.src = res.url;
+                ansImg.onload = () => { ansImg.style.opacity = '1'; imgWrapper.style.background = 'transparent'; };
+              } else if (res?.svg) {
+                imgWrapper.innerHTML = res.svg;
+              }
+            }).catch(() => {});
+          }
+
+          imgWrapper.appendChild(ansImg);
+          card.appendChild(imgWrapper);
+
+          const caption = document.createElement('span');
+          caption.className = `quiz-answer-text ${fontSizeClass}`;
+          Object.assign(caption.style, {
+            color: '#f2f5f9', fontWeight: '700', textAlign: 'center', display: 'block',
+            width: '100%', fontSize: 'clamp(0.7rem, 2vh, 1rem)', flexShrink: '0',
+            pointerEvents: 'none', position: 'relative', zIndex: '10'
+          });
+          prepareHighlightableText(caption, answer.text);
+          caption.dataset.prepared = 'true';
+          card.appendChild(caption);
+        } else {
+          const textSpan = document.createElement('span');
+          textSpan.className = `quiz-answer-text ${fontSizeClass}`;
+          Object.assign(textSpan.style, {
+            color: '#f2f5f9', fontWeight: '700', textAlign: 'center', display: 'block',
+            width: '100%', overflowWrap: 'break-word', pointerEvents: 'none', zIndex: '10'
+          });
+          prepareHighlightableText(textSpan, answer.text);
+          textSpan.dataset.prepared = 'true';
+          card.appendChild(textSpan);
+        }
+
+        if (isCorrect) window._currentCorrectCard = card;
+
         const progressBar = document.createElement('div');
         progressBar.className = 'absolute bottom-0 left-0 h-1.5 bg-violet-500/40 transition-none z-10';
         progressBar.style.width = '0%';
         card.appendChild(progressBar);
 
-        // SVG dwell overlay
         let timer = null;
         let svgOverlay = null;
         const removeOverlay = () => { if (svgOverlay && svgOverlay.parentNode === card) { card.removeChild(svgOverlay); svgOverlay = null; } };
@@ -5717,83 +6591,94 @@ Return this structure:
           }
         };
 
-        // Apply theme-specific styling (BH/KFP/Peppa)
         applyQuizCardTheme(card, answer, idx);
 
-        // One-shot guard: prevent double-counting if mouse clicks/dwell fires multiple times
         let quizQuestionAnswered = false;
 
         const doSelect = () => {
+          if (quizQuestionAnswered) return;
           if (isCorrect) {
-            if (quizQuestionAnswered) return; // already counted — ignore repeat triggers
             quizQuestionAnswered = true;
-            // IMMEDIATE FEEDBACK: apply green directly via inline styles.
-            // Inline styles naturally override class-based and :hover rules
-            // without needing !important — this is the "logic-based" approach.
+            if (window._voAbortGen === _reReadAbortGen) {
+              window._voAbortGen++;
+              quizStopSpeech();
+            }
             card.dataset.answered = 'true';
-            card.style.background = '#10b981';
-            card.style.border = 'none';
-            card.style.boxShadow = 'none';
+            card.style.background = '#10b981'; // Green
             card.style.animation = 'successBounce 0.75s ease';
             card.style.transform = 'scale(1.03)';
-            card.style.cursor = 'default';
-            const cardSpan = card.querySelector('span');
-            if (cardSpan) { cardSpan.style.color = 'white'; cardSpan.style.textShadow = '0 2px 4px rgba(0,0,0,0.3)'; }
+            
+            // Fade out others
+            grid.querySelectorAll('.quiz-answer-card').forEach(c => {
+              if (c !== card) { c.style.opacity = '0.4'; c.style.pointerEvents = 'none'; }
+            });
+
+            // Sound & Celebration (Reliable Global Trigger)
+            playQuizCorrectSound(); // This handles the primary horn/celebration logic
             burstConfetti(card);
-            playQuizCorrectSound();
 
-            // Cancel any ongoing answer TTS immediately
-            _voAbortGen++;
-            quizSpeakCancel();
+            // Secondary random celebration sound
+            const sounds = ['correct1.mp3', 'correct2.mp3', 'correct3.mp3'];
+            const snd = new Audio('/assets/sounds/' + sounds[Math.floor(Math.random() * sounds.length)]);
+            snd.volume = 0.6;
+            snd.play().catch(() => {});
 
-            // Step 1: Speak congratulatory phrase
-            // Use correctId fallback to correctAnswerIds for AI compatibility
-            const _correctId = q.correctId || (q.correctAnswerIds?.length ? q.correctAnswerIds[0] : null);
-            const _correctText = q.answers.find(a => a.id === _correctId)?.text || '';
+            let progressionTriggered = false;
+            const triggerProgression = () => {
+              if (progressionTriggered) return;
+              progressionTriggered = true;
+              // Theme-specific celebration
+              if (currentQuizTheme === 'ben-holly') {
+                triggerBenElfCelebration();
+                _quizVoiceDelay = Date.now() + 3200;
+              } else if (currentQuizTheme === 'kung-fu-panda') {
+                triggerKfpCelebration();
+                _quizVoiceDelay = Date.now() + 3200;
+              } else {
+                _quizVoiceDelay = Date.now() + 1500;
+              }
+              quizScore++;
+              updateQuizScoreBar();
+              setTimeout(() => {
+                if (quizScore >= quizSettings.correctTarget) showQuizWin();
+                else generateQuizQuestion();
+              }, 1500);
+            };
 
-            quizSpeakCongrats(_correctText, {
-              onEnd: () => {
-                // Secondary celebrations (character pop-ins) fire AFTER TTS completes
-                if (currentQuizTheme === 'ben-holly') {
-                  triggerBenElfCelebration();
-                  _quizVoiceDelay = Date.now() + 3200;
-                } else if (currentQuizTheme === 'kung-fu-panda') {
-                  triggerKfpCelebration();
-                  _quizVoiceDelay = Date.now() + 3200;
-                } else {
-                  _quizVoiceDelay = Date.now() + 1500;
-                }
-                quizScore++;
-                updateQuizScoreBar();
-                if (quizScore >= quizSettings.correctTarget) {
-                  setTimeout(() => showQuizWin(), 900);
-                } else {
-                  setTimeout(() => generateQuizQuestion(), 1100);
-                }
+            quizSpeakCongrats(answer.text, { onEnd: triggerProgression });
+            // Safety timeout: if speech fails, still progress
+            setTimeout(triggerProgression, 3500);
+          } else {
+            // MOST-RECENT ONLY logic: Reset any previous wrong states
+            grid.querySelectorAll('.quiz-answer-card').forEach(c => {
+              if (c.dataset.state === 'wrong') {
+                c.dataset.state = '';
+                c.style.background = '#20293a'; // restore normal
+                const oldCross = c.querySelector('.wrong-cross');
+                if (oldCross) oldCross.remove();
               }
             });
-          } else {
-            // Flash red + wrong
-            if (card.classList.contains('wrong-cross')) return; // Already marked wrong
-            card.style.background = '#1e293b';
-            card.style.outlineColor = 'rgba(239,68,68,0.5)';
-            card.classList.add('wrong-cross');
+
+            quizWrongAttempts++;
+            card.dataset.state = 'wrong';
+            card.style.background = 'rgba(239,68,68,0.18)'; // subtle red tint
+            
+            const cross = document.createElement('div');
+            cross.className = 'wrong-cross';
+            card.appendChild(cross);
+            
+            card.style.transform = 'translateX(-10px)';
+            setTimeout(() => card.style.transform = 'translateX(10px)', 50);
+            setTimeout(() => card.style.transform = 'translateX(0)', 100);
+            
+            // Play wrong sound via the reliable global helper
             playWrongSound();
 
-            // Handle Hint System
-            if (quizSettings.hintThreshold <= 10) {
-              quizWrongAttempts++;
-              if (quizWrongAttempts >= quizSettings.hintThreshold) {
-                triggerQuizHint();
-              }
+            // Show hint after x wrong attempts (threshold 11 = Never)
+            if (quizSettings.hintThreshold > 0 && quizSettings.hintThreshold < 11 &&
+                quizWrongAttempts >= quizSettings.hintThreshold) {
+              showQuizHint(q);
             }
-
-            // Allow retrying after brief animation
-            setTimeout(() => {
-              card.style.background = '';
-              card.style.outlineColor = '';
-              card.classList.remove('wrong-cross');
-            }, 800);
           }
         };
 
@@ -5833,8 +6718,10 @@ Return this structure:
 
         grid.appendChild(card);
       });
-      // After a frame, measure remaining viewport and set grid height precisely.
+      // After cards are in the DOM, size the grid multiple times to catch async image loads
       requestAnimationFrame(() => _sizeAnswerGrid());
+      setTimeout(() => _sizeAnswerGrid(), 150);
+      setTimeout(() => _sizeAnswerGrid(), 500);
     }
 
     // ── Dynamic answer-grid sizer ──────────────────────────────────────────
@@ -6734,13 +7621,20 @@ Return this structure:
       generateQuizQuestion();
     }
 
+    // Holds a pre-fetch promise started during the theme intro
+    let _introPrefetchPromise = null;
+
     window.startQuiz = () => {
       if (quizSettings.theme === 'ben-holly') {
+        // Kick off AI generation immediately while intro plays
+        _introPrefetchPromise = fetchQuizBatch().catch(() => null);
         // Play intro first; _doStartQuiz fires exactly once when intro ends/is skipped
         playBenHollyIntro(() => _doStartQuiz());
         return;
       }
       if (quizSettings.theme === 'kung-fu-panda') {
+        // Kick off AI generation immediately while intro plays
+        _introPrefetchPromise = fetchQuizBatch().catch(() => null);
         // Play KFP intro first; _doStartQuiz fires exactly once when intro ends/is skipped
         playKungFuPandaIntro(() => _doStartQuiz());
         return;
