@@ -3178,7 +3178,11 @@ CRITICAL OUTPUT RULES:
 - COUNTING QUESTIONS: NEVER use questionImageKeyword for counting questions about real-world objects (apples, animals, people, etc.) because sourced photos show unpredictable quantities. Counting questions MUST be either: (a) text-only (describe the scenario in words), or (b) use abstract shapes as questionImageKeyword (circles, dots, stars shape, blocks) which will be rendered as precise diagrams. NEVER ask "How many X are in the picture?" with a real-world keyword.
 - FLAG / COUNTRY QUESTIONS: Flag and country identification questions MUST use Step 3 (images in answers). NEVER put a flag or country image in the question box — that gives away the answer. Each answer MUST have an imageKeyword. For flag questions use "[Country] flag" as imageKeyword. For country questions use a representative keyword like a famous landmark, iconic food, or scenery (e.g. "Eiffel Tower" for France, "Mount Fuji" for Japan, "pizza" for Italy).
 - CHINESE CHARACTER IMAGE CONSISTENCY: If you generate a Chinese character recognition question with a questionImageKeyword (e.g. the question asks "Is this character X?"), the questionImageKeyword MUST be the SAME character that the question asks about. The correctId must logically match — if the image shows X and the question asks "Is this X?", the correct answer must be "yes/是". Do NOT set the imageKeyword to a different character than what the question references.
-- SELF-REFERENTIAL QUESTIONS (MOST IMPORTANT): NEVER generate a question that says "this character", "this word", "this letter", "这个汉字", "这个字", "这张图", "this image", "this picture", or ANY phrase that points to something the student must see — UNLESS you also set questionImageKeyword to show exactly that thing. If you cannot specify what to show (e.g. you want to show a character in a specific colour), you MUST include the character as questionImageKeyword with full detail (e.g. "Chinese character 马 written in red"). If you cannot provide a meaningful questionImageKeyword, rephrase the question to NOT use "this" and instead describe the object explicitly in the question text itself.
+- SELF-REFERENTIAL QUESTIONS (MOST IMPORTANT): NEVER generate a question that references something the student must see WITHOUT providing questionImageKeyword. This includes ALL of these patterns — if you use any of them, you MUST set questionImageKeyword:
+  * Chinese: "这个汉字", "这个字", "这张图", "图片显示", "图片中", "图中", "图所示", "看图"
+  * English: "this character", "this word", "this letter", "this image", "this picture", "the picture shows", "shown in the picture", "look at the picture", "what is in the picture"
+  If you CANNOT provide a meaningful questionImageKeyword, you MUST rephrase the question to NOT reference an unseen image. Describe the object explicitly in the question text instead (e.g. instead of "图片显示的是哪一个方位?", write "箭头向右指，这是哪一个方位?" which is self-contained).
+  When a self-referential question DOES have a questionImageKeyword, it MUST use Step 2 format ONLY: image goes in the question, ALL answers must be TEXT-ONLY. NEVER add imageKeyword to the answers of a self-referential question.
 - COLOR-OF-CHARACTER QUESTIONS: If a question asks what colour a Chinese character is written in (e.g. "这个汉字是什么颜色"), use Step 2 format: set questionImageKeyword to the character written in the target colour (e.g. "Chinese character 马 in red color on white background"), and give text-only color answers (红色, 蓝色, 绿色, 黄色). NEVER use image answers for color options — Pixabay color searches return irrelevant results.${imageKeywordInstruction}
 
 Return exactly this JSON (replace [text], [answer], [kw] with real values — follow the image-XOR rule strictly):
@@ -3292,11 +3296,19 @@ Return exactly this JSON (replace [text], [answer], [kw] with real values — fo
     // ── Self-referential question guard ────────────────────────────────────
     // Questions that say "this character / 这个汉字 / 这个字" etc. are
     // unanswerable if no questionImageKeyword is provided to show the item.
-    const selfRefPattern = /这个汉字|这个字|这张图|this character|this word|this letter|this image|this picture/i;
-    if (selfRefPattern.test(q.question) && !q.questionImageKeyword) {
+    const selfRefPattern = /这个汉字|这个字|这张图|图片显示|图片中|图中|图所示|the picture shows|shown in the picture|what is in the picture|look at the picture|this character|this word|this letter|this image|this picture/i;
+    const isSelfRef = selfRefPattern.test(q.question);
+    if (isSelfRef && !q.questionImageKeyword) {
       console.warn('[Quiz] Replacing self-referential question with no image:', q.question);
       batch[qi] = pickFromBank();
       continue;
+    }
+    // Self-referential questions that DO have a questionImageKeyword must be
+    // Step 2 format: image in question, TEXT-ONLY answers. Strip any answer imageKeywords.
+    if (isSelfRef && q.questionImageKeyword && q.answers) {
+      let stripped = false;
+      q.answers.forEach(a => { if (a.imageKeyword) { delete a.imageKeyword; stripped = true; } });
+      if (stripped) console.warn('[Quiz] Stripped answer images from self-referential question (must be text-only):', q.question);
     }
 
 
