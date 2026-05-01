@@ -1,0 +1,640 @@
+/* peppa-game.css — Peppa Pig bus game viewport and components */
+
+    #peppa-game-viewport {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      max-width: none;
+      background: linear-gradient(to bottom, #87CEEB, #bae6fd);
+      box-sizing: border-box;
+      overflow: hidden;
+      cursor: default;
+      perspective: 1200px;
+      z-index: 9999;
+    }
+
+    .peppa-skyline {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 200%;
+      height: 50vh !important;
+      background-image: url('../assets/peppa/skyline.png');
+      background-size: 50% 100%;
+      background-repeat: repeat-x;
+      z-index: 1;
+    }
+
+    @keyframes skylineMove {
+      from {
+        transform: translateX(0);
+      }
+
+      to {
+        transform: translateX(-50%);
+      }
+    }
+
+    .peppa-bus {
+      position: absolute;
+      top: 50%;
+      /* Initial pos, JS will override */
+      left: 35%;
+      /* Re-calibrated starting position: middle at 35% */
+      width: 288px;
+      /* 1.2 * 240px */
+      height: 211px;
+      /* 1.2 * 176px */
+      background-image: url('../assets/peppa/bus4.png');
+      background-size: contain;
+      background-position: center;
+      background-repeat: no-repeat;
+      background-color: transparent;
+      z-index: 1000;
+      animation: busDrive 0.6s ease-in-out infinite alternate;
+      /* Transition vertical moves (lane changes) but not horizontal (which is handled by loop) */
+      transition: top 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      transform-style: preserve-3d;
+      /* Position bottom-center of bus at top/left, facing right (no flip) */
+      transform: translate(-50%, -100%) rotateX(-45deg) translateY(0) translateZ(50px);
+      pointer-events: none;
+      transform-origin: bottom center;
+      /* Premium Sticker Finish: Clean transparency */
+      filter: url(#sticker-border);
+    }
+
+    @keyframes busDrive {
+      from {
+        transform: translate(-50%, -100%) rotateX(-45deg) translateZ(50px) translateY(0) scale(1.0);
+      }
+
+      to {
+        transform: translate(-50%, -100%) rotateX(-45deg) translateZ(50px) translateY(-5px) scale(1.02);
+      }
+    }
+
+    @keyframes busJump {
+
+      0%,
+      100% {
+        transform: translate(-50%, -100%) rotateX(-45deg) translateZ(50px) scale(1.0);
+      }
+
+      40% {
+        transform: translate(-50%, -100%) rotateX(-45deg) translateZ(80px) scale(1.1, 0.9) translateY(-60px);
+      }
+
+      60% {
+        transform: translate(-50%, -100%) rotateX(-45deg) translateZ(75px) scale(0.95, 1.05) translateY(-30px);
+      }
+    }
+
+    .animate-bus-jump {
+      animation: busJump 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
+    }
+
+    .peppa-road {
+      position: absolute;
+      top: 32%;
+      /* Shifted up for full visibility of Lane 3 (33%) */
+      left: -25vw;
+      width: 150vw;
+      height: 548px !important;
+      /* Fixed depth calibrated to viewport for 15/20/33 visual display */
+      /* Premium dark asphalt palette: Makes the white 'Paper Cards' pop beautifully */
+      background: linear-gradient(to bottom, #1e293b, #0f172a);
+      transform: rotateX(45deg) translateZ(1px);
+      /* Layer strictly above background */
+      transform-origin: top center;
+      transform-style: preserve-3d;
+      z-index: 10;
+      box-shadow: 0 50px 100px rgba(0, 0, 0, 0.5);
+    }
+
+    .peppa-lane {
+      position: absolute;
+      left: 0;
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: rgba(255, 255, 255, 0.03);
+      font-size: 8vh;
+      font-weight: 900;
+      pointer-events: none;
+      transform-style: preserve-3d;
+    }
+
+    .peppa-lane-text {
+      display: none;
+      /* Hide debug lane labels */
+    }
+
+    /* Parallelogram Lane Markings */
+    .peppa-lane::before {
+      content: '';
+      position: absolute;
+      top: -3px;
+      left: 0;
+      width: 100%;
+      height: 10px;
+      background-image: repeating-linear-gradient(90deg,
+          rgba(255, 255, 255, 0.5) 0px,
+          rgba(255, 255, 255, 0.5) 150px,
+          transparent 150px,
+          transparent 450px);
+      background-size: 600px 100%;
+      background-position: var(--road-x, 0) 0;
+      transform: skewX(-35deg);
+      z-index: 1;
+    }
+
+    .peppa-lane-0 {
+      top: 0;
+      height: 27.4% !important;
+      border-bottom: none;
+    }
+
+    .peppa-lane-0::before {
+      display: none;
+    }
+
+    .peppa-lane-1 {
+      top: 27.4%;
+      height: 31.4% !important;
+      border-bottom: none;
+    }
+
+    .peppa-lane-2 {
+      top: 58.8% !important;
+      height: 41.2% !important;
+      border-bottom: none;
+    }
+
+    .peppa-decoration {
+      position: absolute;
+      bottom: 0;
+      width: 120px;
+      height: 240px;
+      transform-style: flat;
+      /* Break out of road's 3D context */
+      transform: none;
+      /* No rotation — truly vertical on screen */
+      pointer-events: none;
+      z-index: 5;
+    }
+
+    .peppa-tree {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 120'%3E%3Cpath d='M25 120h10V80H25z' fill='%235D4037'/%3E%3Ccircle cx='30' cy='50' r='40' fill='%234CAF50'/%3E%3Ccircle cx='45' cy='35' r='20' fill='%2366BB6A'/%3E%3C/svg%3E");
+      background-size: contain;
+      background-repeat: no-repeat;
+    }
+
+    .peppa-lamp {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 120'%3E%3Cpath d='M28 120h4V30h-4z' fill='%23424242'/%3E%3Ccircle cx='30' cy='25' r='10' fill='%23FFF176'/%3E%3Cpath d='M20 30h20l-5-10h-10z' fill='%23212121'/%3E%3C/svg%3E");
+      background-size: contain;
+      background-repeat: no-repeat;
+    }
+
+
+    .peppa-friend {
+      position: absolute;
+      width: 100px;
+      height: 140px;
+      background-repeat: no-repeat;
+      background-size: contain;
+      background-position: center;
+      background-color: transparent;
+      filter: url(#sticker-border);
+      /* Standing upright silhouette */
+      transform: rotateX(-45deg) translateY(-50%) translateZ(30px);
+      transform-origin: center center;
+    }
+
+    /* Road Hazards Styling */
+    .peppa-hazard {
+      position: absolute;
+      width: 80px;
+      height: 80px;
+      background-size: contain;
+      background-repeat: no-repeat;
+      background-color: transparent;
+      z-index: 350;
+      /* Stand upright like characters */
+      transform: rotateX(-45deg) translateY(-50%) translateZ(20px);
+      transform-origin: center center;
+      pointer-events: none;
+    }
+
+    .peppa-hazard.banana {
+      background-image: url('../assets/peppa/banana2.png');
+    }
+
+    .peppa-hazard.mud {
+      background-image: url('../assets/peppa/mud_clean.png');
+    }
+
+    .peppa-hazard.water {
+      background-image: url('../assets/peppa/mud_clean.png');
+      filter: hue-rotate(180deg) brightness(1.2) saturate(2);
+    }
+
+    /* Bus Feedback Animations */
+    @keyframes busSlide {
+
+      0%,
+      100% {
+        transform: translate(-50%, -100%) rotateX(-45deg) translateZ(50px) rotate(0);
+      }
+
+      20% {
+        transform: translate(-50%, -100%) rotateX(-45deg) translateZ(50px) rotate(-15deg);
+      }
+
+      40% {
+        transform: translate(-50%, -100%) rotateX(-45deg) translateZ(50px) rotate(10deg);
+      }
+
+      60% {
+        transform: translate(-50%, -100%) rotateX(-45deg) translateZ(50px) rotate(-5deg);
+      }
+
+      80% {
+        transform: translate(-50%, -100%) rotateX(-45deg) translateZ(50px) rotate(3deg);
+      }
+    }
+
+    .animate-bus-slide {
+      animation: busSlide 0.6s ease-in-out !important;
+    }
+
+    @keyframes busShake {
+
+      0%,
+      100% {
+        transform: translate(-50%, -100%) rotateX(-45deg) translateZ(50px) translateX(0);
+      }
+
+      20%,
+      60% {
+        transform: translate(-50%, -100%) rotateX(-45deg) translateZ(50px) translateX(-10px);
+      }
+
+      40%,
+      80% {
+        transform: translate(-50%, -100%) rotateX(-45deg) translateZ(50px) translateX(10px);
+      }
+    }
+
+    .animate-bus-shake {
+      animation: busShake 0.4s ease-in-out 3 !important;
+    }
+
+    /* Screen Mud Splash (Periphery focus) */
+    .mud-edge-splat {
+      position: fixed;
+      width: 250px;
+      height: 250px;
+      background-image: url('../assets/peppa/mud_clean.png');
+      background-size: contain;
+      background-repeat: no-repeat;
+      pointer-events: none;
+      z-index: 2100;
+      opacity: 0;
+      transition: opacity 0.5s, transform 0.5s;
+    }
+
+    .mud-edge-splat.show {
+      opacity: 0.85;
+    }
+
+    .mud-particle {
+      position: absolute;
+      width: 40px;
+      height: 40px;
+      background-image: url('../assets/peppa/mud_clean.png');
+      background-size: contain;
+      pointer-events: none;
+      z-index: 1000;
+      animation: mudSplatter 0.6s ease-out forwards;
+    }
+
+    @keyframes mudSplatter {
+      0% {
+        transform: scale(0) translate(0, 0);
+        opacity: 1;
+      }
+
+      100% {
+        transform: scale(1.5) translate(var(--tx), var(--ty));
+        opacity: 0;
+      }
+    }
+
+    /* Water Splash Visuals */
+    .water-edge-splat {
+      position: fixed;
+      width: 180px;
+      height: 180px;
+      background-image: url('../assets/peppa/mud_clean.png');
+      background-size: contain;
+      background-repeat: no-repeat;
+      pointer-events: none;
+      z-index: 2100;
+      opacity: 0;
+      filter: hue-rotate(180deg) brightness(1.3) saturate(2.5);
+      /* Blue-ify the mud shape */
+      transition: opacity 0.5s, transform 0.5s;
+    }
+
+    .water-edge-splat.show {
+      opacity: 0.9;
+    }
+
+    .water-particle {
+      position: absolute;
+      width: 30px;
+      height: 30px;
+      background-image: url('../assets/peppa/mud_clean.png');
+      background-size: contain;
+      pointer-events: none;
+      z-index: 1000;
+      filter: hue-rotate(180deg) brightness(1.3) saturate(2.5);
+      animation: mudSplatter 0.5s ease-out forwards;
+    }
+
+    /* Water Splash Visual Effect */
+    .water-splash-effect {
+      position: absolute;
+      width: 200px;
+      height: 200px;
+      background-image: radial-gradient(circle, #60a5fa 20%, transparent 70%);
+      border-radius: 50%;
+      opacity: 0.6;
+      transform: translate(-50%, -50%) scale(0);
+      animation: waterSplashAnim 0.8s ease-out forwards;
+      pointer-events: none;
+      z-index: 1500;
+    }
+
+    @keyframes waterSplashAnim {
+      to {
+        transform: translate(-50%, -50%) scale(2.5);
+        opacity: 0;
+      }
+    }
+
+    /* Counter-rotate bubbles to be parallel to screen */
+    .peppa-bubble {
+      display: none !important;
+      /* Removed per request "without the white bubble" */
+    }
+
+    .peppa-sidewalk {
+      position: absolute;
+      top: -24px;
+      /* Calibrated to fit road perspective */
+      left: 0;
+      width: 100%;
+      height: 30px;
+      background: repeating-linear-gradient(90deg,
+          #cbd5e1 0px,
+          #cbd5e1 60px,
+          #94a3b8 60px,
+          #94a3b8 64px);
+      background-size: 600px 100%;
+      transform: skewX(-41deg);
+      border-bottom: 4px solid #475569;
+      box-shadow: inset 0 -5px 10px rgba(0, 0, 0, 0.1);
+      z-index: 1;
+    }
+
+    .friends-count {
+      position: absolute;
+      top: 2rem;
+      left: 2rem;
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(12px);
+      padding: 1rem 1.5rem;
+      border-radius: 1.25rem;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: white;
+      font-size: 1.25rem;
+      font-weight: 800;
+      z-index: 10000;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+    }
+
+    .game-controls {
+      position: absolute;
+      top: 2rem;
+      right: 2rem;
+      z-index: 10000;
+      display: flex;
+      gap: 1rem;
+    }
+
+    .btn-control {
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: white;
+      width: 56px;
+      height: 56px;
+      border-radius: 1.25rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+    }
+
+    .btn-control:hover {
+      background: #3b82f6;
+      transform: scale(1.1);
+      border-color: rgba(255, 255, 255, 0.4);
+    }
+
+    .btn-control svg {
+      width: 28px;
+      height: 28px;
+    }
+
+    #peppa-settings-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.9);
+      backdrop-filter: blur(12px);
+      z-index: 10001;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.5s ease;
+    }
+
+    #peppa-settings-overlay.show {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .settings-panel {
+      background: #1e293b;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 2rem;
+      padding: 3rem;
+      width: 100%;
+      max-width: 450px;
+      text-align: center;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+      transform: translateY(20px);
+      transition: transform 0.5s ease;
+    }
+
+    #peppa-settings-overlay.show .settings-panel {
+      transform: translateY(0);
+    }
+
+    /* Hover Visualizer Styles */
+    #peppa-hover-visualizer {
+      display: none !important;
+      /* Final production lockdown */
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: none;
+      flex-direction: column;
+      opacity: 0.4;
+    }
+
+    .hover-zone {
+      width: 100%;
+      border: 2px solid #3b82f6;
+      background: rgba(59, 130, 246, 0.05);
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      padding-left: 2rem;
+      color: #60a5fa;
+      font-weight: 800;
+      font-size: 0.75rem;
+      letter-spacing: 0.1em;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+
+    .hover-zone.active {
+      opacity: 1;
+      background: rgba(59, 130, 246, 0.15);
+    }
+
+    #hover-zone-0 {
+      border: none;
+    }
+
+    /* Gap above road - height set dynamically */
+    #hover-zone-1 {}
+
+    /* Lane 0 - height set dynamically */
+    #hover-zone-2 {}
+
+    /* Lane 1 - height set dynamically */
+    #hover-zone-3 {}
+
+    /* Lane 2 - height set dynamically */
+
+    /* Math Game Styles */
+
+/* Cinematic Victory Animations */
+    /* Cinematic Victory Animations */
+    .peppa-bus.victory-hero {
+      left: 50% !important;
+      top: 55.7% !important;
+      /* Centered in Middle Lane */
+      transform: translate(-50%, -50%) rotateX(-45deg) translateZ(150px) scale(2) !important;
+      transition: all 1.5s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+      z-index: 50000 !important;
+    }
+
+    .peppa-celebration-friend {
+      position: absolute;
+      width: 10vw;
+      height: 10vw;
+      z-index: 60000;
+      pointer-events: none;
+      background-size: contain;
+      background-repeat: no-repeat;
+      background-position: bottom center;
+      filter: url(#sticker-border);
+      transform: translateY(40px) scale(0);
+      opacity: 0;
+      transition: transform 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.4s ease;
+    }
+
+    .peppa-celebration-friend.visible {
+      transform: translateY(0) scale(1);
+      opacity: 1;
+    }
+
+    .win-card {
+      background: linear-gradient(135deg, #1e293b, #0f172a);
+      border: 2px solid rgba(16, 185, 129, 0.3);
+      border-radius: 3rem;
+      padding: 4rem;
+      text-align: center;
+      max-width: 500px;
+      width: 90%;
+      box-shadow: 0 0 100px rgba(16, 185, 129, 0.15);
+      transform: scale(0.8) translateY(20px);
+      transition: all 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    #peppa-win-overlay.show .win-card {
+      transform: scale(1) translateY(0);
+    }
+
+    .victory-badge {
+      width: 120px;
+      height: 120px;
+      background: #10b981;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 2rem;
+      box-shadow: 0 0 40px rgba(16, 185, 129, 0.5);
+      animation: badgePulse 2s infinite;
+    }
+
+    @keyframes badgePulse {
+
+      0%,
+      100% {
+        transform: scale(1);
+        box-shadow: 0 0 40px rgba(16, 185, 129, 0.5);
+      }
+
+      50% {
+        transform: scale(1.1);
+        box-shadow: 0 0 80px rgba(16, 185, 129, 0.7);
+      }
+    }
+
+    /* Pause State */
+    .peppa-game-paused,
+    .peppa-game-paused *,
+    .peppa-game-paused ::before,
+    .peppa-game-paused ::after {
+      animation-play-state: paused !important;
+      transition: none !important;
+    }
+

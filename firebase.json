@@ -19,6 +19,10 @@
         "function": "quizGenerate"
       },
       {
+        "source": "/api/pixabay-search",
+        "function": "pixabaySearch"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

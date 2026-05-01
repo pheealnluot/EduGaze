@@ -1,0 +1,11 @@
+/* kung-fu-panda.css — Kung Fu Panda theme styles */
+
+      @keyframes kfpOtroBounce {
+        0% {
+          transform: translateY(0) rotate(-2deg) scale(1);
+        }
+
+        100% {
+          transform: translateY(-28px) rotate(2deg) scale(1.06);
+        }
+      }

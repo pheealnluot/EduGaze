@@ -1,0 +1,85 @@
+/* ben-holly.css — Ben & Holly theme intro/outro animations */
+
+      @keyframes bhCharBounceIn {
+        0% {
+          opacity: 0;
+          transform: translateY(150px) scale(0.4) rotate(-5deg);
+        }
+
+        55% {
+          opacity: 1;
+          transform: translateY(-20px) scale(1.08) rotate(2deg);
+        }
+
+        75% {
+          transform: translateY(8px) scale(0.96) rotate(-1deg);
+        }
+
+        100% {
+          opacity: 1;
+          transform: translateY(0) scale(1) rotate(0deg);
+        }
+      }
+
+      @keyframes bhCharBob {
+
+        0%,
+        100% {
+          transform: translateY(0) rotate(-1.5deg) scale(1);
+        }
+
+        50% {
+          transform: translateY(-14px) rotate(1.5deg) scale(1.03);
+        }
+      }
+
+      @keyframes bhStar {
+        0% {
+          opacity: 0;
+          transform: scale(0) rotate(0deg);
+        }
+
+        40% {
+          opacity: 1;
+        }
+
+        100% {
+          opacity: 0;
+          transform: scale(2) rotate(180deg) translateY(-40px);
+        }
+      }
+
+      .bh-intro-char {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.3rem;
+        opacity: 0;
+        animation: bhCharBounceIn 0.75s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        animation-delay: var(--char-delay);
+      }
+
+      .bh-intro-char.bh-bobbing img {
+        animation: bhCharBob 2.4s ease-in-out infinite;
+        animation-delay: inherit;
+      }
+
+      .bh-char-label {
+        font-family: 'Comic Sans MS', cursive;
+        font-size: clamp(0.55rem, 1.2vw, 0.75rem);
+        font-weight: 700;
+        color: rgba(255, 255, 255, 0.75);
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+
+      @keyframes bhDance {
+        0% {
+          transform: translateY(0) rotate(-4deg) scale(1);
+        }
+
+        100% {
+          transform: translateY(-30px) rotate(4deg) scale(1.1);
+        }
+      }

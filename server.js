@@ -51,13 +51,26 @@ app.post('/api/quiz-generate', async (req, res) => {
     return res.status(503).json({ error: 'GEMINI_API_KEY not configured on server' });
   }
   try {
+    // Ensure reasonable token limits — quiz batches can be large
+    const body = req.body;
+    if (body.generationConfig) {
+      // Cap maxOutputTokens to 16384 if not already set or set too low
+      if (!body.generationConfig.maxOutputTokens || body.generationConfig.maxOutputTokens < 2048) {
+        body.generationConfig.maxOutputTokens = 8192;
+      }
+      // Disable thinking budget for faster, deterministic quiz generation
+      body.generationConfig.thinkingConfig = { thinkingBudget: 0 };
+    }
     const response = await fetch(GEMINI_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(req.body),
+      body: JSON.stringify(body),
     });
     const data = await response.json();
-    res.status(response.status).json(data);
+    if (!response.ok) {
+      console.error('[Gemini API error]', response.status, JSON.stringify(data).slice(0, 200));
+    }
+    res.status(response.ok ? 200 : response.status).json(data);
   } catch (err) {
     console.error('[Gemini proxy error]', err.message);
     res.status(502).json({ error: err.message });
