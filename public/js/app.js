@@ -2842,7 +2842,8 @@ async function preLoadBatchVisuals(batch) {
       resolveVisual(q.questionImageKeyword, q.answers.map(a => a.text), q.question, {
         forceAI: isMath,
         correctAnswer: correctAns?.text || '',
-        subject: q._subject || q.subject || ''
+        subject: q._subject || q.subject || '',
+        answerLabels: q.answers.map(a => a.text)
       });
     }
     // Resolve answer images
@@ -2857,8 +2858,18 @@ async function preLoadBatchVisuals(batch) {
 }
 
 // ── AI Graphic Generator (SVG) ───────────────────────────────────────────
-async function generateAISVG(keyword, container, answerContext = [], questionText = '', correctAnswer = '') {
+async function generateAISVG(keyword, container, answerContext = [], questionText = '', correctAnswer = '', opts = {}) {
   if (!keyword) return null;
+
+  // ── Labelled diagram detection ───────────────────────────────────────────
+  // If all answer labels are single letters (A, B, C, D), the question is a
+  // labelled-diagram type. The SVG MUST include those letter labels on the diagram.
+  const answerLabels = opts.answerLabels || answerContext || [];
+  const isLabelledDiagram = answerLabels.length > 0 &&
+    answerLabels.every(l => /^[A-Da-d]$/.test((l || '').trim()));
+  const labelledInstruction = isLabelledDiagram
+    ? `LABELLED DIAGRAM REQUIREMENT: The answer options are the letters ${answerLabels.map(l => l.trim().toUpperCase()).join(', ')}. You MUST draw the diagram with these exact letters placed as labels (with arrows or lines) pointing to specific parts of the diagram. The student must be able to identify which label corresponds to which part. WITHOUT these labels, the question cannot be answered. Place each label clearly and legibly on the diagram.`
+    : '';
 
   let loader = null;
   let timerInt = null;
@@ -2885,7 +2896,8 @@ async function generateAISVG(keyword, container, answerContext = [], questionTex
 
   const prompt = `Generate a simple, clean, educational SVG diagram for a Primary 2 student for the keyword: "${keyword}".
 ${questionText ? `Question: "${questionText}"` : ''}
-${correctAnswer ? `The correct answer is: "${correctAnswer}". The diagram MUST be mathematically consistent with this answer. For example, if the question asks for a missing number in a sequence and the answer is "0.5", draw the sequence so that "0.5" is the correct missing value.` : ''}
+${correctAnswer ? `The correct answer is: "${correctAnswer}". The diagram MUST be mathematically consistent with this answer.` : ''}
+${labelledInstruction}
 Rules:
 - Use clear lines and high contrast (use a dark theme: lines should be light colors like white, yellow, or cyan on dark/black background).
 - Make it visually accurate for a math/science problem.
@@ -2896,6 +2908,7 @@ Rules:
   * "How many?" → draw the exact correct count of objects
   * "What fraction is shaded?" → shade the correct portion and label the total parts
   * "Missing number in sequence?" → show the sequence with the correct surrounding values so the pattern leads to the correct answer
+  * "Which labelled part...?" → draw the object with ALL answer letters (${answerLabels.join(', ')}) clearly placed as labels with pointer lines
 - ABSOLUTELY NEVER write the correct answer "${correctAnswer || '[answer]'}" directly in the diagram. Only include the INPUT data (dimensions, surrounding values, labels) from which the answer can be calculated.
 - ${answerContext.length > 0
       ? 'The answer choices are: ' + answerContext.join(', ') + '. Do NOT write any of these answer values in the SVG.'
@@ -4268,7 +4281,8 @@ function renderQuizBoard() {
     if (hasImageType && imageKeyword) {
       card.style.flexDirection = 'column';
       card.style.padding = '8px';
-      card.style.gap = '8px';
+      card.style.gap = '4px';
+      card.style.display = 'flex';
 
       const imgWrapper = document.createElement('div');
       imgWrapper.className = 'quiz-answer-img';
@@ -4276,8 +4290,8 @@ function renderQuizBoard() {
         position: 'relative',
         borderRadius: '12px',
         overflow: 'hidden',
-        maxHeight: '32vh',
-        height: Math.floor(window.innerHeight * 0.32) + 'px',
+        flex: '1 1 0',
+        minHeight: '0',
         background: 'linear-gradient(90deg, #1e2d42 25%, #243553 50%, #1e2d42 75%)'
       });
 
@@ -4347,6 +4361,8 @@ function renderQuizBoard() {
         } else if (cachedAns.svg) {
           _showImgSuccess();
           imgWrapper.innerHTML = cachedAns.svg;
+          const _svgEl = imgWrapper.querySelector('svg');
+          if (_svgEl) { _svgEl.style.cssText = 'width:100%;height:100%;display:block;'; }
           _showAnsBadge('ai');
         } else {
           _showImgError();
@@ -4364,6 +4380,8 @@ function renderQuizBoard() {
           } else if (res?.svg) {
             _showImgSuccess();
             imgWrapper.innerHTML = res.svg;
+            const _svgEl2 = imgWrapper.querySelector('svg');
+            if (_svgEl2) { _svgEl2.style.cssText = 'width:100%;height:100%;display:block;'; }
             _showAnsBadge('ai');
           } else {
             _showImgError();
@@ -4378,7 +4396,8 @@ function renderQuizBoard() {
       caption.className = `quiz-answer-text ${fontSizeClass}`;
       Object.assign(caption.style, {
         color: '#f2f5f9', fontWeight: '700', textAlign: 'center', display: 'block',
-        width: '100%', fontSize: 'clamp(0.7rem, 2vh, 1rem)', flexShrink: '0',
+        width: '100%', fontSize: 'clamp(0.6rem, 1.6vh, 0.9rem)', flexShrink: '0',
+        overflowWrap: 'break-word', lineHeight: '1.3',
         pointerEvents: 'none', position: 'relative', zIndex: '10'
       });
       prepareHighlightableText(caption, answer.text);
