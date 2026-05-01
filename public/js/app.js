@@ -935,6 +935,7 @@ function stopPeppaTheme() {
   if (peppaAudio) {
     peppaAudio.pause();
     peppaAudio.currentTime = 0;
+    peppaAudio = null; // Prevent any re-entry / overlap
   }
 }
 
@@ -1057,7 +1058,9 @@ function spawnPeppaHazard() {
   const type = types[Math.floor(Math.random() * types.length)];
   hazard.className = `peppa-hazard ${type}`;
 
-  const laneTops = ['17.9%', '49.0%', '89.2%'];
+  // top + hazard-height (80px ≈ 14.6% of road) should land within lane bounds
+  // Lane 0: 0-27.4%, Lane 1: 27.4-58.8%, Lane 2: 58.8-100%
+  const laneTops = ['5%', '36%', '75%'];
   hazard.style.right = '-200px';
   hazard.style.top = laneTops[lane];
 
@@ -1334,8 +1337,9 @@ function spawnPeppaFriend() {
   if (!friendsLayer) return;
   const friend = document.createElement('div');
   const lane = Math.floor(Math.random() * 3);
-  // Align base of characters with base of bus (bus laneTops: 24.6%, 55.7%, 95.9%)
-  const laneTops = ['5.0%', '36.0%', '74.0%'];
+  // top + character-height (140px ≈ 25.5% of road) = feet position; should land within lane bounds
+  // Lane 0: 0-27.4%, Lane 1: 27.4-58.8%, Lane 2: 58.8-100%
+  const laneTops = ['1%', '33%', '71%'];
 
   friend.className = 'peppa-friend';
   const friendIdx = Math.floor(Math.random() * 10) + 1;
@@ -2643,7 +2647,14 @@ async function resolveVisual(keyword, context = [], questionText = '', opts = {}
   // (vehicles, animals, landmarks) must ALWAYS use Pixabay/Wikimedia.
   const isDiagramKeyword = /^(number line|bar graph|pie chart|fraction|decimal|ruler|protractor|analog clock|clock face|cylinder|sphere|pyramid|cone|cube|cuboid|prism|venn diagram|tally chart|pattern|sequence|shapes?|circles?|triangles?|squares?|rectangles?|arrows?|blocks?|cubes?|dots?|lines?|stars?|groups?|sets?|shaded.*(figure|shape|area|region)|grid|area|perimeter|angle|symmetry|reflection|rotation)s?$/i.test(kw) ||
     // Science diagram keywords (abstract processes and diagrams only, no simple physical objects)
-    /\b(circuit|solar system|orbit|water cycle|evaporation|condensation|food chain|food web|magnetic field|simple machine|digestive system|skeleton|life cycle|photosynthesis|ecosystem|cell|atom|molecule|gravity|friction|volcano|rock cycle|states of matter)\b/i.test(kw);
+    /\b(circuit|solar system|orbit|water cycle|evaporation|condensation|food chain|food web|magnetic field|simple machine|digestive system|skeleton|life cycle|photosynthesis|ecosystem|cell|atom|molecule|gravity|friction|volcano|rock cycle|states of matter)\b/i.test(kw) ||
+    // Conceptual physics/science action phrases — these can NEVER be sourced from Pixabay
+    // e.g. "magnet attracting paper clip", "two magnets repelling", "current flowing in circuit"
+    /\b(attracting|repelling|reflecting|refracting|evaporating|condensing|absorbing|dissolving|expanding|contracting|rotating|orbiting|gravitating|conducting|insulating|magnetising|magnetizing|charging|discharging|vibrating|oscillating|decaying|germinating|pollinating|photosynthesising|photosynthesizing)\b/i.test(kw) ||
+    // Any multi-word (4+ words) keyword that mentions a physics/science concept
+    // is almost certainly a descriptive diagram label, not a searchable photo
+    (kw.split(/\s+/).length >= 4 && /\b(magnet|force|energy|circuit|current|charge|wave|heat|light|sound|cell|plant|animal|organ|bone|muscle|nerve|blood|gravity|friction|electric|magnetic|chemical|reaction|solution|mixture|state|matter|phase|cycle|chain|web|system|process|diagram)\b/i.test(kw));
+
   const isPrecisionQuestion =
     qtxt.includes('how many') || qtxt.includes('count') || qtxt.includes('measure') ||
     qtxt.includes('ruler') || qtxt.includes('protractor') || qtxt.includes('fraction') ||
@@ -2653,12 +2664,11 @@ async function resolveVisual(keyword, context = [], questionText = '', opts = {}
     qtxt.includes('area') || qtxt.includes('perimeter') || qtxt.includes('angle') ||
     qtxt.includes('shaded') || qtxt.includes('figure') || qtxt.includes('shape') ||
     qtxt.includes('symmetry') || qtxt.includes('reflect') || qtxt.includes('rotat') ||
-    // Science diagram triggers
     qtxt.includes('circuit') || qtxt.includes('diagram') || qtxt.includes('cycle') ||
     qtxt.includes('system') || qtxt.includes('observe') || qtxt.includes('label');
-  // Use AI SVG if the question is math/science precision AND keyword is a diagram concept,
-  // OR if the keyword itself is clearly a diagram concept
-  const isPreciseDiagram = (isPrecisionQuestion && isDiagramKeyword) || isDiagramKeyword;
+
+  // Use AI SVG if the keyword is a diagram concept OR the question demands precision
+  const isPreciseDiagram = isDiagramKeyword || (isPrecisionQuestion && isDiagramKeyword);
 
   // ── Search keyword enrichment ───────────────────────────────────────────
   // Real-world keywords need a 'photo' bias so image APIs return photographs

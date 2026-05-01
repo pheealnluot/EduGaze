@@ -204,12 +204,12 @@
       height: 140px;
       background-repeat: no-repeat;
       background-size: contain;
-      background-position: center;
+      background-position: bottom center;
       background-color: transparent;
       filter: url(#sticker-border);
-      /* Standing upright silhouette */
-      transform: rotateX(-45deg) translateY(-50%) translateZ(30px);
-      transform-origin: center center;
+      /* Counter-rotate to cancel road's rotateX(45deg), anchored at feet so they stand upright */
+      transform: rotateX(-45deg);
+      transform-origin: bottom center;
     }
 
     /* Road Hazards Styling */
@@ -219,11 +219,12 @@
       height: 80px;
       background-size: contain;
       background-repeat: no-repeat;
+      background-position: bottom center;
       background-color: transparent;
       z-index: 350;
-      /* Stand upright like characters */
-      transform: rotateX(-45deg) translateY(-50%) translateZ(20px);
-      transform-origin: center center;
+      /* Counter-rotate to cancel road's rotateX(45deg), anchored at feet */
+      transform: rotateX(-45deg);
+      transform-origin: bottom center;
       pointer-events: none;
     }
 
