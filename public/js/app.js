@@ -2668,79 +2668,113 @@ async function resolveVisual(keyword, context = [], questionText = '', opts = {}
   const hasChinese = /[\u4e00-\u9fff]/.test(keyword);
   const isFlag = kw.includes('flag');
 
-  // ── Real photo sources (Pixabay → Wikimedia) ───────────────────────────
-  // Skip photo sources if forceAI is set (Math questions always use AI SVG)
-  if (!isPreciseDiagram && !opts.forceAI) {
-    // Pixabay: use image_type=photo for real-photo filtering — do NOT append
-    // "photo" to the query text because it changes semantic meaning.
-    // e.g. "Taj Mahal photo" → returns a photographer, not the building.
-    // Flags get "country flag" refinement; everything else searches as-is.
-    const pixabayQuery = isFlag
-      ? keyword.replace(/\s*flag\s*/i, ' country flag').trim()
+  // ── Dynamic context-aware Pixabay query builder ─────────────────────────
+  // Instead of a static negative-tag list, we use the question text and subject
+  // to infer the correct semantic domain and enrich the search query accordingly.
+  const subject = (opts.subject || '').toLowerCase();
+  const qtxtLower = (questionText || '').toLowerCase();
+
+  // ── Step 1: Infer semantic domain from question + subject ─────────────────
+  // This tells us what the image SHOULD depict, so we can both enrich the
+  // query term AND reject Pixabay results that don't belong to that domain.
+  const _inDomain = (terms) => terms.some(t => qtxtLower.includes(t) || subject.includes(t));
+
+  const domainIsAnimal    = _inDomain(['animal', 'mammal', 'reptile', 'bird', 'fish', 'insect', 'amphibian', 'wildlife', 'creature', 'species', 'classify', 'habitat', 'predator', 'prey', 'science']);
+  const domainIsFood      = _inDomain(['food', 'eat', 'fruit', 'vegetable', 'meal', 'diet', 'nutrition', 'cook', 'ingredient']);
+  const domainIsTransport = _inDomain(['transport', 'vehicle', 'travel', 'road', 'drive', 'fly', 'sail']);
+  const domainIsPlant     = _inDomain(['plant', 'flower', 'tree', 'leaf', 'garden', 'botany', 'photosynthesis']);
+  const domainIsBody      = _inDomain(['body', 'organ', 'skeleton', 'muscle', 'sense', 'health', 'human']);
+  const domainIsWeather   = _inDomain(['weather', 'climate', 'rain', 'cloud', 'storm', 'temperature']);
+  const domainIsSpace     = _inDomain(['space', 'planet', 'solar', 'star', 'galaxy', 'moon', 'orbit']);
+  const domainIsLandmark  = _inDomain(['landmark', 'monument', 'country', 'capital', 'geography', 'flag', 'world']);
+
+  // ── Step 2: Build enriched Pixabay query ─────────────────────────────────
+  // Append a domain-specific disambiguating qualifier to the keyword.
+  // This directly steers Pixabay's semantic ranking.
+  let enrichedQuery = keyword; // default: search as-is
+
+  if (domainIsAnimal && !domainIsFood && !domainIsTransport) {
+    enrichedQuery = `${keyword} animal wildlife`;
+  } else if (domainIsFood && !domainIsAnimal) {
+    enrichedQuery = `${keyword} food`;
+  } else if (domainIsTransport) {
+    enrichedQuery = `${keyword} vehicle`;
+  } else if (domainIsPlant) {
+    enrichedQuery = `${keyword} nature`;
+  } else if (domainIsBody) {
+    enrichedQuery = `${keyword} anatomy`;
+  } else if (domainIsWeather) {
+    enrichedQuery = `${keyword} weather`;
+  } else if (domainIsSpace) {
+    enrichedQuery = `${keyword} space astronomy`;
+  }
+  // Note: if domain is ambiguous or unknown, use keyword as-is (safe fallback)
+
+  // ── Step 3: Pixabay category ─────────────────────────────────────────────
+  let pixCategory = '';
+  if (domainIsAnimal && !domainIsFood)      pixCategory = 'animals';
+  else if (domainIsFood)                    pixCategory = 'food';
+  else if (domainIsTransport)               pixCategory = 'transportation';
+  else if (domainIsPlant || domainIsWeather) pixCategory = 'nature';
+  else if (domainIsSpace)                   pixCategory = 'science';
+  // Fallback: use a static map for common concrete keywords not inferrable from question
+  else {
+    const _staticCatMap = {
+      cat: 'animals', dog: 'animals', horse: 'animals', elephant: 'animals',
+      penguin: 'animals', whale: 'animals', dolphin: 'animals', owl: 'animals',
+      apple: 'food', banana: 'food', cake: 'food', bread: 'food', rice: 'food',
+      car: 'transportation', bus: 'transportation', train: 'transportation',
+      airplane: 'transportation', bicycle: 'transportation',
+    };
+    pixCategory = _staticCatMap[kw] || '';
+  }
+
+  // ── Step 4: Contextual rejection filter ──────────────────────────────────
+  // Reject Pixabay hits whose tags contradict the inferred domain.
+  // This is dynamic: built from domain inference, not a static list per keyword.
+  const dynamicNegTags = [];
+  if (domainIsAnimal && !domainIsFood) {
+    dynamicNegTags.push('food', 'meal', 'drink', 'beer', 'wine', 'restaurant',
+      'brand', 'logo', 'cartoon', 'toy', 'plush', 'barbecue', 'grillplate',
+      'football', 'soccer', 'sport', 'car', 'vehicle');
+  }
+  if (domainIsFood && !domainIsAnimal) {
+    dynamicNegTags.push('animal', 'wildlife', 'logo', 'brand');
+  }
+  if (domainIsPlant) {
+    dynamicNegTags.push('snake', 'reptile', 'python', 'lizard', 'frog');
+  }
+  // Always reject: keyword-specific known confusors (thin safety net)
+  const _alwaysReject = {
+    apple:  ['computer', 'laptop', 'iphone', 'mac'],
+    mouse:  ['computer', 'peripheral', 'device'],
+    bat:    ['baseball', 'cricket'],
+    crane:  ['construction', 'machinery'],
+    bark:   ['dog', 'puppy', 'canine'],
+    bass:   ['guitar', 'music', 'instrument'],
+    orange: ['sunset', 'sunrise'],
+    bull:   ['stock', 'market', 'finance'],
+  };
+  const alwaysReject = _alwaysReject[kw] || [];
+  const negTags = [...new Set([...dynamicNegTags, ...alwaysReject])];
+
+  // ── Step 5: Build final Pixabay query ─────────────────────────────────────
+  // For flags, use a specific refinement. Otherwise use the enriched query.
+  const pixabayQuery = isFlag
+    ? keyword.replace(/\s*flag\s*/i, ' country flag').trim()
+    : enrichedQuery;
+
+  // Wikimedia query: only append " photo" for short generic terms
+  const isProperNoun = /^[A-Z]/.test(keyword) || hasChinese;
+  const wikiQuery = isFlag
+    ? keyword.replace(/\s*flag\s*/i, ' country flag').trim()
+    : (!isProperNoun && !isAbstractShape)
+      ? keyword + ' photo'
       : keyword;
 
-    // ── Pixabay category hint ─────────────────────────────────────────────
-    // Map common keyword types to Pixabay category slugs to prevent
-    // cross-domain confusion (e.g. "tree" returning "green tree python").
-    const _pixCategoryMap = {
-      tree: 'nature', plant: 'nature', flower: 'nature', grass: 'nature',
-      leaf: 'nature', forest: 'nature', bush: 'nature', garden: 'nature',
-      rose: 'nature', tulip: 'nature', sunflower: 'nature', daisy: 'nature',
-      mushroom: 'nature', fern: 'nature', moss: 'nature', cactus: 'nature',
-      cat: 'animals', dog: 'animals', bird: 'animals', fish: 'animals',
-      horse: 'animals', rabbit: 'animals', elephant: 'animals', lion: 'animals',
-      tiger: 'animals', bear: 'animals', snake: 'animals', frog: 'animals',
-      butterfly: 'animals', bee: 'animals', ant: 'animals', spider: 'animals',
-      whale: 'animals', dolphin: 'animals', penguin: 'animals', owl: 'animals',
-      cow: 'animals', pig: 'animals', sheep: 'animals', chicken: 'animals',
-      apple: 'food', banana: 'food', orange: 'food', grape: 'food',
-      cake: 'food', bread: 'food', rice: 'food', pizza: 'food',
-      car: 'transportation', bus: 'transportation', train: 'transportation',
-      airplane: 'transportation', boat: 'transportation', bicycle: 'transportation',
-    };
-    const pixCategory = _pixCategoryMap[kw] || '';
-
-    // ── Negative-tag filter ───────────────────────────────────────────────
-    // Reject Pixabay results whose tags indicate a completely different subject.
-    // e.g. searching "tree" but getting a hit tagged "snake, reptile, green tree python".
-    const _negativeTagMap = {
-      tree: ['snake', 'reptile', 'python', 'lizard', 'frog', 'amphibian'],
-      plant: ['snake', 'reptile', 'python', 'lizard'],
-      flower: ['snake', 'reptile', 'insect'],
-      leaf: ['snake', 'reptile', 'frog'],
-      grass: ['snake', 'reptile'],
-      apple: ['computer', 'laptop', 'phone', 'iphone', 'mac', 'logo'],
-      orange: ['sunset', 'sunrise'],
-      mouse: ['computer', 'peripheral', 'device'],
-      bat: ['baseball', 'cricket', 'sport'],
-      crane: ['construction', 'machinery', 'building'],
-      bass: ['guitar', 'music', 'instrument'],
-      bark: ['dog', 'puppy', 'canine'],
-      // Animals commonly mismatched to brands, food, or sports on Pixabay
-      lion: ['food', 'meal', 'beer', 'drink', 'brand', 'logo', 'restaurant', 'football', 'soccer', 'car', 'grillplate', 'barbecue'],
-      tiger: ['beer', 'drink', 'brand', 'logo', 'sport', 'car', 'tank'],
-      bear: ['beer', 'drink', 'brand', 'logo', 'teddy', 'plush', 'toy'],
-      shark: ['surfboard', 'surfing', 'surf', 'aerial', 'drone', 'beach'],
-      rabbit: ['logo', 'brand', 'easter', 'chocolate', 'candy', 'cartoon'],
-      eagle: ['logo', 'brand', 'emblem', 'flag', 'football', 'sport'],
-      snake: ['game', 'phone', 'charger', 'cable', 'logo'],
-      bull: ['stock', 'market', 'finance', 'wall street', 'logo'],
-      dolphin: ['logo', 'brand', 'cartoon'],
-      cat: ['logo', 'brand', 'cartoon', 'animation'],
-      wolf: ['logo', 'brand', 'cartoon', 'game'],
-    };
-    const negTags = _negativeTagMap[kw] || [];
-
-    // Wikimedia Commons: needs the "photo" bias to avoid SVG diagrams/maps,
-    // but NOT for proper names (landmarks, countries) which are specific enough.
-    // Only append " photo" for short generic terms (animals, objects, food).
-    const isProperNoun = /^[A-Z]/.test(keyword) || hasChinese;
-    const wikiQuery = isFlag
-      ? keyword.replace(/\s*flag\s*/i, ' country flag').trim()
-      : (!isProperNoun && !isAbstractShape)
-        ? keyword + ' photo'
-        : keyword;
-
+  // ── Real photo sources (Pixabay → Wikimedia) ──────────────────────────
+  // Skip photo sources if forceAI is set (Math questions always use AI SVG)
+  if (!isPreciseDiagram && !opts.forceAI) {
     const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
     const _pixabaySearch = async (q) => {
       let pixProxyUrl = isLocalhost
@@ -2807,13 +2841,16 @@ async function preLoadBatchVisuals(batch) {
       const correctAns = q.answers?.find(a => String(a.id) === String(q.correctId));
       resolveVisual(q.questionImageKeyword, q.answers.map(a => a.text), q.question, {
         forceAI: isMath,
-        correctAnswer: correctAns?.text || ''
+        correctAnswer: correctAns?.text || '',
+        subject: q._subject || q.subject || ''
       });
     }
     // Resolve answer images
     if (q.answers) {
       for (const ans of q.answers) {
-        if (ans.imageKeyword) resolveVisual(ans.imageKeyword, [], q.question);
+        if (ans.imageKeyword) resolveVisual(ans.imageKeyword, [], q.question, {
+          subject: q._subject || q.subject || ''
+        });
       }
     }
   }
