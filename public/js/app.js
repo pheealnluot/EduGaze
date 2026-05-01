@@ -4551,6 +4551,9 @@ function renderQuizBoard() {
           } else if (currentQuizTheme === 'turning-red') {
             triggerTRCelebration();
             _quizVoiceDelay = Date.now() + 3200;
+          } else if (currentQuizTheme === 'zootopia') {
+            triggerZooCelebration();
+            _quizVoiceDelay = Date.now() + 3200;
           } else {
             _quizVoiceDelay = Date.now() + 1500;
           }
@@ -5748,6 +5751,7 @@ function showQuizWin() {
   else if (quizSettings.theme === 'kung-fu-panda') playKungFuPandaOutro(standardFinish);
   else if (quizSettings.theme === 'totoro') playTotoroOutro(standardFinish);
   else if (quizSettings.theme === 'turning-red') playTROutro(standardFinish);
+  else if (quizSettings.theme === 'zootopia') playZooOutro(standardFinish);
   else standardFinish();
 }
 function _doStartQuiz() {
@@ -5817,7 +5821,13 @@ window.startQuiz = () => {
     playTRIntro(() => _doStartQuiz());
     return;
   }
+  if (quizSettings.theme === 'zootopia') {
+    _introPrefetchPromise = fetchQuizBatch().catch(() => null);
+    playZooIntro(() => _doStartQuiz());
+    return;
+  }
   _doStartQuiz();
+
 };
 
 function setQuizMode() {
@@ -6827,6 +6837,257 @@ function playTROutro(onDone) {
       overlay.style.transition = '';
       charStage.innerHTML = '';
       if (banner) { banner.style.opacity = '0'; }
+      onDone();
+    }, 850);
+  };
+
+  const onKey2      = (e) => { e.stopPropagation(); finish(); };
+  const onClickEvt2 = (e) => { e.stopPropagation(); finish(); };
+  document.addEventListener('keydown', onKey2,      true);
+  document.addEventListener('click',   onClickEvt2, true);
+
+  // Absolute safety cap — 10 minutes
+  setTimeout(() => finish(), 600000);
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// ZOOTOPIA THEME — Celebration, Intro & Outro
+// ══════════════════════════════════════════════════════════════════════════
+
+const _ZOO_CHARS = [
+  'assets/zootopia/10-ZOOTOPIA-CHARACTERS-WE-CANT-WAIT-TO-SEE-AGAIN_Flash-1.png',
+  'assets/zootopia/1073ed2ccdce64ff3f0a77f39d18dd56.png',
+  'assets/zootopia/22-Finnick.PNG.png',
+  'assets/zootopia/248e70d3a8bb9fa5d976df4550b79db7.png',
+  'assets/zootopia/4689bcbe-9276-4f0c-9324-71fbfc6e2536.png',
+  'assets/zootopia/8kob0s60w6v71.png',
+  'assets/zootopia/BI0Wa.png',
+  'assets/zootopia/ClawhauserRender.png',
+  'assets/zootopia/Finnick_Render2.png',
+  'assets/zootopia/Flash_face_forward.png',
+  'assets/zootopia/Francine.png',
+  'assets/zootopia/Gazelle_Zootopia.png',
+  'assets/zootopia/George_Purrrnachleo.png',
+  'assets/zootopia/IMG_4949-683x1024.png',
+  'assets/zootopia/InfoChristine.png',
+  'assets/zootopia/Judy_Hopps_Z2.PNG.png',
+  'assets/zootopia/Judy_Hopps_Zootopia.png',
+  'assets/zootopia/Mayor_Lionheart.png',
+  'assets/zootopia/Nangi.PNG.png',
+  'assets/zootopia/Nick_Wilde_Z2.PNG.png',
+  'assets/zootopia/Priscilla.png',
+  'assets/zootopia/Profile_-_Bellwether_.png',
+  'assets/zootopia/Profile_-_Leodore_L_Lionheart.PNG.png',
+  'assets/zootopia/Profile_-_Mayor_Lionheart.png',
+  'assets/zootopia/Profile_-_Yax-removebg-preview.png',
+  'assets/zootopia/Yax_Render-removebg-preview.png',
+  'assets/zootopia/judy-hopps_0-d84e62a9424749fcb78da6e2b4635048.png',
+  'assets/zootopia/kaw0h3eil11g1.png',
+  'assets/zootopia/maxresdefault.png',
+  'assets/zootopia/nick_and_judy_render.png',
+  'assets/zootopia/sgwa-yang-nickpose02-removebg-preview.png',
+  'assets/zootopia/shakira-zootopia-2-trailer-still-2025-billboard-1548-removebg-preview.png',
+  'assets/zootopia/why-judy-is-such-a-wonderful-character-v0-x8v7w5nlg3ig1-removebg-preview.png',
+];
+
+const _ZOO_FX_SOUNDS = [
+  'assets/zootopia/Zoo_FX1.mp3',
+  'assets/zootopia/Zoo_FX2.mp3',
+  'assets/zootopia/Zoo_FX3.mp3',
+];
+
+// Shuffled queue — exhausts all characters before recycling
+let _zooCelebQueue = [];
+const _nextZooCelebChar = () => {
+  if (_zooCelebQueue.length === 0) {
+    _zooCelebQueue = [..._ZOO_CHARS];
+    for (let i = _zooCelebQueue.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [_zooCelebQueue[i], _zooCelebQueue[j]] = [_zooCelebQueue[j], _zooCelebQueue[i]];
+    }
+  }
+  return _zooCelebQueue.shift();
+};
+
+let _zooToastT = null;
+
+// ── Correct-answer celebration: 3 chars + random FX sound ──────────────────
+function triggerZooCelebration() {
+  const toast = document.getElementById('zoo-toast');
+  if (!toast) return;
+
+  // Play a random FX sound (Zoo_FX1, FX2, or FX3)
+  try {
+    const fxFile = _ZOO_FX_SOUNDS[Math.floor(Math.random() * _ZOO_FX_SOUNDS.length)];
+    const snd = new Audio(fxFile);
+    snd.volume = 0.8;
+    snd.play().catch(err => console.error('Zootopia FX sound failed:', err));
+  } catch (_) {}
+
+  if (_zooToastT) { clearTimeout(_zooToastT); _zooToastT = null; }
+  toast.innerHTML = '';
+  toast.classList.remove('show');
+
+  // Pick 3 unique characters from the shuffled queue
+  const pool = [_nextZooCelebChar(), _nextZooCelebChar(), _nextZooCelebChar()];
+
+  pool.forEach((src, i) => {
+    const img = document.createElement('img');
+    img.src = src;
+    img.className = 'zoo-toast-char';
+    img.alt = '';
+    img.style.width = 'clamp(160px, 20vw, 360px)';
+    // Spread three chars: left ~15%, centre ~50%, right ~82%
+    const xPositions = [15, 50, 82];
+    const x = xPositions[i] + (Math.random() * 8 - 4);
+    const y = 25 + Math.random() * 40;
+    img.style.left = `${x}%`;
+    img.style.top  = `${y}%`;
+    const delay = (i * 0.15).toFixed(2);
+    img.style.animationDelay = `${delay}s, ${(parseFloat(delay) + 0.55).toFixed(2)}s, 2.9s`;
+    toast.appendChild(img);
+  });
+
+  void toast.offsetWidth;
+  toast.classList.add('show');
+
+  _zooToastT = setTimeout(() => {
+    toast.classList.remove('show');
+    toast.innerHTML = '';
+  }, 3600);
+}
+
+// ── Intro: YouTube clip from 0:07 to 1:48, skippable ──────────────────────
+function playZooIntro(onDone) {
+  const overlay   = document.getElementById('zoo-intro-overlay');
+  const iframeEl  = document.getElementById('zoo-intro-iframe');
+  const skipZone  = document.getElementById('zoo-intro-skip-zone');
+  if (!overlay) { onDone(); return; }
+
+  const settingsOverlay = document.getElementById('quiz-settings-overlay');
+  if (settingsOverlay) settingsOverlay.classList.remove('show');
+
+  // start=7 (0:07), end=108 (1:48)
+  if (iframeEl) {
+    iframeEl.src = 'https://www.youtube.com/embed/g9lmhBYB11U?autoplay=1&start=7&end=108&controls=0&rel=0&modestbranding=1';
+  }
+
+  overlay.style.opacity    = '0';
+  overlay.style.display    = 'block';
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    overlay.style.transition = 'opacity 0.5s ease';
+    overlay.style.opacity    = '1';
+  }));
+
+  let done = false;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    document.removeEventListener('keydown', onKey, true);
+    if (skipZone) skipZone.removeEventListener('click', onClickEvt);
+    if (iframeEl) iframeEl.src = '';
+    overlay.style.transition = 'opacity 0.6s ease';
+    overlay.style.opacity    = '0';
+    setTimeout(() => {
+      overlay.style.display    = 'none';
+      overlay.style.opacity    = '';
+      overlay.style.transition = '';
+      onDone();
+    }, 650);
+  };
+
+  const onKey      = (e) => { e.stopPropagation(); finish(); };
+  const onClickEvt = (e) => { e.stopPropagation(); finish(); };
+
+  // 800ms cooldown so the "Start Quiz" click doesn't instantly skip
+  setTimeout(() => {
+    if (!done) {
+      document.addEventListener('keydown', onKey, true);
+      if (skipZone) skipZone.addEventListener('click', onClickEvt);
+    }
+  }, 800);
+
+  // Auto-advance after clip duration: 1:48 − 0:07 = 101 seconds
+  setTimeout(() => finish(), 101000);
+}
+
+// ── Outro: YouTube ending song + character pop-ins ─────────────────────────
+function playZooOutro(onDone) {
+  const overlay   = document.getElementById('zoo-outro-overlay');
+  const charStage = document.getElementById('zoo-outro-char-stage');
+  const banner    = document.getElementById('zoo-outro-banner');
+  const iframeEl  = document.getElementById('zoo-outro-iframe');
+  if (!overlay) { onDone(); return; }
+
+  charStage.innerHTML = '';
+  overlay.style.display = 'block';
+  stopQuizMusic();
+
+  if (iframeEl) {
+    iframeEl.src = 'https://www.youtube.com/embed/FW91v-Y7AEM?autoplay=1&controls=0&rel=0&modestbranding=1';
+  }
+
+  // Reveal "Well done!" banner
+  setTimeout(() => { if (banner) banner.style.opacity = '1'; }, 800);
+
+  // Shuffled outro queue
+  let _outroQueue = [];
+  const _nextOutroChar = () => {
+    if (_outroQueue.length === 0) {
+      _outroQueue = [..._ZOO_CHARS];
+      for (let i = _outroQueue.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [_outroQueue[i], _outroQueue[j]] = [_outroQueue[j], _outroQueue[i]];
+      }
+    }
+    return _outroQueue.shift();
+  };
+
+  const charTimers = [];
+  const spawnOutroChar = () => {
+    const src = _nextOutroChar();
+    const img = document.createElement('img');
+    img.src = src;
+    img.alt = '';
+    const x = 5 + Math.random() * 90;
+    const y = 15 + Math.random() * 65;
+    img.style.cssText = `position:absolute;left:${x}%;top:${y}%;
+      width:clamp(200px,30vw,450px);transform:translate(-50%,-50%) scale(0);
+      opacity:0;transition:transform 0.6s cubic-bezier(0.175,0.885,0.32,1.275),opacity 0.5s ease;
+      filter:drop-shadow(0 6px 24px rgba(59,130,246,0.8));`;
+    charStage.appendChild(img);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      img.style.transform = 'translate(-50%,-50%) scale(1)';
+      img.style.opacity   = '1';
+    }));
+    const t = setTimeout(() => {
+      img.style.opacity   = '0';
+      img.style.transform = 'translate(-50%,-50%) scale(0.6)';
+      setTimeout(() => img.remove(), 600);
+    }, 6000);
+    charTimers.push(t);
+  };
+
+  spawnOutroChar();
+  const spawnInterval = setInterval(spawnOutroChar, 2500);
+
+  let finished = false;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    clearInterval(spawnInterval);
+    charTimers.forEach(clearTimeout);
+    document.removeEventListener('keydown', onKey2,      true);
+    document.removeEventListener('click',   onClickEvt2, true);
+    if (iframeEl) iframeEl.src = '';
+    overlay.style.transition = 'opacity 0.8s ease';
+    overlay.style.opacity    = '0';
+    setTimeout(() => {
+      overlay.style.display    = 'none';
+      overlay.style.opacity    = '';
+      overlay.style.transition = '';
+      charStage.innerHTML = '';
+      if (banner) banner.style.opacity = '0';
       onDone();
     }, 850);
   };

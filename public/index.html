@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="css/kung-fu-panda.css">
   <link rel="stylesheet" href="css/totoro.css">
   <link rel="stylesheet" href="css/turning-red.css">
+  <link rel="stylesheet" href="css/zootopia.css">
 </head>
 
 <body class="min-h-screen flex flex-col items-center py-10 px-4">
@@ -547,6 +548,7 @@
               <button class="quiz-theme-chip active" data-theme="normal">🎯 Normal</button>
               <button class="quiz-theme-chip" data-theme="ben-holly">🧝 Ben &amp; Holly's Little Kingdom</button>
               <button class="quiz-theme-chip" data-theme="turning-red">🐼🔴 Turning Red</button>
+              <button class="quiz-theme-chip" data-theme="zootopia">🦊 Zootopia</button>
               <button class="quiz-theme-chip" data-theme="peppa">🐷 Peppa Pig</button>
               <button class="quiz-theme-chip" data-theme="kung-fu-panda">🐼 Kung Fu Panda</button>
               <button class="quiz-theme-chip" data-theme="totoro">🌳 My Neighbor Totoro</button>
@@ -824,6 +826,49 @@
       <!-- Finish hint -->
       <div style="position:absolute;bottom:2rem;color:rgba(255,255,255,0.5);font-size:0.8rem;font-weight:700;
         letter-spacing:0.1em;text-transform:uppercase;z-index:5">Click or press any key to finish</div>
+    </div>
+
+    <!-- Zootopia celebration toast — characters injected dynamically by JS -->
+    <div id="zoo-toast"></div>
+
+    <!-- Zootopia Quiz Intro Overlay (YouTube iframe) -->
+    <div id="zoo-intro-overlay"
+      style="display:none;position:fixed;inset:0;z-index:99999;overflow:hidden;background:#000;">
+      <!-- YouTube iframe fills screen -->
+      <iframe id="zoo-intro-iframe"
+        style="position:absolute;inset:0;width:100%;height:100%;border:none;z-index:0;"
+        allow="autoplay; fullscreen" allowfullscreen></iframe>
+      <!-- Transparent skip overlay (captures clicks without blocking iframe completely) -->
+      <div id="zoo-intro-skip-zone"
+        style="position:absolute;inset:0;z-index:2;cursor:pointer;"></div>
+      <!-- Skip hint -->
+      <div style="position:absolute;bottom:1.2rem;right:1.5rem;color:rgba(255,255,255,0.4);font-size:0.72rem;
+        font-weight:700;letter-spacing:0.1em;text-transform:uppercase;z-index:3;pointer-events:none">
+        Click or press any key to skip</div>
+    </div>
+
+    <!-- Zootopia Quiz Outro (Victory) Overlay -->
+    <div id="zoo-outro-overlay"
+      style="display:none;position:fixed;inset:0;z-index:99999;overflow:hidden;background:#0f172a;">
+      <!-- YouTube ending song iframe -->
+      <iframe id="zoo-outro-iframe"
+        style="position:absolute;inset:0;width:100%;height:100%;border:none;z-index:0;"
+        allow="autoplay; fullscreen" allowfullscreen></iframe>
+      <!-- Dark scrim so characters pop against the video -->
+      <div style="position:absolute;inset:0;background:rgba(0,0,0,0.15);z-index:1;pointer-events:none;"></div>
+      <!-- Character stage -->
+      <div id="zoo-outro-char-stage" style="position:absolute;inset:0;z-index:2;pointer-events:none;"></div>
+      <!-- Well done text at top -->
+      <div id="zoo-outro-banner" style="position:absolute;top:1.4rem;left:0;width:100%;z-index:3;text-align:center;opacity:0;
+          transition:opacity 0.8s ease;">
+        <div style="font-family:'Comic Sans MS',Georgia,serif;font-size:clamp(1rem,3vw,2rem);font-weight:700;
+          color:#bfdbfe;text-shadow:0 0 16px rgba(59,130,246,0.9),0 2px 6px rgba(0,0,0,0.7);
+          letter-spacing:0.06em;">Well done!</div>
+      </div>
+      <!-- Finish hint -->
+      <div style="position:absolute;bottom:2rem;left:0;width:100%;text-align:center;color:rgba(255,255,255,0.45);
+        font-size:0.8rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;z-index:4">
+        Click or press any key to finish</div>
     </div>
 
     <!-- Kung Fu Panda Quiz Intro Overlay -->

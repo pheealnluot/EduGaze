@@ -1,0 +1,44 @@
+/* zootopia.css — Zootopia theme styles */
+
+/* ── Toast characters (correct-answer celebration) ──────────────────── */
+#zoo-toast {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 99990;
+  display: none;
+}
+#zoo-toast.show { display: block; }
+
+.zoo-toast-char {
+  position: absolute;
+  width: clamp(160px, 20vw, 360px);
+  transform: translate(-50%, -50%) scale(0);
+  opacity: 0;
+  animation:
+    zooPopIn  0.55s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards,
+    zooFloat  2.4s  ease-in-out infinite,
+    zooFadeOut 0.4s ease 2.9s forwards;
+}
+
+@keyframes zooPopIn {
+  0%   { transform: translate(-50%, -50%) scale(0)    rotate(-15deg); opacity: 0; }
+  60%  { transform: translate(-50%, -50%) scale(1.15) rotate(5deg);   opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(1)    rotate(0deg);   opacity: 1; }
+}
+
+@keyframes zooFloat {
+  0%, 100% { margin-top: 0px; }
+  50%       { margin-top: -16px; }
+}
+
+@keyframes zooFadeOut {
+  to { opacity: 0; transform: translate(-50%, -50%) scale(0.7); }
+}
+
+/* ── Outro bounce ────────────────────────────────────────────────────── */
+@keyframes zooBounce {
+  0%   { transform: translateY(0)     rotate(-2deg) scale(1);    }
+  50%  { transform: translateY(-22px) rotate( 3deg) scale(1.06); }
+  100% { transform: translateY(0)     rotate(-2deg) scale(1);    }
+}
