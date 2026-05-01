@@ -553,8 +553,8 @@
     body.quiz-active #quiz-answers-grid {
       width: 100%;
       max-width: none;
-      flex: 1 1 0;
-      /* grow to fill remaining height */
+      flex: 1 1 0 !important;
+      /* grow to fill remaining height — !important overrides any JS inline height */
       min-height: 0;
       /* allow shrinking below content size */
       display: grid;
@@ -563,7 +563,7 @@
       align-content: stretch;
       align-items: stretch;
       gap: 16px;
-      padding: 0 16px 10px;
+      padding: 0 16px;
       box-sizing: border-box;
       overflow: hidden;
     }

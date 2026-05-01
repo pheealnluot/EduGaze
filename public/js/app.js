@@ -2555,9 +2555,11 @@
     // Stores resolved URLs or raw SVG code for questions/answers
     const quizResolvedVisuals = new Map(); // key: keyword, value: { url, svg }
 
-    async function resolveVisual(keyword, context = [], questionText = '') {
+    async function resolveVisual(keyword, context = [], questionText = '', opts = {}) {
       if (!keyword) return null;
-      if (quizResolvedVisuals.has(keyword)) return quizResolvedVisuals.get(keyword);
+      if (quizResolvedVisuals.has(keyword) && !opts.forceAI) return quizResolvedVisuals.get(keyword);
+      // Store correct answer for SVG generation consistency
+      const _correctAnswer = opts.correctAnswer || '';
 
       // ── Fast path: single Chinese character display ────────────────────────
       // If the keyword IS a Chinese character (1–4 chars, all CJK), render it
@@ -2600,15 +2602,19 @@
       // Only use AI SVG when the question demands an exact diagram AND the
       // keyword is an abstract math/geometry concept. Real-world objects
       // (vehicles, animals, landmarks) must ALWAYS use Pixabay/Wikimedia.
-      const isMathKeyword = /^(number line|bar graph|pie chart|fraction|decimal|ruler|protractor|analog clock|clock face|cylinder|sphere|pyramid|cone|cube|cuboid|prism|venn diagram|tally chart|pattern|sequence|shapes?|circles?|triangles?|squares?|rectangles?|arrows?|blocks?|cubes?|coins?|dice|dots?|lines?|stars?|groups?|sets?)$/.test(kw);
+      const isMathKeyword = /^(number line|bar graph|pie chart|fraction|decimal|ruler|protractor|analog clock|clock face|cylinder|sphere|pyramid|cone|cube|cuboid|prism|venn diagram|tally chart|pattern|sequence|shapes?|circles?|triangles?|squares?|rectangles?|arrows?|blocks?|cubes?|coins?|dice|dots?|lines?|stars?|groups?|sets?|shaded.*(figure|shape|area|region)|grid|area|perimeter|angle|symmetry|reflection|rotation)s?$/i.test(kw);
       const isPrecisionQuestion =
         qtxt.includes('how many') || qtxt.includes('count') || qtxt.includes('measure') ||
         qtxt.includes('ruler') || qtxt.includes('protractor') || qtxt.includes('fraction') ||
         qtxt.includes('decimal') || qtxt.includes('graph') || qtxt.includes('chart') ||
         qtxt.includes('pattern') || qtxt.includes('sequence') || qtxt.includes('comes next') ||
-        qtxt.includes('what comes') || qtxt.includes('which comes') || qtxt.includes('number line');
-      // Only use AI SVG if BOTH the question needs precision AND the keyword is abstract
-      const isPreciseDiagram = isPrecisionQuestion && isMathKeyword;
+        qtxt.includes('what comes') || qtxt.includes('which comes') || qtxt.includes('number line') ||
+        qtxt.includes('area') || qtxt.includes('perimeter') || qtxt.includes('angle') ||
+        qtxt.includes('shaded') || qtxt.includes('figure') || qtxt.includes('shape') ||
+        qtxt.includes('symmetry') || qtxt.includes('reflect') || qtxt.includes('rotat');
+      // Use AI SVG if the question is math/precision AND keyword is abstract,
+      // OR if the keyword itself is clearly a math diagram concept
+      const isPreciseDiagram = (isPrecisionQuestion && isMathKeyword) || isMathKeyword;
 
       // ── Search keyword enrichment ───────────────────────────────────────────
       // Real-world keywords need a 'photo' bias so image APIs return photographs
@@ -2619,7 +2625,8 @@
       const isFlag = kw.includes('flag');
 
       // ── Real photo sources (Pixabay → Wikimedia) ───────────────────────────
-      if (!isPreciseDiagram) {
+      // Skip photo sources if forceAI is set (Math questions always use AI SVG)
+      if (!isPreciseDiagram && !opts.forceAI) {
         // Pixabay: use image_type=photo for real-photo filtering — do NOT append
         // "photo" to the query text because it changes semantic meaning.
         // e.g. "Taj Mahal photo" → returns a photographer, not the building.
@@ -2724,7 +2731,7 @@
 
       // ── Last resort: AI SVG ────────────────────────────────────────────────
       // Only reached for precise math diagrams OR if both photo sources failed.
-      const aiSvg = await generateAISVG(keyword, null, context);
+      const aiSvg = await generateAISVG(keyword, null, context, questionText, _correctAnswer);
       if (aiSvg) {
         const res = { url: null, svg: aiSvg, source: 'ai' };
         quizResolvedVisuals.set(keyword, res);
@@ -2740,7 +2747,12 @@
       for (const q of batch) {
         // Resolve question image
         if (q.questionImageKeyword) {
-          resolveVisual(q.questionImageKeyword, q.answers.map(a => a.text), q.question);
+          const isMath = /^(math|mathematics)$/i.test(q._subject || q.subject || '');
+          const correctAns = q.answers?.find(a => String(a.id) === String(q.correctId));
+          resolveVisual(q.questionImageKeyword, q.answers.map(a => a.text), q.question, {
+            forceAI: isMath,
+            correctAnswer: correctAns?.text || ''
+          });
         }
         // Resolve answer images
         if (q.answers) {
@@ -2752,7 +2764,7 @@
     }
 
     // ── AI Graphic Generator (SVG) ───────────────────────────────────────────
-    async function generateAISVG(keyword, container, answerContext = []) {
+    async function generateAISVG(keyword, container, answerContext = [], questionText = '', correctAnswer = '') {
       if (!keyword) return null;
 
       let loader = null;
@@ -2779,14 +2791,22 @@
       const cleanup = () => { if (timerInt) clearInterval(timerInt); if (loader) loader.remove(); };
 
       const prompt = `Generate a simple, clean, educational SVG diagram for a Primary 2 student for the keyword: "${keyword}".
+${questionText ? `Question: "${questionText}"` : ''}
+${correctAnswer ? `The correct answer is: "${correctAnswer}". The diagram MUST be mathematically consistent with this answer. For example, if the question asks for a missing number in a sequence and the answer is "0.5", draw the sequence so that "0.5" is the correct missing value.` : ''}
 Rules:
-- Use clear lines and high contrast (use a dark theme: lines should be light colors like white, yellow, or cyan).
+- Use clear lines and high contrast (use a dark theme: lines should be light colors like white, yellow, or cyan on dark/black background).
 - Make it visually accurate for a math/science problem.
-- ABSOLUTELY NEVER include any answer choice values, numbers that are answers, or labels that reveal the answer in the diagram.
-- For counting questions (e.g. "how many circles"): draw EXACTLY the number of items that matches the correct answer. Do NOT label groups with numbers.
+- CRITICAL: The diagram MUST include ALL measurements, dimensions, labels, and information that a student needs to solve the question. For example:
+  * "What is the perimeter?" → label side lengths (e.g. "8 cm")
+  * "What is the area?" → label width and height
+  * "What angle?" → show angle measurement arc with degree marking
+  * "How many?" → draw the exact correct count of objects
+  * "What fraction is shaded?" → shade the correct portion and label the total parts
+  * "Missing number in sequence?" → show the sequence with the correct surrounding values so the pattern leads to the correct answer
+- ABSOLUTELY NEVER write the correct answer "${correctAnswer || '[answer]'}" directly in the diagram. Only include the INPUT data (dimensions, surrounding values, labels) from which the answer can be calculated.
 - ${answerContext.length > 0
-          ? 'Context: the answer choices are: ' + answerContext.join(', ') + '. DO NOT write any of these values as text labels in the SVG. Only draw the visual objects.'
-          : 'DO NOT include the names of any objects in the image. DO NOT write any text labels except for axis numbers on a graph or markings on a ruler/clock.'}
+          ? 'The answer choices are: ' + answerContext.join(', ') + '. Do NOT write any of these answer values in the SVG.'
+          : ''}
 - Viewbox should be 200x150 or similar.
 - Return ONLY the raw <svg>...</svg> code. No markdown, no triple backticks.`;
 
@@ -2915,6 +2935,12 @@ CRITICAL OUTPUT RULES:
 - Strictly match education level ${eduLevel}.
 - Chinese: Topic FIRST, then question word.
 - ALWAYS generate exactly 4 answer choices per question. NEVER generate 2 or 3 answers. NEVER use binary yes/no or true/false format. Always provide 4 distinct plausible options.
+- MATH QUESTIONS WITH IMAGES: Math questions MUST ONLY use Step 2 format (image in question, text-only answers). NEVER put images in Math answer boxes. The questionImageKeyword for Math MUST be a DETAILED diagram description that includes ALL exact dimensions, values, and layout needed to solve the question. Examples:
+  * Instead of "rectangle", write "rectangle 8cm wide 5cm tall"
+  * Instead of "number line", write "number line showing 1.0 1.02 ? 1.06 1.08 with ? at position 3"
+  * Instead of "shaded shape", write "outer rectangle 12cm x 8cm with inner rectangle 6cm x 4cm shaded"
+  * Instead of "bar graph", write "bar graph with values Red=5 Blue=8 Green=3 Yellow=6"
+  The SVG generator will use this description to draw an EXACT, mathematically consistent diagram. Math answers must always be text-only numbers or words.
 - COUNTING QUESTIONS: NEVER use questionImageKeyword for counting questions about real-world objects (apples, animals, people, etc.) because sourced photos show unpredictable quantities. Counting questions MUST be either: (a) text-only (describe the scenario in words), or (b) use abstract shapes as questionImageKeyword (circles, dots, stars shape, blocks) which will be rendered as precise diagrams. NEVER ask "How many X are in the picture?" with a real-world keyword.
 - FLAG / COUNTRY QUESTIONS: Flag and country identification questions MUST use Step 3 (images in answers). NEVER put a flag or country image in the question box — that gives away the answer. Each answer MUST have an imageKeyword. For flag questions use "[Country] flag" as imageKeyword. For country questions use a representative keyword like a famous landmark, iconic food, or scenery (e.g. "Eiffel Tower" for France, "Mount Fuji" for Japan, "pizza" for Italy).
 - CHINESE CHARACTER IMAGE CONSISTENCY: If you generate a Chinese character recognition question with a questionImageKeyword (e.g. the question asks "Is this character X?"), the questionImageKeyword MUST be the SAME character that the question asks about. The correctId must logically match — if the image shows X and the question asks "Is this X?", the correct answer must be "yes/是". Do NOT set the imageKeyword to a different character than what the question references.${imageKeywordInstruction}
@@ -3009,6 +3035,21 @@ Return exactly this JSON (replace [text], [answer], [kw] with real values — fo
           }
         }
 
+        // ── Math questions: force Step 2 only (image in Q, text answers) ──
+        // Math should never have images in answers — strip them.
+        const isMathQ = /^(math|mathematics)$/i.test(q._subject || '') ||
+          /^(math|mathematics)$/i.test(q.subject || '') ||
+          /\b(fraction|decimal|equivalent|perimeter|area|arithmetic|calculate|equation|multiply|divide|angle|symmetry|geometry|number line)\b/i.test(qLower);
+        if (isMathQ && q.answers) {
+          let hadAnswerImages = false;
+          q.answers.forEach(a => {
+            if (a.imageKeyword) { hadAnswerImages = true; delete a.imageKeyword; }
+          });
+          if (hadAnswerImages) {
+            console.warn('[Quiz] Stripped answer images from Math question (must be text-only):', q.question);
+          }
+        }
+
         // ── Step 2 → Step 3 auto-correction ─────────────────────────────────
         // Comparison questions ("Which X is Y?", "Identify the...", "Where is...")
         // must NOT show the answer image in the question box (gives it away).
@@ -3019,6 +3060,7 @@ Return exactly this JSON (replace [text], [answer], [kw] with real values — fo
         const hasDemonstrative = /\b(this|that|these)\b/i.test(qLower) ||
           /\bthe (picture|image|photo|diagram)\b/i.test(qLower);
         const isComparisonQ = /\b(which|identify|where)\b/i.test(qLower) &&
+          !isMathQ &&
           !hasDemonstrative &&
           !qLower.includes('how many') && !qLower.includes('count') &&
           !qLower.includes('look at') && !qLower.includes('what is shown');
@@ -3743,7 +3785,12 @@ Return exactly this JSON (replace [text], [answer], [kw] with real values — fo
         _startLoader();
 
         // Resolve via Pixabay → Wikimedia → AI SVG (uses cache)
-        resolveVisual(q.questionImageKeyword, [], q.question).then(res => {
+        const _isMathSubject = /^(math|mathematics)$/i.test(q._subject || q.subject || '');
+        const _correctAnsObj = q.answers?.find(a => String(a.id) === String(q.correctId));
+        resolveVisual(q.questionImageKeyword, [], q.question, {
+          forceAI: _isMathSubject,
+          correctAnswer: _correctAnsObj?.text || ''
+        }).then(res => {
           _stopLoader();
           if (res?.url) {
             qImg.src = res.url;
@@ -3752,6 +3799,8 @@ Return exactly this JSON (replace [text], [answer], [kw] with real values — fo
               qImgWrap.style.background = 'transparent';
               _showQBadge(res.source || 'pixabay');
               requestAnimationFrame(() => requestAnimationFrame(() => _sizeAnswerGrid()));
+              setTimeout(() => _sizeAnswerGrid(), 200);
+              setTimeout(() => _sizeAnswerGrid(), 600);
             };
             qImg.onerror = () => handleImageFail();
           } else if (res?.svg) {
@@ -3762,6 +3811,8 @@ Return exactly this JSON (replace [text], [answer], [kw] with real values — fo
               svgEl.style.display = 'block'; qImgWrap.style.background = 'transparent';
               _showQBadge('ai');
               requestAnimationFrame(() => requestAnimationFrame(() => _sizeAnswerGrid()));
+              setTimeout(() => _sizeAnswerGrid(), 200);
+              setTimeout(() => _sizeAnswerGrid(), 600);
             }
           } else { handleImageFail(); }
         }).catch(() => handleImageFail());
@@ -3997,6 +4048,14 @@ Return exactly this JSON (replace [text], [answer], [kw] with real values — fo
 
         const fontSizeClass = `quiz-font-${quizSettings.fontSize}`;
         const hasImageType = (quizSettings.contentTypes || []).includes('image');
+        // ── Render-time Math guard: strip answer images for Math questions ──
+        const _renderIsMath = /^(math|mathematics)$/i.test(q._subject || '') ||
+          /^(math|mathematics)$/i.test(q.subject || '') ||
+          /\b(fraction|decimal|equivalent|perimeter|area|calculate|equation|multiply|divide|angle|geometry)\b/i.test((q.question || '').toLowerCase());
+        if (_renderIsMath && answer.imageKeyword) {
+          console.warn('[Quiz][Render] Stripping answer imageKeyword for Math:', answer.imageKeyword);
+          delete answer.imageKeyword;
+        }
         const imageKeyword = answer.imageKeyword || '';
 
         if (hasImageType && imageKeyword) {
@@ -4290,40 +4349,39 @@ Return exactly this JSON (replace [text], [answer], [kw] with real values — fo
     }
 
     // ── Dynamic answer-grid sizer ──────────────────────────────────────────
-    // Directly measures remaining viewport height after the question section
-    // and applies it to the grid — works regardless of CSS cascade depth.
+    // For quiz mode: CSS flex:1 handles the layout. We just ensure no stale
+    // explicit height overrides the flex rule.
+    // For education mode: still uses JS height calculation.
     function _sizeAnswerGrid() {
       const isQuiz = document.body.classList.contains('quiz-active');
       const isEdu = document.body.classList.contains('education-active');
       if (!isQuiz && !isEdu) return;
 
       const gridId = isQuiz ? 'quiz-answers-grid' : 'answers-grid';
-      const viewId = isQuiz ? 'view-quiz' : 'view-education';
       const grid = document.getElementById(gridId);
-      const view = document.getElementById(viewId);
-      if (!grid || !view) return;
+      if (!grid) return;
 
-      const q = isEdu ? getActiveQ() : null;
-      if (isEdu && (!q || !q.maximizeSpacing)) {
+      if (isQuiz) {
+        // Quiz mode: CSS flex:1 1 0 !important handles the height.
+        // Just clear any stale explicit height that might override flex.
         grid.style.removeProperty('height');
         return;
       }
 
-      // Quiz mode header or Education mode header
-      const qSection = isQuiz
-        ? view.querySelector('.quiz-question-section')
-        : view.querySelector('div:first-child'); // The header containing prev/next/question
+      // Education mode: use JS height calculation
+      const viewId = 'view-education';
+      const view = document.getElementById(viewId);
+      if (!view) return;
 
-      if (!qSection) return;
+      const q = getActiveQ();
+      if (!q || !q.maximizeSpacing) {
+        grid.style.removeProperty('height');
+        return;
+      }
 
-      // CRITICAL: Clear any previous explicit height first so flex layout
-      // can position the grid naturally. Then measure its true position.
       grid.style.removeProperty('height');
-      // Force layout reflow so getBoundingClientRect reflects the flex layout
       void grid.offsetHeight;
-      // Now measure the grid's natural position (after flex reflow)
       const gridTop = grid.getBoundingClientRect().top;
-      // Fill from grid top to viewport bottom
       const available = window.innerHeight - gridTop;
       grid.style.setProperty('height', Math.max(120, available) + 'px', 'important');
     }
