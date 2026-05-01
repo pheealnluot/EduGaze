@@ -3177,7 +3177,9 @@ CRITICAL OUTPUT RULES:
   For real-world Science subjects (animals, plants, body parts), use Pixabay photos instead.
 - COUNTING QUESTIONS: NEVER use questionImageKeyword for counting questions about real-world objects (apples, animals, people, etc.) because sourced photos show unpredictable quantities. Counting questions MUST be either: (a) text-only (describe the scenario in words), or (b) use abstract shapes as questionImageKeyword (circles, dots, stars shape, blocks) which will be rendered as precise diagrams. NEVER ask "How many X are in the picture?" with a real-world keyword.
 - FLAG / COUNTRY QUESTIONS: Flag and country identification questions MUST use Step 3 (images in answers). NEVER put a flag or country image in the question box — that gives away the answer. Each answer MUST have an imageKeyword. For flag questions use "[Country] flag" as imageKeyword. For country questions use a representative keyword like a famous landmark, iconic food, or scenery (e.g. "Eiffel Tower" for France, "Mount Fuji" for Japan, "pizza" for Italy).
-- CHINESE CHARACTER IMAGE CONSISTENCY: If you generate a Chinese character recognition question with a questionImageKeyword (e.g. the question asks "Is this character X?"), the questionImageKeyword MUST be the SAME character that the question asks about. The correctId must logically match — if the image shows X and the question asks "Is this X?", the correct answer must be "yes/是". Do NOT set the imageKeyword to a different character than what the question references.${imageKeywordInstruction}
+- CHINESE CHARACTER IMAGE CONSISTENCY: If you generate a Chinese character recognition question with a questionImageKeyword (e.g. the question asks "Is this character X?"), the questionImageKeyword MUST be the SAME character that the question asks about. The correctId must logically match — if the image shows X and the question asks "Is this X?", the correct answer must be "yes/是". Do NOT set the imageKeyword to a different character than what the question references.
+- SELF-REFERENTIAL QUESTIONS (MOST IMPORTANT): NEVER generate a question that says "this character", "this word", "this letter", "这个汉字", "这个字", "这张图", "this image", "this picture", or ANY phrase that points to something the student must see — UNLESS you also set questionImageKeyword to show exactly that thing. If you cannot specify what to show (e.g. you want to show a character in a specific colour), you MUST include the character as questionImageKeyword with full detail (e.g. "Chinese character 马 written in red"). If you cannot provide a meaningful questionImageKeyword, rephrase the question to NOT use "this" and instead describe the object explicitly in the question text itself.
+- COLOR-OF-CHARACTER QUESTIONS: If a question asks what colour a Chinese character is written in (e.g. "这个汉字是什么颜色"), use Step 2 format: set questionImageKeyword to the character written in the target colour (e.g. "Chinese character 马 in red color on white background"), and give text-only color answers (红色, 蓝色, 绿色, 黄色). NEVER use image answers for color options — Pixabay color searches return irrelevant results.${imageKeywordInstruction}
 
 Return exactly this JSON (replace [text], [answer], [kw] with real values — follow the image-XOR rule strictly):
 {"questions":[${questionTemplate}]}`;
@@ -3286,6 +3288,17 @@ Return exactly this JSON (replace [text], [answer], [kw] with real values — fo
           .trim();
       }
     }
+
+    // ── Self-referential question guard ────────────────────────────────────
+    // Questions that say "this character / 这个汉字 / 这个字" etc. are
+    // unanswerable if no questionImageKeyword is provided to show the item.
+    const selfRefPattern = /这个汉字|这个字|这张图|this character|this word|this letter|this image|this picture/i;
+    if (selfRefPattern.test(q.question) && !q.questionImageKeyword) {
+      console.warn('[Quiz] Replacing self-referential question with no image:', q.question);
+      batch[qi] = pickFromBank();
+      continue;
+    }
+
 
     // ── Math questions: force Step 2 only (image in Q, text answers) ──
     // Math should never have images in answers — strip them.
