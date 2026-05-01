@@ -2915,7 +2915,7 @@ CRITICAL OUTPUT RULES:
 - Strictly match education level ${eduLevel}.
 - Chinese: Topic FIRST, then question word.
 - ALWAYS generate exactly 4 answer choices per question. NEVER generate 2 or 3 answers. NEVER use binary yes/no or true/false format. Always provide 4 distinct plausible options.
-- COUNTING QUESTIONS: For "How many X are there?" questions, the image will show EXACTLY the number matching the correct answer. Make sure correctId points to the actual count. The other 3 answers must be plausible but wrong numbers.
+- COUNTING QUESTIONS: NEVER use questionImageKeyword for counting questions about real-world objects (apples, animals, people, etc.) because sourced photos show unpredictable quantities. Counting questions MUST be either: (a) text-only (describe the scenario in words), or (b) use abstract shapes as questionImageKeyword (circles, dots, stars shape, blocks) which will be rendered as precise diagrams. NEVER ask "How many X are in the picture?" with a real-world keyword.
 - FLAG / COUNTRY QUESTIONS: Flag and country identification questions MUST use Step 3 (images in answers). NEVER put a flag or country image in the question box — that gives away the answer. Each answer MUST have an imageKeyword. For flag questions use "[Country] flag" as imageKeyword. For country questions use a representative keyword like a famous landmark, iconic food, or scenery (e.g. "Eiffel Tower" for France, "Mount Fuji" for Japan, "pizza" for Italy).
 - CHINESE CHARACTER IMAGE CONSISTENCY: If you generate a Chinese character recognition question with a questionImageKeyword (e.g. the question asks "Is this character X?"), the questionImageKeyword MUST be the SAME character that the question asks about. The correctId must logically match — if the image shows X and the question asks "Is this X?", the correct answer must be "yes/是". Do NOT set the imageKeyword to a different character than what the question references.${imageKeywordInstruction}
 
@@ -2988,6 +2988,25 @@ Return exactly this JSON (replace [text], [answer], [kw] with real values — fo
               }
             }
           });
+        }
+
+        // ── Counting questions + real-world images guard ────────────────────
+        // "How many apples in the picture?" with a questionImageKeyword is broken
+        // because Pixabay returns unpredictable quantities. Strip the image and
+        // make it text-only, or keep it only if the keyword is an abstract shape.
+        const isCountingQ = /how many|几个|几只|几条|几块|数一数|count/i.test(qLower);
+        if (isCountingQ && q.questionImageKeyword) {
+          const kwLower = (q.questionImageKeyword || '').toLowerCase();
+          const isAbstractKw = /^(circle|dot|star|block|cube|square|triangle|shape|line|arrow|coin|dice|group|set)s?$/.test(kwLower);
+          if (!isAbstractKw) {
+            console.warn('[Quiz] Stripping image from real-world counting question:', q.question);
+            delete q.questionImageKeyword;
+            // Remove "in the picture" / "图片里" / "Look at the picture" from question text
+            q.question = (q.question || '')
+              .replace(/[。，]?\s*(看图[。，]?|图片里|Look at the picture\.?\s*)/gi, '')
+              .replace(/\s*in (the|this) (picture|image|photo)\s*/gi, ' ')
+              .trim();
+          }
         }
 
         // ── Step 2 → Step 3 auto-correction ─────────────────────────────────
