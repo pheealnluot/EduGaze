@@ -3185,6 +3185,14 @@ CRITICAL OUTPUT RULES:
   When a self-referential question DOES have a questionImageKeyword, it MUST use Step 2 format ONLY: image goes in the question, ALL answers must be TEXT-ONLY. NEVER add imageKeyword to the answers of a self-referential question.
 - COLOR-OF-CHARACTER QUESTIONS: If a question asks what colour a Chinese character is written in (e.g. "这个汉字是什么颜色"), use Step 2 format: set questionImageKeyword to the character written in the target colour (e.g. "Chinese character 马 in red color on white background"), and give text-only color answers (红色, 蓝色, 绿色, 黄色). NEVER use image answers for color options — Pixabay color searches return irrelevant results.${imageKeywordInstruction}
 
+SELF-REFERENTIAL QUESTION FORMAT EXAMPLE (follow this exact JSON structure):
+When a question says "图片显示的是哪一个方位?" or "What direction does the picture show?", the ONLY valid format is:
+{"question":"图片显示的是哪一个方位?","questionImageKeyword":"arrow pointing right","answers":[{"id":"1","text":"上"},{"id":"2","text":"下"},{"id":"3","text":"左"},{"id":"4","text":"右"}],"correctId":"4"}
+Notice: questionImageKeyword is set, NO imageKeyword on any answer, all answers are text strings.
+Another example — colour of a character:
+{"question":"这个汉字是什么颜色?","questionImageKeyword":"Chinese character 马 written in red on white background","answers":[{"id":"1","text":"红色"},{"id":"2","text":"蓝色"},{"id":"3","text":"绿色"},{"id":"4","text":"黄色"}],"correctId":"1"}
+Do NOT produce any other format for self-referential questions.
+
 Return exactly this JSON (replace [text], [answer], [kw] with real values — follow the image-XOR rule strictly):
 {"questions":[${questionTemplate}]}`;
 
@@ -3193,7 +3201,7 @@ Return exactly this JSON (replace [text], [answer], [kw] with real values — fo
   console.log('[Quiz] fetchQuizBatch — subjects:', allSubjects, '| level:', eduLevel, '| types:', types);
 
 
-  let text = await window.callGemini(prompt, { temperature: 0.95 });
+  let text = await window.callGemini(prompt, { temperature: 0.7 });
   if (!text) throw new Error('AI returned no content');
   const parsed = extractJSON(text);
   if (!parsed) throw new Error('AI returned malformed data');
@@ -4540,6 +4548,9 @@ function renderQuizBoard() {
           } else if (currentQuizTheme === 'totoro') {
             triggerTotoroCelebration();
             _quizVoiceDelay = Date.now() + 3200;
+          } else if (currentQuizTheme === 'turning-red') {
+            triggerTRCelebration();
+            _quizVoiceDelay = Date.now() + 3200;
           } else {
             _quizVoiceDelay = Date.now() + 1500;
           }
@@ -5736,6 +5747,7 @@ function showQuizWin() {
   if (quizSettings.theme === 'ben-holly') playBenHollyOutro(standardFinish);
   else if (quizSettings.theme === 'kung-fu-panda') playKungFuPandaOutro(standardFinish);
   else if (quizSettings.theme === 'totoro') playTotoroOutro(standardFinish);
+  else if (quizSettings.theme === 'turning-red') playTROutro(standardFinish);
   else standardFinish();
 }
 function _doStartQuiz() {
@@ -5796,6 +5808,13 @@ window.startQuiz = () => {
     _introPrefetchPromise = fetchQuizBatch().catch(() => null);
     // Play Totoro trailer intro; _doStartQuiz fires once video ends/is skipped
     playTotoroIntro(() => _doStartQuiz());
+    return;
+  }
+  if (quizSettings.theme === 'turning-red') {
+    // Kick off AI generation immediately while intro video plays
+    _introPrefetchPromise = fetchQuizBatch().catch(() => null);
+    // Play Turning Red intro; _doStartQuiz fires once video ends/is skipped
+    playTRIntro(() => _doStartQuiz());
     return;
   }
   _doStartQuiz();
@@ -6551,4 +6570,272 @@ if (peppaSpeedInput) {
     appData.peppaSpeed = parseFloat(e.target.value);
     updatePeppaSpeedFactor();
   };
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// TURNING RED THEME — Celebration, Intro & Outro
+// ══════════════════════════════════════════════════════════════════════════
+
+const _TR_CHARS = [
+  'assets/turningred/08b4b8ec0bff5bb9b54f7087bf3a8bfa.png',
+  'assets/turningred/20e1e3dc4eba395fcac821768127760d.png',
+  'assets/turningred/4-town-turning-red-personality-pose.png',
+  'assets/turningred/4craehx5nvv81.png',
+  'assets/turningred/76663faffcef68227774db3f42b84797.png',
+  'assets/turningred/Abby_in_turningred_video.png',
+  'assets/turningred/Aunts-turningred.png',
+  'assets/turningred/Chen_29.png',
+  'assets/turningred/Mei_Lee.png',
+  'assets/turningred/Mei_Lee_Red_Panda.png',
+  'assets/turningred/Meilin_Lee.png',
+  'assets/turningred/Meilin_Lee_29.png',
+  'assets/turningred/Miriam_Mendelsohn.png',
+  'assets/turningred/Miriam_Render.png',
+  'assets/turningred/Priya.png',
+  'assets/turningred/Priya_Mangal_Profile.png',
+  'assets/turningred/Profile_-_Mei_Lee.png',
+  'assets/turningred/Profile_-_Ming_Lee.png',
+  'assets/turningred/Robaire_Sprite.png',
+  'assets/turningred/Screenshot_2022-03-18_8.02.04_PM.png',
+  'assets/turningred/Turning-Red.png',
+  'assets/turningred/Turning_Red_-_4Town.png',
+  'assets/turningred/Tyler.png',
+  'assets/turningred/Tyler_making_fun_of_Mei_during_gym_class.png',
+  'assets/turningred/a3e7f155bb29bcf38446aa181c2acfbf.png',
+  'assets/turningred/b59771993ded8ad9f33d1c0dce7299f8.png',
+  'assets/turningred/christopher-sanchez-prtfolio2.png',
+  'assets/turningred/g6blne1mvmn81.png',
+  'assets/turningred/mingsmom.png',
+  'assets/turningred/pp_turningred_herobanner_mobile_21513_af22610c.png',
+  'assets/turningred/priya-from-pixars-turning-red-i-saw-so-much-of-my-younger-v0-xn8do4vqb0n81.png',
+  'assets/turningred/t-posing-mei-is-quite-a-scary-sight-to-see-v0-o3qfllkqd5w81.png',
+  'assets/turningred/turning-red-pixar-pandas-endangered-climate-change-1-1280x691.png',
+];
+
+const _TR_BACKGROUNDS = [
+  'assets/turningred/background1.png',
+  'assets/turningred/background2.png',
+  'assets/turningred/background3.png',
+];
+
+// Shuffled queue — exhausts all characters before recycling
+let _trCelebQueue = [];
+const _nextTRCelebChar = () => {
+  if (_trCelebQueue.length === 0) {
+    _trCelebQueue = [..._TR_CHARS];
+    for (let i = _trCelebQueue.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [_trCelebQueue[i], _trCelebQueue[j]] = [_trCelebQueue[j], _trCelebQueue[i]];
+    }
+  }
+  return _trCelebQueue.shift();
+};
+
+let _trToastT = null;
+
+// ── Correct-answer celebration: 3 random Turning Red characters pop in ─────
+function triggerTRCelebration() {
+  const toast = document.getElementById('tr-toast');
+  if (!toast) return;
+
+  // Play a random FX sound (FX1 or FX2)
+  try {
+    const fxFile = Math.random() < 0.5 ? 'assets/turningred/FX1.mp3' : 'assets/turningred/FX2.mp3';
+    const snd = new Audio(fxFile);
+    snd.volume = 0.8;
+    snd.play().catch(err => console.error('Turning Red FX sound failed:', err));
+  } catch (_) {}
+
+  if (_trToastT) { clearTimeout(_trToastT); _trToastT = null; }
+  toast.innerHTML = '';
+  toast.classList.remove('show');
+
+  // Pick 3 unique characters from the shuffled queue
+  const pool = [_nextTRCelebChar(), _nextTRCelebChar(), _nextTRCelebChar()];
+
+  // 20vw = 20% of viewport width; ensure at least 20% screen coverage
+  const charSize = 'clamp(160px, 20vw, 380px)';
+
+  pool.forEach((src, i) => {
+    const img = document.createElement('img');
+    img.src = src;
+    img.className = 'tr-toast-char';
+    img.alt = '';
+    img.style.width = charSize;
+    // Spread three chars: left ~15%, centre ~50%, right ~82%
+    const xPositions = [15, 50, 82];
+    const x = xPositions[i] + (Math.random() * 8 - 4); // ±4% jitter
+    const y = 25 + Math.random() * 40;
+    img.style.left = `${x}%`;
+    img.style.top  = `${y}%`;
+    // Stagger animation delay for each character
+    const delay = (i * 0.15).toFixed(2);
+    img.style.animationDelay = `${delay}s, ${(parseFloat(delay) + 0.55).toFixed(2)}s, 2.9s`;
+    toast.appendChild(img);
+  });
+
+  void toast.offsetWidth;
+  toast.classList.add('show');
+
+  _trToastT = setTimeout(() => {
+    toast.classList.remove('show');
+    toast.innerHTML = '';
+  }, 3600);
+}
+
+// ── Intro scene: play title .mkv, skip on click / keypress ────────────────
+function playTRIntro(onDone) {
+  const overlay = document.getElementById('tr-intro-overlay');
+  const video   = document.getElementById('tr-intro-video');
+  if (!overlay || !video) { onDone(); return; }
+
+  const settingsOverlay = document.getElementById('quiz-settings-overlay');
+  if (settingsOverlay) settingsOverlay.classList.remove('show');
+
+  overlay.style.opacity   = '0';
+  overlay.style.display   = 'flex';
+
+  video.currentTime = 0;
+  video.volume      = 0.9;
+  const playPromise = video.play();
+  if (playPromise) playPromise.catch(() => {});
+
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    overlay.style.transition = 'opacity 0.5s ease';
+    overlay.style.opacity    = '1';
+  }));
+
+  let done = false;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    document.removeEventListener('keydown', onKey, true);
+    document.removeEventListener('click',   onClickEvt, true);
+    video.pause();
+    overlay.style.transition = 'opacity 0.6s ease';
+    overlay.style.opacity    = '0';
+    setTimeout(() => {
+      overlay.style.display    = 'none';
+      overlay.style.opacity    = '';
+      overlay.style.transition = '';
+      video.currentTime        = 0;
+      onDone();
+    }, 650);
+  };
+
+  const onKey      = (e) => { e.stopPropagation(); finish(); };
+  const onClickEvt = (e) => { e.stopPropagation(); finish(); };
+
+  // 800ms cooldown so the "Start Quiz" click doesn't instantly skip
+  setTimeout(() => {
+    if (!done) {
+      document.addEventListener('keydown', onKey,      true);
+      document.addEventListener('click',   onClickEvt, true);
+    }
+  }, 800);
+
+  // Also end naturally when video ends
+  video.addEventListener('ended', finish, { once: true });
+}
+
+// ── Outro / Victory scene: YouTube video + character pop-ins ───────────────
+function playTROutro(onDone) {
+  const overlay   = document.getElementById('tr-outro-overlay');
+  const bgEl      = document.getElementById('tr-outro-bg');
+  const banner    = document.getElementById('tr-outro-banner');
+  const charStage = document.getElementById('tr-outro-char-stage');
+  const iframeEl  = document.getElementById('tr-outro-iframe');
+  if (!overlay) { onDone(); return; }
+
+  // Random background (shown behind/before YouTube loads)
+  const bg = _TR_BACKGROUNDS[Math.floor(Math.random() * _TR_BACKGROUNDS.length)];
+  if (bgEl) bgEl.style.backgroundImage = `url('${bg}')`;
+
+  charStage.innerHTML = '';
+  overlay.style.display = 'flex';
+  stopQuizMusic();
+
+  // Load YouTube video with autoplay
+  // https://www.youtube.com/watch?v=DQQRjFzB8gY → embed ID: DQQRjFzB8gY
+  if (iframeEl) {
+    iframeEl.src = 'https://www.youtube.com/embed/DQQRjFzB8gY?autoplay=1&controls=0&rel=0&modestbranding=1&enablejsapi=1';
+  }
+
+  // Reveal victory banner after brief delay
+  setTimeout(() => {
+    if (banner) { banner.style.opacity = '1'; }
+  }, 800);
+
+  // Shuffled outro queue
+  let _outroQueue = [];
+  const _nextOutroChar = () => {
+    if (_outroQueue.length === 0) {
+      _outroQueue = [..._TR_CHARS];
+      for (let i = _outroQueue.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [_outroQueue[i], _outroQueue[j]] = [_outroQueue[j], _outroQueue[i]];
+      }
+    }
+    return _outroQueue.shift();
+  };
+
+  const charTimers = [];
+  const spawnOutroChar = () => {
+    const src = _nextOutroChar();
+    const img = document.createElement('img');
+    img.src = src;
+    img.alt = '';
+    const x = 5 + Math.random() * 90;
+    const y = 15 + Math.random() * 65;
+    img.style.cssText = `position:absolute;left:${x}%;top:${y}%;
+      width:clamp(200px,30vw,450px);transform:translate(-50%,-50%) scale(0);
+      opacity:0;transition:transform 0.6s cubic-bezier(0.175,0.885,0.32,1.275),opacity 0.5s ease;
+      filter:drop-shadow(0 6px 24px rgba(239,68,68,0.8));`;
+    charStage.appendChild(img);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      img.style.transform = 'translate(-50%,-50%) scale(1)';
+      img.style.opacity   = '1';
+    }));
+    // Fade out after 6s
+    const t = setTimeout(() => {
+      img.style.opacity   = '0';
+      img.style.transform = 'translate(-50%,-50%) scale(0.6)';
+      setTimeout(() => img.remove(), 600);
+    }, 6000);
+    charTimers.push(t);
+  };
+
+  // Spawn first char immediately, then every 2.5s
+  spawnOutroChar();
+  const spawnInterval = setInterval(spawnOutroChar, 2500);
+
+  let finished = false;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    clearInterval(spawnInterval);
+    charTimers.forEach(clearTimeout);
+    document.removeEventListener('keydown', onKey2,      true);
+    document.removeEventListener('click',   onClickEvt2, true);
+    // Stop YouTube by clearing src
+    if (iframeEl) iframeEl.src = '';
+    overlay.style.transition = 'opacity 0.8s ease';
+    overlay.style.opacity    = '0';
+    setTimeout(() => {
+      overlay.style.display    = 'none';
+      overlay.style.opacity    = '';
+      overlay.style.transition = '';
+      charStage.innerHTML = '';
+      if (banner) { banner.style.opacity = '0'; }
+      onDone();
+    }, 850);
+  };
+
+  const onKey2      = (e) => { e.stopPropagation(); finish(); };
+  const onClickEvt2 = (e) => { e.stopPropagation(); finish(); };
+  document.addEventListener('keydown', onKey2,      true);
+  document.addEventListener('click',   onClickEvt2, true);
+
+  // Absolute safety cap — 10 minutes
+  setTimeout(() => finish(), 600000);
 }
