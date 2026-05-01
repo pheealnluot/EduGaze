@@ -605,11 +605,22 @@
     }
     window.playJoySound = playJoySound;
 
+    let _sharedAudioCtx = null;
+    function _getAudioCtx() {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      if (!_sharedAudioCtx || _sharedAudioCtx.state === 'closed') {
+        _sharedAudioCtx = new AC();
+      }
+      return _sharedAudioCtx;
+    }
+
     function playWrongSound() {
       try {
-        const AudioContext = window.AudioContext || window.webkitAudioContext;
-        if (!AudioContext) return;
-        const ctx = new AudioContext();
+        const ctx = _getAudioCtx();
+        if (!ctx) return;
+        // macOS Safari/Chrome: AudioContext starts suspended, must resume on user gesture
+        if (ctx.state === 'suspended') ctx.resume();
 
         const osc1 = ctx.createOscillator();
         const osc2 = ctx.createOscillator();
@@ -2598,11 +2609,12 @@
       const qtxt = (questionText || '').toLowerCase();
       const kw = keyword.toLowerCase().trim();
 
-      // ── AI-only guard: math/science diagrams that MUST be precise ──────────
       // Only use AI SVG when the question demands an exact diagram AND the
-      // keyword is an abstract math/geometry concept. Real-world objects
+      // keyword is an abstract math/geometry/science concept. Real-world objects
       // (vehicles, animals, landmarks) must ALWAYS use Pixabay/Wikimedia.
-      const isMathKeyword = /^(number line|bar graph|pie chart|fraction|decimal|ruler|protractor|analog clock|clock face|cylinder|sphere|pyramid|cone|cube|cuboid|prism|venn diagram|tally chart|pattern|sequence|shapes?|circles?|triangles?|squares?|rectangles?|arrows?|blocks?|cubes?|coins?|dice|dots?|lines?|stars?|groups?|sets?|shaded.*(figure|shape|area|region)|grid|area|perimeter|angle|symmetry|reflection|rotation)s?$/i.test(kw);
+      const isDiagramKeyword = /^(number line|bar graph|pie chart|fraction|decimal|ruler|protractor|analog clock|clock face|cylinder|sphere|pyramid|cone|cube|cuboid|prism|venn diagram|tally chart|pattern|sequence|shapes?|circles?|triangles?|squares?|rectangles?|arrows?|blocks?|cubes?|dots?|lines?|stars?|groups?|sets?|shaded.*(figure|shape|area|region)|grid|area|perimeter|angle|symmetry|reflection|rotation)s?$/i.test(kw) ||
+        // Science diagram keywords
+        /\b(circuit|battery|bulb|switch|wire|solar system|planet|orbit|water cycle|evaporation|condensation|food chain|food web|magnet|magnetic field|lever|pulley|gear|simple machine|digestive system|skeleton|life cycle|photosynthesis|ecosystem|cell|atom|molecule|force|gravity|friction|pendulum|thermometer|compass|volcano|rock cycle|states of matter)\b/i.test(kw);
       const isPrecisionQuestion =
         qtxt.includes('how many') || qtxt.includes('count') || qtxt.includes('measure') ||
         qtxt.includes('ruler') || qtxt.includes('protractor') || qtxt.includes('fraction') ||
@@ -2611,10 +2623,13 @@
         qtxt.includes('what comes') || qtxt.includes('which comes') || qtxt.includes('number line') ||
         qtxt.includes('area') || qtxt.includes('perimeter') || qtxt.includes('angle') ||
         qtxt.includes('shaded') || qtxt.includes('figure') || qtxt.includes('shape') ||
-        qtxt.includes('symmetry') || qtxt.includes('reflect') || qtxt.includes('rotat');
-      // Use AI SVG if the question is math/precision AND keyword is abstract,
-      // OR if the keyword itself is clearly a math diagram concept
-      const isPreciseDiagram = (isPrecisionQuestion && isMathKeyword) || isMathKeyword;
+        qtxt.includes('symmetry') || qtxt.includes('reflect') || qtxt.includes('rotat') ||
+        // Science diagram triggers
+        qtxt.includes('circuit') || qtxt.includes('diagram') || qtxt.includes('cycle') ||
+        qtxt.includes('system') || qtxt.includes('observe') || qtxt.includes('label');
+      // Use AI SVG if the question is math/science precision AND keyword is a diagram concept,
+      // OR if the keyword itself is clearly a diagram concept
+      const isPreciseDiagram = (isPrecisionQuestion && isDiagramKeyword) || isDiagramKeyword;
 
       // ── Search keyword enrichment ───────────────────────────────────────────
       // Real-world keywords need a 'photo' bias so image APIs return photographs
@@ -2926,6 +2941,8 @@ Education Level: ${levelDesc}
 Generate exactly 5 multiple-choice questions at this exact difficulty. Each question MUST match its assigned subject:
 ${slotDescriptions}${usedList}
 
+DIVERSITY: Each question MUST be on a DIFFERENT topic/concept within its subject. Vary the question format (fill-in-the-blank, identify, compare, solve, sequence, true-concept, application). Avoid generic or common questions — surprise the student with creative, unusual angles on each topic.
+
 ${mediumRule}
 
 CRITICAL OUTPUT RULES:
@@ -2941,6 +2958,12 @@ CRITICAL OUTPUT RULES:
   * Instead of "shaded shape", write "outer rectangle 12cm x 8cm with inner rectangle 6cm x 4cm shaded"
   * Instead of "bar graph", write "bar graph with values Red=5 Blue=8 Green=3 Yellow=6"
   The SVG generator will use this description to draw an EXACT, mathematically consistent diagram. Math answers must always be text-only numbers or words.
+- SCIENCE QUESTIONS WITH DIAGRAMS: For Science questions that need a diagram (circuits, water cycle, solar system, food chain, life cycle, etc.), use Step 2 format (image in question, text-only answers). The questionImageKeyword MUST be a DETAILED description of the diagram. Examples:
+  * Instead of "circuit", write "simple circuit with battery, closed switch, bulb, and wires connected in a loop"
+  * Instead of "water cycle", write "water cycle diagram showing evaporation from ocean, condensation in clouds, precipitation as rain"
+  * Instead of "food chain", write "food chain: grass arrow to grasshopper arrow to frog arrow to snake arrow to eagle"
+  * Instead of "solar system", write "solar system showing Sun, Mercury, Venus, Earth, Mars in order with orbits"
+  For real-world Science subjects (animals, plants, body parts), use Pixabay photos instead.
 - COUNTING QUESTIONS: NEVER use questionImageKeyword for counting questions about real-world objects (apples, animals, people, etc.) because sourced photos show unpredictable quantities. Counting questions MUST be either: (a) text-only (describe the scenario in words), or (b) use abstract shapes as questionImageKeyword (circles, dots, stars shape, blocks) which will be rendered as precise diagrams. NEVER ask "How many X are in the picture?" with a real-world keyword.
 - FLAG / COUNTRY QUESTIONS: Flag and country identification questions MUST use Step 3 (images in answers). NEVER put a flag or country image in the question box — that gives away the answer. Each answer MUST have an imageKeyword. For flag questions use "[Country] flag" as imageKeyword. For country questions use a representative keyword like a famous landmark, iconic food, or scenery (e.g. "Eiffel Tower" for France, "Mount Fuji" for Japan, "pizza" for Italy).
 - CHINESE CHARACTER IMAGE CONSISTENCY: If you generate a Chinese character recognition question with a questionImageKeyword (e.g. the question asks "Is this character X?"), the questionImageKeyword MUST be the SAME character that the question asks about. The correctId must logically match — if the image shows X and the question asks "Is this X?", the correct answer must be "yes/是". Do NOT set the imageKeyword to a different character than what the question references.${imageKeywordInstruction}
@@ -2953,7 +2976,7 @@ Return exactly this JSON (replace [text], [answer], [kw] with real values — fo
       console.log('[Quiz] fetchQuizBatch — subjects:', allSubjects, '| level:', eduLevel, '| types:', types);
 
 
-      let text = await window.callGemini(prompt, { temperature: 0.8 });
+      let text = await window.callGemini(prompt, { temperature: 0.95 });
       if (!text) throw new Error('AI returned no content');
       const parsed = extractJSON(text);
       if (!parsed) throw new Error('AI returned malformed data');
@@ -3650,7 +3673,6 @@ Return exactly this JSON (replace [text], [answer], [kw] with real values — fo
         alignContent: 'stretch',
         justifyContent: 'stretch',
         gap: '16px',
-        padding: '0 16px 0',
         boxSizing: 'border-box',
         width: '100%',
         minHeight: '0'

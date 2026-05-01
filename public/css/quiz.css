@@ -563,7 +563,7 @@
       align-content: stretch;
       align-items: stretch;
       gap: 16px;
-      padding: 0 16px;
+      padding: 0 16px 8px;
       box-sizing: border-box;
       overflow: hidden;
     }
