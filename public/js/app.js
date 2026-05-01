@@ -1059,8 +1059,8 @@ function spawnPeppaHazard() {
   hazard.className = `peppa-hazard ${type}`;
 
   // top + hazard-height (80px ≈ 14.6% of road) should land within lane bounds
-  // Lane 0: 0-27.4%, Lane 1: 27.4-58.8%, Lane 2: 58.8-100%
-  const laneTops = ['5%', '36%', '75%'];
+  // Lane 0: 0-27.4%, Lane 1: 27.4-58.8%, Lane 2: 58.8-100% — shifted ~25% down for mid-road look
+  const laneTops = ['15%', '43%', '78%'];
   hazard.style.right = '-200px';
   hazard.style.top = laneTops[lane];
 
@@ -1339,7 +1339,7 @@ function spawnPeppaFriend() {
   const lane = Math.floor(Math.random() * 3);
   // top + character-height (140px ≈ 25.5% of road) = feet position; should land within lane bounds
   // Lane 0: 0-27.4%, Lane 1: 27.4-58.8%, Lane 2: 58.8-100%
-  const laneTops = ['1%', '33%', '71%'];
+  const laneTops = ['-9%', '23%', '61%'];
 
   friend.className = 'peppa-friend';
   const friendIdx = Math.floor(Math.random() * 10) + 1;
