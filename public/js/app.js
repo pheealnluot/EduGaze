@@ -2843,29 +2843,32 @@ async function resolveVisual(keyword, context = [], questionText = '', opts = {}
 
 async function preLoadBatchVisuals(batch) {
   if (!batch || !batch.length) return;
-  console.log('[Quiz] Pre-loading visuals for batch...');
+  console.log('[Quiz] Pre-loading visuals for batch sequentially...');
   for (const q of batch) {
-    // Resolve question image
+    // Resolve question image — await each call so requests don't all fire at once
     if (q.questionImageKeyword) {
       const isMath = /^(math|mathematics)$/i.test(q._subject || q.subject || '');
       const correctAns = q.answers?.find(a => String(a.id) === String(q.correctId));
-      resolveVisual(q.questionImageKeyword, q.answers.map(a => a.text), q.question, {
+      await resolveVisual(q.questionImageKeyword, q.answers.map(a => a.text), q.question, {
         forceAI: isMath,
         correctAnswer: correctAns?.text || '',
         subject: q._subject || q.subject || '',
         answerLabels: q.answers.map(a => a.text)
       });
     }
-    // Resolve answer images
+    // Resolve answer images — one at a time
     if (q.answers) {
       for (const ans of q.answers) {
-        if (ans.imageKeyword) resolveVisual(ans.imageKeyword, [], q.question, {
-          subject: q._subject || q.subject || ''
-        });
+        if (ans.imageKeyword) {
+          await resolveVisual(ans.imageKeyword, [], q.question, {
+            subject: q._subject || q.subject || ''
+          });
+        }
       }
     }
   }
 }
+
 
 // ── AI Graphic Generator (SVG) ───────────────────────────────────────────
 async function generateAISVG(keyword, container, answerContext = [], questionText = '', correctAnswer = '', opts = {}) {
@@ -3197,6 +3200,24 @@ Return exactly this JSON (replace [text], [answer], [kw] with real values — fo
   // ── Post-generation sanitization ─────────────────────────────────────
   for (let qi = batch.length - 1; qi >= 0; qi--) {
     const q = batch[qi];
+
+    // ── Hard cap: always exactly 4 answers ───────────────────────────────
+    if (q.answers && q.answers.length > 4) {
+      console.warn('[Quiz] AI returned >4 answers — trimming to 4:', q.answers.length, q.question);
+      // Keep the correct answer in the trimmed set if possible
+      const correctIdx = q.answers.findIndex(a => String(a.id) === String(q.correctId));
+      if (correctIdx >= 4) {
+        // Swap the correct answer into slot 3 so it survives the trim
+        [q.answers[3], q.answers[correctIdx]] = [q.answers[correctIdx], q.answers[3]];
+      }
+      q.answers = q.answers.slice(0, 4);
+      // Re-assign sequential IDs and update correctId
+      const correctText = q.answers.find(a => String(a.id) === String(q.correctId))?.text;
+      q.answers.forEach((a, i) => { a.id = String(i + 1); });
+      const newCorrect = q.answers.find(a => a.text === correctText);
+      q.correctId = newCorrect ? newCorrect.id : '1';
+    }
+
     // Reject binary/true-false questions — replace with fallback bank question
     if (q.answers && q.answers.length < 4) {
       const binaryWords = /^(true|false|yes|no|correct|incorrect|right|wrong|是|不是|对|错|正确|不正确)$/i;
@@ -4491,6 +4512,9 @@ function renderQuizBoard() {
           } else if (currentQuizTheme === 'kung-fu-panda') {
             triggerKfpCelebration();
             _quizVoiceDelay = Date.now() + 3200;
+          } else if (currentQuizTheme === 'totoro') {
+            triggerTotoroCelebration();
+            _quizVoiceDelay = Date.now() + 3200;
           } else {
             _quizVoiceDelay = Date.now() + 1500;
           }
@@ -5438,6 +5462,243 @@ function playBenHollyOutro(onDone) {
   setTimeout(() => finish(), 28000);
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+// MY NEIGHBOR TOTORO THEME — Celebration, Intro & Outro
+// ══════════════════════════════════════════════════════════════════════════
+
+const _TOTORO_CHARS = [
+  'assets/totoro/Catbus-removebg-preview.png',
+  'assets/totoro/Satsuki_forest-removebg-preview.png',
+  'assets/totoro/Satsuki_wonder-removebg-preview.png',
+  'assets/totoro/catbus-running.png',
+  'assets/totoro/kanta-removebg-preview.png',
+  'assets/totoro/kurokuro_pair-removebg-preview.png',
+  'assets/totoro/kurokuroski.webp',
+  'assets/totoro/mei-removebg-preview.png',
+  'assets/totoro/mum_house-removebg-preview.png',
+  'assets/totoro/nakayoshi_toy-removebg-preview.png',
+  'assets/totoro/satsuki_mei_run-removebg-preview.png',
+  'assets/totoro/totoro-removebg-preview.png',
+  'assets/totoro/totoro_umbrella-removebg-preview.png',
+];
+
+const _TOTORO_BACKGROUNDS = [
+  'assets/totoro/background1.png',
+  'assets/totoro/background2.png',
+  'assets/totoro/background3.png',
+];
+
+const _TOTORO_FX_SOUNDS = [
+  'assets/totoro/FX_01_Roar.mp3',
+  'assets/totoro/FX_07_ActionHit.mp3',
+  'assets/totoro/FX_08_AmbientEerie.mp3',
+  'assets/totoro/FX_09_VocalRise.mp3',
+  'assets/totoro/FX_10_FinalRoar.mp3',
+];
+
+let _totoroToastT = null;
+
+// ── Correct-answer celebration: 2 random Totoro characters pop in ──────────
+function triggerTotoroCelebration() {
+  const toast = document.getElementById('totoro-toast');
+  if (!toast) return;
+
+  // Play a random FX sound
+  try {
+    const snd = new Audio(_TOTORO_FX_SOUNDS[Math.floor(Math.random() * _TOTORO_FX_SOUNDS.length)]);
+    snd.volume = 0.8;
+    snd.play().catch(err => console.error('Totoro FX sound failed:', err));
+  } catch (_) {}
+
+  if (_totoroToastT) { clearTimeout(_totoroToastT); _totoroToastT = null; }
+  toast.innerHTML = '';
+  toast.classList.remove('show');
+
+  // Pick 2 unique random characters
+  const pool = [..._TOTORO_CHARS].sort(() => Math.random() - 0.5).slice(0, 2);
+
+  pool.forEach((src, i) => {
+    const img = document.createElement('img');
+    img.src = src;
+    img.className = 'totoro-toast-char';
+    img.alt = '';
+    // Left char: 20-44%, Right char: 56-80% (centre-point)
+    const xMin = i === 0 ? 20 : 56;
+    const x = xMin + Math.random() * 24;
+    const y = 22 + Math.random() * 42;
+    img.style.left = `${x}%`;
+    img.style.top = `${y}%`;
+    if (i === 1) img.style.animationDelay = '0.10s, 0.65s, 2.90s';
+    toast.appendChild(img);
+  });
+
+  void toast.offsetWidth;
+  toast.classList.add('show');
+
+  _totoroToastT = setTimeout(() => {
+    toast.classList.remove('show');
+    toast.innerHTML = '';
+  }, 3400);
+}
+
+// ── Intro scene: play trailer video, skip on click / keypress ─────────────
+function playTotoroIntro(onDone) {
+  const overlay = document.getElementById('totoro-intro-overlay');
+  const video = document.getElementById('totoro-intro-video');
+  if (!overlay || !video) { onDone(); return; }
+
+  // Close settings if open
+  const settingsOverlay = document.getElementById('quiz-settings-overlay');
+  if (settingsOverlay) settingsOverlay.classList.remove('show');
+
+  overlay.style.opacity = '0';
+  overlay.style.display = 'flex';
+
+  // Reset and play the video from the beginning
+  video.currentTime = 0;
+  video.volume = 0.9;
+  const playPromise = video.play();
+  if (playPromise) playPromise.catch(() => {});
+
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    overlay.style.transition = 'opacity 0.5s ease';
+    overlay.style.opacity = '1';
+  }));
+
+  let done = false;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    document.removeEventListener('keydown', onKey, true);
+    document.removeEventListener('click', onClickEvt, true);
+    video.pause();
+    overlay.style.transition = 'opacity 0.6s ease';
+    overlay.style.opacity = '0';
+    setTimeout(() => {
+      overlay.style.display = 'none';
+      overlay.style.opacity = '';
+      overlay.style.transition = '';
+      video.currentTime = 0;
+      onDone();
+    }, 650);
+  };
+
+  const onKey = (e) => { e.stopPropagation(); finish(); };
+  const onClickEvt = (e) => { e.stopPropagation(); finish(); };
+
+  // Allow skip after 800 ms so the "Start Quiz" click doesn't instantly skip
+  setTimeout(() => {
+    if (!done) {
+      document.addEventListener('keydown', onKey, true);
+      document.addEventListener('click', onClickEvt, true);
+    }
+  }, 800);
+
+  // Auto-end when video finishes
+  video.addEventListener('ended', finish, { once: true });
+  // Safety cap of 5 minutes
+  setTimeout(() => finish(), 300000);
+}
+
+// ── Outro / Victory scene: random BG + ending music + character pop-ins ─────
+function playTotoroOutro(onDone) {
+  const overlay = document.getElementById('totoro-outro-overlay');
+  const bgEl = document.getElementById('totoro-outro-bg');
+  const banner = document.getElementById('totoro-outro-banner');
+  const charStage = document.getElementById('totoro-outro-char-stage');
+  if (!overlay) { onDone(); return; }
+
+  // Random background
+  const bg = _TOTORO_BACKGROUNDS[Math.floor(Math.random() * _TOTORO_BACKGROUNDS.length)];
+  bgEl.style.backgroundImage = `url('${bg}')`;
+
+  charStage.innerHTML = '';
+  overlay.style.display = 'flex';
+  stopQuizMusic();
+
+  // Play ending theme music
+  let outroAudio = null;
+  try {
+    outroAudio = new Audio('assets/totoro/My Neighbor Totoro - Ending Theme Song.mp3');
+    outroAudio.volume = 0.8;
+    outroAudio.play().catch(() => {});
+  } catch (e) {}
+
+  // Reveal banner
+  setTimeout(() => {
+    if (banner) { banner.style.opacity = '1'; banner.style.transform = 'scale(1)'; }
+  }, 500);
+
+  // Periodically pop characters into the scene — exhaust all before recycling
+  let charTimers = [];
+  // Build a shuffled queue; refills automatically when empty
+  let _outroQueue = [];
+  const _nextOutroChar = () => {
+    if (_outroQueue.length === 0) {
+      // Refill with a fresh Fisher-Yates shuffle of the full list
+      _outroQueue = [..._TOTORO_CHARS];
+      for (let i = _outroQueue.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [_outroQueue[i], _outroQueue[j]] = [_outroQueue[j], _outroQueue[i]];
+      }
+    }
+    return _outroQueue.shift();
+  };
+
+  const spawnOutroChar = () => {
+    const src = _nextOutroChar();
+    const img = document.createElement('img');
+    img.src = src;
+    img.alt = '';
+    const x = 5 + Math.random() * 90;
+    const y = 20 + Math.random() * 60;
+    img.style.cssText = `position:absolute;left:${x}%;top:${y}%;
+      width:clamp(200px,30vw,450px);transform:translate(-50%,-50%) scale(0);
+      opacity:0;transition:transform 0.6s cubic-bezier(0.175,0.885,0.32,1.275),opacity 0.5s ease;
+      filter:drop-shadow(0 6px 24px rgba(52,211,153,0.8));`;
+    charStage.appendChild(img);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      img.style.transform = 'translate(-50%,-50%) scale(1)';
+      img.style.opacity = '1';
+    }));
+    // Fade out after 6 s
+    const t = setTimeout(() => {
+      img.style.opacity = '0';
+      img.style.transform = 'translate(-50%,-50%) scale(0.7)';
+      setTimeout(() => img.remove(), 600);
+    }, 6000);
+    charTimers.push(t);
+  };
+
+  // Spawn first one immediately, then every 2.5 s
+  spawnOutroChar();
+  const spawnId = setInterval(spawnOutroChar, 2500);
+
+  let finished = false;
+  const finish = () => {
+    if (finished) return; finished = true;
+    clearInterval(spawnId);
+    charTimers.forEach(t => clearTimeout(t));
+    if (outroAudio) { try { outroAudio.pause(); outroAudio.currentTime = 0; } catch (e) {} }
+    overlay.style.display = 'none';
+    if (banner) { banner.style.opacity = '0'; banner.style.transform = 'scale(0.5)'; }
+    charStage.innerHTML = '';
+    window.removeEventListener('keydown', finish);
+    window.removeEventListener('click', finish);
+    onDone();
+  };
+
+  // Enable skip after 500 ms
+  setTimeout(() => {
+    window.addEventListener('keydown', finish, { once: true });
+    window.addEventListener('click', finish, { once: true });
+  }, 500);
+
+  // End when song ends (or absolute 10-min cap)
+  if (outroAudio) outroAudio.addEventListener('ended', finish, { once: true });
+  setTimeout(() => finish(), 600000);
+}
+
 // Override showQuizWin to support theme celebrations
 function showQuizWin() {
   const standardFinish = () => {
@@ -5449,6 +5710,7 @@ function showQuizWin() {
   };
   if (quizSettings.theme === 'ben-holly') playBenHollyOutro(standardFinish);
   else if (quizSettings.theme === 'kung-fu-panda') playKungFuPandaOutro(standardFinish);
+  else if (quizSettings.theme === 'totoro') playTotoroOutro(standardFinish);
   else standardFinish();
 }
 function _doStartQuiz() {
@@ -5502,6 +5764,13 @@ window.startQuiz = () => {
     _introPrefetchPromise = fetchQuizBatch().catch(() => null);
     // Play KFP intro first; _doStartQuiz fires exactly once when intro ends/is skipped
     playKungFuPandaIntro(() => _doStartQuiz());
+    return;
+  }
+  if (quizSettings.theme === 'totoro') {
+    // Kick off AI generation immediately while intro video plays
+    _introPrefetchPromise = fetchQuizBatch().catch(() => null);
+    // Play Totoro trailer intro; _doStartQuiz fires once video ends/is skipped
+    playTotoroIntro(() => _doStartQuiz());
     return;
   }
   _doStartQuiz();

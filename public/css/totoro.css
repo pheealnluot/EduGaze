@@ -1,0 +1,51 @@
+/* totoro.css — My Neighbor Totoro theme styles */
+
+/* ── Toast characters (correct-answer celebration) ──────────────────── */
+#totoro-toast {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 99990;
+  display: none;
+}
+#totoro-toast.show { display: block; }
+
+.totoro-toast-char {
+  position: absolute;
+  width: clamp(170px, 27vw, 374px);
+  transform: translate(-50%, -50%) scale(0);
+  opacity: 0;
+  animation:
+    totoroPopIn 0.55s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards,
+    totoroFloat 2.4s ease-in-out infinite,
+    totoroFadeOut 0.4s ease 2.9s forwards;
+}
+
+@keyframes totoroPopIn {
+  0%   { transform: translate(-50%, -50%) scale(0) rotate(-12deg); opacity: 0; }
+  60%  { transform: translate(-50%, -50%) scale(1.12) rotate(4deg); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(1) rotate(0deg); opacity: 1; }
+}
+
+@keyframes totoroFloat {
+  0%, 100% { margin-top: 0px; }
+  50%       { margin-top: -14px; }
+}
+
+@keyframes totoroFadeOut {
+  to { opacity: 0; transform: translate(-50%, -50%) scale(0.7); }
+}
+
+/* ── Outro bounce ────────────────────────────────────────────────────── */
+@keyframes totoroBounce {
+  0%   { transform: translateY(0)    rotate(-2deg) scale(1); }
+  50%  { transform: translateY(-24px) rotate( 3deg) scale(1.05); }
+  100% { transform: translateY(0)    rotate(-2deg) scale(1); }
+}
+
+/* ── Forest sparkle particle ─────────────────────────────────────────── */
+@keyframes totoroSparkle {
+  0%   { opacity: 0; transform: scale(0); }
+  40%  { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.5) translateY(-30px); }
+}

@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="css/quiz.css">
   <link rel="stylesheet" href="css/ben-holly.css">
   <link rel="stylesheet" href="css/kung-fu-panda.css">
+  <link rel="stylesheet" href="css/totoro.css">
 </head>
 
 <body class="min-h-screen flex flex-col items-center py-10 px-4">
@@ -546,6 +547,7 @@
               <button class="quiz-theme-chip" data-theme="ben-holly">🧝 Ben &amp; Holly's Little Kingdom</button>
               <button class="quiz-theme-chip" data-theme="peppa">🐷 Peppa Pig</button>
               <button class="quiz-theme-chip" data-theme="kung-fu-panda">🐼 Kung Fu Panda</button>
+              <button class="quiz-theme-chip" data-theme="totoro">🌳 My Neighbor Totoro</button>
               <button class="quiz-theme-chip" data-theme="mixed">🎲 Mixed (Random each question)</button>
             </div>
             <p class="text-[10px] text-slate-500">Ben &amp; Holly: Ben Elf walks in and blows his horn on each correct
@@ -728,6 +730,51 @@
 
     <!-- Kung Fu Panda celebration toast — characters injected dynamically by JS -->
     <div id="kfp-toast"></div>
+
+    <!-- Totoro celebration toast — characters injected dynamically by JS -->
+    <div id="totoro-toast"></div>
+
+    <!-- Totoro Quiz Intro Overlay (video-based) -->
+    <div id="totoro-intro-overlay"
+      style="display:none;position:fixed;inset:0;z-index:99999;overflow:hidden;flex-direction:column;align-items:center;justify-content:center;background:#000;">
+      <!-- Video fills the screen -->
+      <video id="totoro-intro-video"
+        style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0;"
+        preload="auto" playsinline>
+        <source src="assets/totoro/My Neighbor Totoro - Official Trailer.webm" type="video/webm">
+      </video>
+      <!-- Subtle dark vignette overlay -->
+      <div style="position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent 40%,rgba(0,0,0,0.55) 100%);z-index:1;pointer-events:none;"></div>
+      <!-- Skip hint -->
+      <div style="position:absolute;bottom:1.2rem;right:1.5rem;color:rgba(255,255,255,0.4);font-size:0.72rem;
+        font-weight:700;letter-spacing:0.1em;text-transform:uppercase;z-index:5;pointer-events:none">
+        Click or press any key to skip</div>
+    </div>
+
+    <!-- Totoro Quiz Outro (Victory) Overlay -->
+    <div id="totoro-outro-overlay"
+      style="display:none;position:fixed;inset:0;z-index:99999;overflow:hidden;flex-direction:column;align-items:center;justify-content:center;">
+      <!-- BG image set by JS -->
+      <div id="totoro-outro-bg"
+        style="position:absolute;inset:0;background-size:cover;background-position:center;z-index:0;"></div>
+      <!-- Dark scrim -->
+      <div style="position:absolute;inset:0;background:rgba(0,0,0,0.30);z-index:1;pointer-events:none;"></div>
+      <!-- Character stage for pop-in chars -->
+      <div id="totoro-outro-char-stage" style="position:absolute;inset:0;z-index:2;pointer-events:none;"></div>
+      <!-- Victory text -->
+      <div id="totoro-outro-banner" style="position:relative;z-index:3;text-align:center;opacity:0;transform:scale(0.5);
+          transition:all 1s cubic-bezier(0.175,0.885,0.32,1.275);">
+        <div style="font-family:'Comic Sans MS',Georgia,serif;font-size:clamp(3rem,10vw,7rem);font-weight:900;
+          background:linear-gradient(90deg,#6ee7b7,#34d399,#a7f3d0,#6ee7b7);
+          -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+          filter:drop-shadow(0 0 40px rgba(52,211,153,0.9));letter-spacing:0.05em;">Totoro!</div>
+        <div style="font-family:'Comic Sans MS',Georgia,serif;font-size:clamp(1rem,4vw,2.5rem);color:#d1fae5;font-weight:700;
+          text-shadow:0 0 20px rgba(52,211,153,0.8)">You did it, Quiz Champion!</div>
+      </div>
+      <!-- Finish hint -->
+      <div style="position:absolute;bottom:2rem;color:rgba(255,255,255,0.4);font-size:0.8rem;font-weight:700;
+        letter-spacing:0.1em;text-transform:uppercase;z-index:4">Click or press any key to finish</div>
+    </div>
 
     <!-- Kung Fu Panda Quiz Intro Overlay -->
     <div id="kfp-intro-overlay"
