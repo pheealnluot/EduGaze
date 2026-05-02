@@ -7,8 +7,9 @@ if (!admin.apps.length) {
   admin.initializeApp();
 }
 
-const geminiApiKey  = defineSecret('GEMINI_API_KEY');
-const pixabayApiKey = defineSecret('PIXABAY_API_KEY');
+const geminiApiKey   = defineSecret('GEMINI_API_KEY');
+const pixabayApiKey  = defineSecret('PIXABAY_API_KEY');
+const unsplashApiKey = defineSecret('UNSPLASH_ACCESS_KEY');
 
 const GEMINI_MODEL = 'gemini-2.5-flash';
 
@@ -121,6 +122,79 @@ exports.pixabaySearch = onRequest(
       res.status(200).json({ hits });
     } catch (err) {
       console.error('[pixabaySearch] Pixabay API error:', err.message);
+      res.status(502).json({ error: err.message });
+    }
+  }
+);
+
+/**
+ * Secure proxy for Unsplash image search — keeps the Access Key server-side.
+ * Firebase Hosting rewrites GET /api/unsplash-search to this function.
+ * Query params: q (search term), per_page (optional, default 10), orientation (optional)
+ */
+exports.unsplashSearch = onRequest(
+  {
+    secrets: [unsplashApiKey],
+    cors: true,
+    invoker: 'public',
+    timeoutSeconds: 15,
+    memory: '128MiB',
+    region: 'us-central1',
+  },
+  async (req, res) => {
+    res.set('Access-Control-Allow-Origin', '*');
+
+    if (req.method === 'OPTIONS') {
+      res.set('Access-Control-Allow-Methods', 'GET');
+      res.set('Access-Control-Allow-Headers', 'Content-Type');
+      res.status(204).send('');
+      return;
+    }
+
+    if (req.method !== 'GET') {
+      res.status(405).json({ error: 'Method Not Allowed' });
+      return;
+    }
+
+    const apiKey = unsplashApiKey.value();
+    if (!apiKey) {
+      res.status(503).json({ error: 'UNSPLASH_ACCESS_KEY secret not configured' });
+      return;
+    }
+
+    const q           = req.query.q || '';
+    const perPage     = Math.min(parseInt(req.query.per_page || '10', 10), 30);
+    const orientation = req.query.orientation || 'landscape';
+
+    if (!q) {
+      res.status(400).json({ error: 'Missing query parameter: q' });
+      return;
+    }
+
+    const unsplashUrl = `https://api.unsplash.com/search/photos?query=${encodeURIComponent(q)}&per_page=${perPage}&orientation=${orientation}`;
+
+    try {
+      const response = await fetch(unsplashUrl, {
+        headers: { 'Authorization': `Client-ID ${apiKey}` }
+      });
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error('[unsplashSearch] API error:', response.status, errText.slice(0, 200));
+        res.status(response.status).json({ error: errText });
+        return;
+      }
+      const data = await response.json();
+      // Normalize to hits array (same shape as Pixabay proxy for easy client use)
+      const hits = (data.results || []).map(photo => ({
+        webformatURL: photo.urls?.regular || photo.urls?.small,
+        tags: photo.description || photo.alt_description || '',
+        unsplashId: photo.id,
+        credit: `Photo by ${photo.user?.name || 'Unknown'} on Unsplash`,
+        creditUrl: `${photo.links?.html}?utm_source=EduGaze&utm_medium=referral`,
+      }));
+      res.status(200).json({ hits });
+    } catch (err) {
+      console.error('[unsplashSearch] Fetch error:', err.message);
       res.status(502).json({ error: err.message });
     }
   }

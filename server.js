@@ -119,6 +119,47 @@ app.get('/api/pixabay-search', async (req, res) => {
 });
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ── Unsplash proxy ───────────────────────────────────────────────────────────
+const UNSPLASH_ACCESS_KEY = process.env.UNSPLASH_ACCESS_KEY || '';
+if (!UNSPLASH_ACCESS_KEY || UNSPLASH_ACCESS_KEY === 'YOUR_UNSPLASH_ACCESS_KEY_HERE') {
+  console.warn('\n⚠️  UNSPLASH_ACCESS_KEY not set — Unsplash image source will be skipped.');
+  console.warn('   Get a free key at https://unsplash.com/developers and add to .env:\n   UNSPLASH_ACCESS_KEY=your_key_here\n');
+}
+
+app.get('/api/unsplash-search', async (req, res) => {
+  if (!UNSPLASH_ACCESS_KEY || UNSPLASH_ACCESS_KEY === 'YOUR_UNSPLASH_ACCESS_KEY_HERE') {
+    return res.status(503).json({ error: 'UNSPLASH_ACCESS_KEY not configured' });
+  }
+  try {
+    const q = req.query.q || '';
+    const perPage = Math.min(parseInt(req.query.per_page) || 10, 30);
+    const orientation = req.query.orientation || 'landscape';
+    const url = `https://api.unsplash.com/search/photos?query=${encodeURIComponent(q)}&per_page=${perPage}&orientation=${orientation}`;
+    const response = await fetch(url, {
+      headers: { 'Authorization': `Client-ID ${UNSPLASH_ACCESS_KEY}` }
+    });
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error('[unsplash error]', response.status, errText.slice(0, 200));
+      return res.status(response.status).json({ error: errText });
+    }
+    const data = await response.json();
+    // Normalize to a hits-style array matching Pixabay format for easy client-side handling
+    const hits = (data.results || []).map(photo => ({
+      webformatURL: photo.urls?.regular || photo.urls?.small,
+      tags: photo.description || photo.alt_description || '',
+      unsplashId: photo.id,
+      credit: `Photo by ${photo.user?.name || 'Unknown'} on Unsplash`,
+      creditUrl: `${photo.links?.html}?utm_source=EduGaze&utm_medium=referral`
+    }));
+    res.json({ hits });
+  } catch (err) {
+    console.error('[unsplash proxy error]', err.message);
+    res.status(502).json({ error: err.message });
+  }
+});
+// ─────────────────────────────────────────────────────────────────────────────
+
 // Route everything else directly to the SPA entry point
 app.use((req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));

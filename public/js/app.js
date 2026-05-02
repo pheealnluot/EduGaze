@@ -1802,6 +1802,8 @@ let initialSettings = loadQuizSettings() || {
   hintThreshold: 4,
   voiceOver: false,
   voiceOverHoverRepeat: false,
+  // Per-source toggles — each can be independently enabled/disabled
+  imageSources: { pixabay: true, unsplash: false, wikimedia: true, ai: true },
 };
 // Migrate saved settings that are missing new fields
 if (!initialSettings.questionSource) initialSettings.questionSource = 'ai';
@@ -1813,6 +1815,21 @@ if (!initialSettings.eduLevel) initialSettings.eduLevel = 'P2';
 if (!initialSettings.contentTypes) initialSettings.contentTypes = ['text'];
 if (initialSettings.customSubject === undefined) initialSettings.customSubject = '';
 if (initialSettings.qReadEnabled === undefined) initialSettings.qReadEnabled = true;
+// Migrate old imageSourceMode string → new imageSources object
+if (!initialSettings.imageSources) {
+  const old = initialSettings.imageSourceMode;
+  initialSettings.imageSources = {
+    pixabay:  !old || old === 'auto' || old === 'pixabay',
+    unsplash: old === 'unsplash',
+    wikimedia: !old || old === 'auto' || old === 'wikimedia',
+    ai:       !old || old === 'auto' || old === 'ai',
+  };
+  delete initialSettings.imageSourceMode;
+}
+// Ensure ai is never the sole disabled source (always keep at least one fallback)
+if (initialSettings.imageSources && !Object.values(initialSettings.imageSources).some(Boolean)) {
+  initialSettings.imageSources = { pixabay: true, unsplash: false, wikimedia: true, ai: true };
+}
 if (!initialSettings.qReadTimeMs) initialSettings.qReadTimeMs = 3000;
 if (!initialSettings.dwellTimeMs && initialSettings.dwellTimeMs !== 0) initialSettings.dwellTimeMs = 2000;
 
@@ -2169,6 +2186,32 @@ function initQuizSettingsUI() {
     quizSettings.questionSource = 'bank'; updateQSourceUI(); saveQuizSettings();
   };
   updateQSourceUI();
+
+  // Image Source checkboxes
+  const _imgSrcKeys = ['pixabay', 'unsplash', 'wikimedia', 'ai'];
+  const updateImgSourceUI = () => {
+    _imgSrcKeys.forEach(key => {
+      const cb = document.getElementById(`img-src-chk-${key}`);
+      if (cb) cb.checked = !!(quizSettings.imageSources && quizSettings.imageSources[key]);
+    });
+  };
+  _imgSrcKeys.forEach(key => {
+    const cb = document.getElementById(`img-src-chk-${key}`);
+    if (!cb) return;
+    cb.onchange = () => {
+      if (!quizSettings.imageSources) quizSettings.imageSources = { pixabay: true, unsplash: false, wikimedia: true, ai: true };
+      quizSettings.imageSources[key] = cb.checked;
+      // Ensure at least one source stays enabled
+      if (!Object.values(quizSettings.imageSources).some(Boolean)) {
+        quizSettings.imageSources.ai = true;
+        updateImgSourceUI();
+      }
+      // Clear visual cache so old source images don't bleed into next round
+      if (typeof quizResolvedVisuals !== 'undefined') quizResolvedVisuals.clear();
+      saveQuizSettings();
+    };
+  });
+  updateImgSourceUI();
 
   // Voice Over toggle + Repeat when hover sub-setting
   const voChk = document.getElementById('quiz-voiceover-enabled');
@@ -2664,25 +2707,45 @@ function extractJSON(text) {
 
 // ── AI Helper (Gemini Proxy) ──────────────────────────────────────────
 window.callGemini = async (prompt, config = {}) => {
-  try {
-    const resp = await fetch('/api/quiz-generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: config.temperature || 0.8,
-          maxOutputTokens: config.maxOutputTokens || 8192,
-        }
-      })
-    });
-    if (!resp.ok) return null;
-    const data = await resp.json();
-    return data.candidates?.[0]?.content?.parts?.[0]?.text || null;
-  } catch (e) {
-    console.error('[Quiz] callGemini failed', e);
-    return null;
+  const MAX_RETRIES = 2;
+  const RETRY_DELAY_MS = 1500;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const resp = await fetch('/api/quiz-generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: config.temperature || 0.8,
+            maxOutputTokens: config.maxOutputTokens || 8192,
+          }
+        })
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        return data.candidates?.[0]?.content?.parts?.[0]?.text || null;
+      }
+      // Retry on 503 (timeout) or 429 (rate limit) — not on 4xx client errors
+      const status = resp.status;
+      if ((status === 503 || status === 429) && attempt < MAX_RETRIES) {
+        console.warn(`[Quiz] Gemini ${status} — retrying in ${RETRY_DELAY_MS}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+        await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+        continue;
+      }
+      console.error(`[Quiz] callGemini HTTP ${status}`);
+      return null;
+    } catch (e) {
+      if (attempt < MAX_RETRIES) {
+        console.warn(`[Quiz] callGemini network error — retrying (${attempt + 1}/${MAX_RETRIES}):`, e.message);
+        await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+        continue;
+      }
+      console.error('[Quiz] callGemini failed after retries', e);
+      return null;
+    }
   }
+  return null;
 };
 
 // ── Quiz Visual Pipeline (Pre-loading & Caching) ────────────────────────
@@ -2691,7 +2754,19 @@ const quizResolvedVisuals = new Map(); // key: keyword, value: { url, svg }
 
 async function resolveVisual(keyword, context = [], questionText = '', opts = {}) {
   if (!keyword) return null;
-  if (quizResolvedVisuals.has(keyword) && !opts.forceAI) return quizResolvedVisuals.get(keyword);
+  if (quizResolvedVisuals.has(keyword) && !opts.forceAI) {
+    const cached = quizResolvedVisuals.get(keyword);
+    // Validate cached source is still enabled — evict if user changed settings
+    const _src = quizSettings.imageSources || { pixabay: true, unsplash: false, wikimedia: true, ai: true };
+    const _cSrc = cached?.source;
+    const _allowed = !_cSrc ||
+      (_cSrc === 'pixabay' && _src.pixabay) ||
+      (_cSrc === 'unsplash' && _src.unsplash) ||
+      (_cSrc === 'wikimedia' && _src.wikimedia) ||
+      (_cSrc === 'ai' && _src.ai !== false);
+    if (_allowed) return cached;
+    quizResolvedVisuals.delete(keyword); // stale — re-fetch from allowed sources
+  }
   // Store correct answer for SVG generation consistency
   const _correctAnswer = opts.correctAnswer || '';
 
@@ -2872,60 +2947,103 @@ async function resolveVisual(keyword, context = [], questionText = '', opts = {}
       ? keyword + ' photo'
       : keyword;
 
-  // ── Real photo sources (Pixabay → Wikimedia) ──────────────────────────
+  // ── Real photo sources (Pixabay → Unsplash → Wikimedia) ──────────────────────────
   // Skip photo sources if forceAI is set (Math questions always use AI SVG)
   if (!isPreciseDiagram && !opts.forceAI) {
+    const src = quizSettings.imageSources || { pixabay: true, unsplash: false, wikimedia: true, ai: true };
     const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    const _pixabaySearch = async (q) => {
-      let pixProxyUrl = isLocalhost
-        ? `https://us-central1-edugaze-50cdb.cloudfunctions.net/pixabaySearch?q=${encodeURIComponent(q)}&per_page=10&image_type=photo`
-        : `/api/pixabay-search?q=${encodeURIComponent(q)}&per_page=10&image_type=photo`;
-      // Append Pixabay category to narrow results (prevents cross-domain confusion)
-      if (pixCategory) pixProxyUrl += `&category=${pixCategory}`;
-      const pixResp = await fetch(pixProxyUrl);
-      if (!pixResp.ok) return null;
-      const pixData = await pixResp.json();
-      const hits = pixData?.hits || [];
-      if (!hits.length) return null;
-      // Filter out hits whose tags match negative keywords
-      const validHits = negTags.length > 0
-        ? hits.filter(h => {
-          const tags = (h.tags || '').toLowerCase();
-          return !negTags.some(neg => tags.includes(neg));
-        })
-        : hits;
-      // Pick a random valid hit for visual variety (avoids always showing the same image)
-      const pool = validHits.length > 0 ? validHits : hits;
-      const pick = pool[Math.floor(Math.random() * Math.min(pool.length, 5))];
-      return pick?.webformatURL || null;
-    };
 
-    try {
-      const photoUrl = await _pixabaySearch(pixabayQuery);
-      if (photoUrl) {
-        const res = { url: photoUrl, svg: null, source: 'pixabay' };
+    // ── Pixabay ────────────────────────────────────────────────────────────
+    if (src.pixabay) {
+      const _pixabaySearch = async (q) => {
+        // Always use the local server proxy — consistent with Unsplash proxy approach
+        let pixProxyUrl = `/api/pixabay-search?q=${encodeURIComponent(q)}&per_page=10&image_type=photo`;
+        if (pixCategory) pixProxyUrl += `&category=${pixCategory}`;
+        const pixResp = await fetch(pixProxyUrl);
+        if (!pixResp.ok) return null;
+        const pixData = await pixResp.json();
+        const hits = pixData?.hits || [];
+        if (!hits.length) return null;
+        const validHits = negTags.length > 0
+          ? hits.filter(h => { const tags = (h.tags || '').toLowerCase(); return !negTags.some(neg => tags.includes(neg)); })
+          : hits;
+        const pool = validHits.length > 0 ? validHits : hits;
+        const pick = pool[Math.floor(Math.random() * Math.min(pool.length, 5))];
+        return pick?.webformatURL || null;
+      };
+
+      try {
+        const photoUrl = await _pixabaySearch(pixabayQuery);
+        if (photoUrl) {
+          const res = { url: photoUrl, svg: null, source: 'pixabay' };
+          quizResolvedVisuals.set(keyword, res);
+          return res;
+        }
+      } catch (e) { /* Pixabay unavailable — fall through */ }
+    }
+
+    // ── Unsplash ───────────────────────────────────────────────────────────
+    if (src.unsplash) {
+      // Guard against burning the 50 req/hr Unsplash demo limit in one session
+      window._unsplashReqCount = (window._unsplashReqCount || 0);
+      if (window._unsplashReqCount >= 40) {
+        console.warn('[img] Unsplash session cap (40) reached — skipping to preserve demo rate limit');
+      } else {
+        try {
+          const unsplashUrl = `/api/unsplash-search?q=${encodeURIComponent(wikiQuery)}&per_page=10&orientation=landscape`;
+          console.log(`[img] Unsplash fetch #${window._unsplashReqCount + 1}: ${unsplashUrl}`);
+          window._unsplashReqCount++;
+          const uResp = await fetch(unsplashUrl);
+          if (!uResp.ok) {
+            const errText = await uResp.text().catch(() => '');
+            console.warn(`[img] Unsplash ${uResp.status}: ${errText.slice(0, 120)}`);
+          } else {
+            const uData = await uResp.json();
+            const hits = uData?.hits || [];
+            console.log(`[img] Unsplash returned ${hits.length} hits for "${wikiQuery}"`);
+            if (hits.length > 0) {
+              const validHits = negTags.length > 0
+                ? hits.filter(h => { const tags = (h.tags || '').toLowerCase(); return !negTags.some(neg => tags.includes(neg)); })
+                : hits;
+              const pool = validHits.length > 0 ? validHits : hits;
+              const pick = pool[Math.floor(Math.random() * Math.min(pool.length, 5))];
+              if (pick?.webformatURL) {
+                const res = { url: pick.webformatURL, svg: null, source: 'unsplash', credit: pick.credit, creditUrl: pick.creditUrl };
+                quizResolvedVisuals.set(keyword, res);
+                return res;
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('[img] Unsplash fetch error:', e.message, '— falling through');
+        }
+      }
+    }
+
+    // ── Wikimedia ──────────────────────────────────────────────────────────
+    if (src.wikimedia) {
+      let wikiUrl = await fetchWikiImage(wikiQuery);
+      if (!wikiUrl && wikiQuery !== keyword) wikiUrl = await fetchWikiImage(keyword);
+      if (wikiUrl) {
+        const res = { url: wikiUrl, svg: null, source: 'wikimedia' };
         quizResolvedVisuals.set(keyword, res);
         return res;
       }
-    } catch (e) { /* Pixabay unavailable — fall through to Wikimedia */ }
-
-    // Wikimedia Commons: try enriched query, then bare keyword as fallback
-    let wikiUrl = await fetchWikiImage(wikiQuery);
-    if (!wikiUrl && wikiQuery !== keyword) wikiUrl = await fetchWikiImage(keyword);
-    if (wikiUrl) {
-      const res = { url: wikiUrl, svg: null, source: 'wikimedia' };
-      quizResolvedVisuals.set(keyword, res);
-      return res;
     }
   }
 
   // ── Last resort: AI SVG ────────────────────────────────────────────────
-  // Only reached for precise math diagrams OR if both photo sources failed.
-  const aiSvg = await generateAISVG(keyword, null, context, questionText, _correctAnswer);
-  if (aiSvg) {
-    const res = { url: null, svg: aiSvg, source: 'ai' };
-    quizResolvedVisuals.set(keyword, res);
-    return res;
+  // Only reached for precise math diagrams OR if photo sources failed.
+  // Always used for math/diagrams regardless of setting; optional otherwise.
+  const _aiAllowed = isPreciseDiagram || opts.forceAI ||
+    (quizSettings.imageSources ? quizSettings.imageSources.ai !== false : true);
+  if (_aiAllowed) {
+    const aiSvg = await generateAISVG(keyword, null, context, questionText, _correctAnswer);
+    if (aiSvg) {
+      const res = { url: null, svg: aiSvg, source: 'ai' };
+      quizResolvedVisuals.set(keyword, res);
+      return res;
+    }
   }
   // Do NOT cache null — allow retry on next render
   return null;
@@ -3143,11 +3261,44 @@ async function fetchQuizBatch() {
     ],
   };
 
+  // ── Custom-topic angle bank ────────────────────────────────────────────────
+  // For custom single-word/phrase topics (e.g. "dogs", "dinosaurs", "space"),
+  // we generate a diverse set of question angles so the AI doesn't repeat its
+  // favourite 5 questions every time.
+  const _CUSTOM_TOPIC_ANGLES = [
+    'factual identification', 'name and terminology', 'physical characteristics',
+    'behaviour and habits', 'historical origin', 'classification or taxonomy',
+    'famous examples or individuals', 'world records or extremes',
+    'comparison between types', 'life cycle or development',
+    'role in human society or culture', 'diet and nutrition',
+    'habitat or environment', 'anatomy or body parts',
+    'unusual or surprising facts', 'mythology or folklore connection',
+    'regional varieties or breeds', 'communication and sounds',
+    'sensory abilities', 'relationship with other species',
+    'conservation status', 'domestic vs wild varieties',
+    'size and weight comparisons', 'speed and agility facts',
+    'reproduction and family groups', 'intelligence and problem solving',
+    'tools or accessories associated with them', 'pop-culture references',
+    'country of origin', 'economic or scientific importance',
+  ];
+
   // For each subject slot, build a randomised hint using 6 randomly picked subtopics
   const _buildHint = (subject) => {
     const bank = TOPIC_BANKS[subject];
     if (!bank) {
-      return `CUSTOM TOPIC: "${subject}" — this question MUST be exclusively about ${subject}. Every aspect of the question and all answer choices must relate directly to ${subject}. Do NOT generate questions about unrelated subjects.`;
+      // Pick 4 random angles to give the AI specific, varied anchors each call
+      const angles = _pick(_CUSTOM_TOPIC_ANGLES, 4).join(', ');
+      // Also add a random creativity nudge so Gemini doesn't default to the same questions
+      const nudges = [
+        'Avoid the most obvious questions — choose surprising, unusual angles.',
+        'Focus on trivia and lesser-known facts rather than basic definitions.',
+        'Use comparison-style questions (e.g. which X is largest/fastest/oldest).',
+        'Ask about specific named examples, individuals, or record-holders.',
+        'Ask about cultural, historical, or scientific significance.',
+        'Ask questions that require reasoning, not just recall.',
+      ];
+      const nudge = nudges[Math.floor(Math.random() * nudges.length)];
+      return `CUSTOM TOPIC: "${subject}" — this question MUST be exclusively about ${subject}. Focus on these specific angles this round: ${angles}. ${nudge} Every aspect of the question and all answer choices must relate directly to ${subject}. Do NOT generate questions about unrelated subjects.`;
     }
     const picked = _pick(bank, 6).join(', ');
 
@@ -3214,6 +3365,21 @@ ${imageOnly
   - Bad: "a picture of a downward arrow", "图片", "figure", "math problem", "photo of clock".
   - For Step 3 answers: the 'imageKeyword' field is MANDATORY on every answer object. If you cannot find a suitable imageKeyword, choose a different question type.
   - NEVER describe the image in the 'text' field — 'text' is the ANSWER LABEL only (e.g. "Australia", "是", "True"). The 'imageKeyword' is the search term.
+
+- QUESTION IMAGE MUST BE A VISUAL CLUE (critical):
+  When you use Step 2 (image in question), the image MUST visually reveal or strongly hint at the CORRECT answer. The student looks at the image and uses it to answer.
+  FORBIDDEN: A question image that is generic or shows only the action without the context that answers the question.
+  BAD: question="The girl is reading a book. Where is she?" questionImageKeyword="girl reading book"
+    → WHY BAD: image shows the action but NOT the location. No clue given.
+  GOOD: question="Where is the girl reading her book?" questionImageKeyword="girl reading in library"
+    → WHY GOOD: image shows the library — student can see the answer.
+  GOOD: question="What season is shown?" questionImageKeyword="snowy winter landscape"
+    → WHY GOOD: image directly shows the answer.
+  RULES:
+  * "Where is [person]?" → questionImageKeyword MUST show the LOCATION (e.g. "school classroom", "park bench"), NOT just the person or their action.
+  * "Who is doing [activity]?" → questionImageKeyword MUST show the PERSON with a clear visual identifier (e.g. "doctor with stethoscope", "chef in kitchen").
+  * "What is happening?" → questionImageKeyword MUST show the scene, not just an object.
+  * If the image would NOT help identify the correct answer, use Step 3 (images in answers) or make the question text-only instead.
 `
     : '';
 
@@ -4097,8 +4263,8 @@ function renderQuizBoard() {
     const _showQBadge = (src) => {
       const old = qImgWrap.querySelector('.img-src-badge');
       if (old) old.remove();
-      const lbl = src === 'ai' ? 'A' : src === 'wikimedia' ? 'W' : 'P';
-      const col = src === 'ai' ? 'rgba(139,92,246,0.92)' : src === 'wikimedia' ? 'rgba(59,130,246,0.92)' : 'rgba(16,185,129,0.92)';
+      const lbl = src === 'ai' ? 'A' : src === 'wikimedia' ? 'W' : src === 'unsplash' ? 'U' : 'P';
+      const col = src === 'ai' ? 'rgba(139,92,246,0.92)' : src === 'wikimedia' ? 'rgba(59,130,246,0.92)' : src === 'unsplash' ? 'rgba(245,158,11,0.92)' : 'rgba(16,185,129,0.92)';
       const b = document.createElement('span');
       b.className = 'img-src-badge';
       b.textContent = lbl;
@@ -4243,6 +4409,8 @@ function renderQuizBoard() {
         _qImgWrapRef.removeEventListener('click', onClick);
       }
       questionContainer.style.cursor = '';
+      // Re-measure grid now that it's visible — qRead hide may have caused stale measurements
+      requestAnimationFrame(() => _sizeAnswerGrid());
       // Sequencing rule: read answers ONLY AFTER question TTS finishes.
       // If question is still being spoken, mark as pending — quizSpeak's onEnd will trigger it.
       if (quizSettings.voiceOver && _capturedGen === quizRenderGen) {
@@ -4460,8 +4628,8 @@ function renderQuizBoard() {
       const _showAnsBadge = (src) => {
         const old = imgWrapper.querySelector('.img-src-badge');
         if (old) old.remove();
-        const lbl = src === 'ai' ? 'A' : src === 'wikimedia' ? 'W' : 'P';
-        const col = src === 'ai' ? 'rgba(139,92,246,0.92)' : src === 'wikimedia' ? 'rgba(59,130,246,0.92)' : 'rgba(16,185,129,0.92)';
+        const lbl = src === 'ai' ? 'A' : src === 'wikimedia' ? 'W' : src === 'unsplash' ? 'U' : 'P';
+        const col = src === 'ai' ? 'rgba(139,92,246,0.92)' : src === 'wikimedia' ? 'rgba(59,130,246,0.92)' : src === 'unsplash' ? 'rgba(245,158,11,0.92)' : 'rgba(16,185,129,0.92)';
         const b = document.createElement('span');
         b.className = 'img-src-badge';
         b.textContent = lbl;
@@ -4522,7 +4690,10 @@ function renderQuizBoard() {
           _showImgError();
         }
       } else {
+        // Hard timeout: if resolve takes > 12s (e.g. Unsplash 403 + all fallbacks fail), show error
+        const _imgFallbackTimer = setTimeout(() => _showImgError(), 12000);
         resolveVisual(imageKeyword, [], q.question).then(res => {
+          clearTimeout(_imgFallbackTimer);
           if (res?.url) {
             ansImg.src = res.url;
             ansImg.onload = () => {
@@ -4751,9 +4922,16 @@ function _sizeAnswerGrid() {
   if (!grid) return;
 
   if (isQuiz) {
-    // Quiz mode: CSS flex:1 1 0 !important handles the height.
-    // Just clear any stale explicit height that might override flex.
-    grid.style.removeProperty('height');
+    // Measure remaining height after the question section — race-condition proof.
+    // Using the question section's actual height avoids stale grid.top readings.
+    const qSection = document.querySelector('.quiz-question-section');
+    const qSectionH = qSection ? qSection.getBoundingClientRect().height : 0;
+    const bodyPad = parseFloat(getComputedStyle(document.body).paddingTop) || 0;
+    const gap = 8; // gap between question section and grid
+    const available = window.innerHeight - bodyPad - qSectionH - gap - 8;
+    if (available > 80) {
+      grid.style.setProperty('height', available + 'px', 'important');
+    }
     return;
   }
 
@@ -5883,6 +6061,10 @@ function _doStartQuiz() {
 let _introPrefetchPromise = null;
 
 window.startQuiz = () => {
+  // Load asked-question history NOW (before the prefetch) so the AI batch
+  // request carries the full usedList and won't repeat previous questions.
+  quizAskedQuestions = loadQuizAsked();
+
   if (quizSettings.theme === 'ben-holly') {
     // Kick off AI generation immediately while intro plays
     _introPrefetchPromise = fetchQuizBatch().catch(() => null);

@@ -591,6 +591,39 @@
               mixes text and images.</p>
           </div>
 
+          <!-- Image Source -->
+          <div class="space-y-3 border-t border-slate-800 pt-5">
+            <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">🖼️ Image Sources</label>
+            <div class="grid grid-cols-2 gap-2">
+              <label class="flex items-center gap-2.5 cursor-pointer p-2 rounded-lg hover:bg-slate-800/60 transition-colors">
+                <input type="checkbox" id="img-src-chk-pixabay" class="w-4 h-4 rounded accent-emerald-500" checked>
+                <span class="text-sm text-slate-300 flex items-center gap-1.5">
+                  <span style="color:#10b981;font-weight:900;font-size:0.8rem">P</span> Pixabay
+                </span>
+              </label>
+              <label class="flex items-center gap-2.5 cursor-pointer p-2 rounded-lg hover:bg-slate-800/60 transition-colors">
+                <input type="checkbox" id="img-src-chk-unsplash" class="w-4 h-4 rounded accent-amber-500">
+                <span class="text-sm text-slate-300 flex items-center gap-1.5">
+                  <span style="color:#f59e0b;font-weight:900;font-size:0.8rem">U</span> Unsplash
+                  <span class="text-[9px] text-slate-500 ml-0.5">(key req.)</span>
+                </span>
+              </label>
+              <label class="flex items-center gap-2.5 cursor-pointer p-2 rounded-lg hover:bg-slate-800/60 transition-colors">
+                <input type="checkbox" id="img-src-chk-wikimedia" class="w-4 h-4 rounded accent-blue-500" checked>
+                <span class="text-sm text-slate-300 flex items-center gap-1.5">
+                  <span style="color:#3b82f6;font-weight:900;font-size:0.8rem">W</span> Wikimedia
+                </span>
+              </label>
+              <label class="flex items-center gap-2.5 cursor-pointer p-2 rounded-lg hover:bg-slate-800/60 transition-colors">
+                <input type="checkbox" id="img-src-chk-ai" class="w-4 h-4 rounded accent-violet-500" checked>
+                <span class="text-sm text-slate-300 flex items-center gap-1.5">
+                  <span style="color:#8b5cf6;font-weight:900;font-size:0.8rem">A</span> AI Generated
+                </span>
+              </label>
+            </div>
+            <p class="text-[10px] text-slate-500">Checked sources are tried in order: Pixabay → Unsplash → Wikimedia → AI. At least one must remain active.</p>
+          </div>
+
 
           <!-- Education Level -->
           <div class="space-y-3 border-t border-slate-800 pt-5" id="quiz-age-section">
