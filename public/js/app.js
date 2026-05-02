@@ -6789,24 +6789,14 @@ window.startComprehensionFromQuizSettings = async () => {
   const overlay = document.getElementById('quiz-settings-overlay');
   if (overlay) overlay.classList.remove('show');
 
-  // Save to history immediately (before the async call, so it's recorded even on failure)
+  // Save to history
   _qsHistorySave(rawUrl);
 
-  const numQ = quizSettings.correctTarget || 5;
+  const numQ    = quizSettings.correctTarget || 5;
   const eduLevel = quizSettings.educationLevel || 'P2';
 
-  // Show loading overlay
-  const loadOv = document.createElement('div');
-  loadOv.id = 'comp-quiz-loading-overlay';
-  loadOv.innerHTML = `
-    <div class="cql-spinner"></div>
-    <div class="cql-text">Generating ${numQ} questions<br>based on your ${parsed.type === 'youtube' ? 'video' : 'image'}…</div>
-  `;
-  document.body.appendChild(loadOv);
-
-  // Call the comprehension Cloud Function to generate questions
-  let questions = null;
-  try {
+  // ── Helper: call the Cloud Function ────────────────────────────────────
+  const _fetchQuestions = async () => {
     const body = {
       phase: 'questions',
       medium: parsed.type === 'youtube' ? 'video' : 'image',
@@ -6821,78 +6811,126 @@ window.startComprehensionFromQuizSettings = async () => {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
     });
     const data = await res.json();
-    if (data?.questions?.length) {
-      questions = data.questions;
-    } else {
-      throw new Error(data?.error || 'No questions returned');
-    }
-  } catch (err) {
-    console.error('[compFromQuiz] Generation failed:', err);
-    loadOv.remove();
-    if (window.showToast) window.showToast('Failed to generate questions: ' + err.message, 'error');
-    return;
-  }
-
-  loadOv.remove();
+    if (data?.questions?.length) return data.questions;
+    throw new Error(data?.error || 'No questions returned');
+  };
 
   if (parsed.type === 'youtube') {
-    // ── Video-first flow ─────────────────────────────────────────────────
-    // Play the YouTube video with a Skip button, then launch the quiz
-    _compQuizRunVideoThenQuiz(parsed.videoId, questions, eduLevel);
+    // ── PARALLEL FLOW: start video immediately + generate in background ──
+    // 1. Show video overlay right away (no wait)
+    // 2. Start question generation in background
+    // 3. Skip button waits for questions if still loading, then launches quiz
+
+    let questionsReady = null;  // will be set when API returns
+    let skipPressed    = false; // set when user clicks Skip
+
+    const questionsPromise = _fetchQuestions().then(qs => {
+      questionsReady = qs;
+      // If user already pressed Skip before questions arrived, launch now
+      if (skipPressed) {
+        const videoOv = document.getElementById('comp-quiz-video-overlay');
+        if (videoOv) videoOv.remove();
+        _compQuizRunTextQuiz(qs, eduLevel);
+      } else {
+        // Update skip button to show "ready"
+        const skipBtn = document.getElementById('comp-quiz-video-skip');
+        if (skipBtn) {
+          skipBtn.innerHTML = '⏭ Skip to Quiz';
+          skipBtn.style.borderColor = '#34d399';
+          skipBtn.style.color = '#34d399';
+        }
+      }
+    }).catch(err => {
+      console.error('[compFromQuiz] Generation failed:', err);
+      const skipBtn = document.getElementById('comp-quiz-video-skip');
+      if (skipBtn) {
+        skipBtn.innerHTML = '⚠ Generation failed';
+        skipBtn.style.borderColor = '#f87171';
+        skipBtn.style.color = '#f87171';
+      }
+    });
+
+    // Show the video overlay immediately
+    const videoOv = document.createElement('div');
+    videoOv.id = 'comp-quiz-video-overlay';
+    videoOv.innerHTML = `
+      <iframe
+        src="https://www.youtube.com/embed/${parsed.videoId}?autoplay=1&rel=0&modestbranding=1"
+        allow="autoplay; fullscreen"
+        allowfullscreen>
+      </iframe>
+      <button id="comp-quiz-video-skip">⏳ Generating questions…</button>
+    `;
+    document.body.appendChild(videoOv);
+
+    videoOv.querySelector('#comp-quiz-video-skip').addEventListener('click', () => {
+      if (questionsReady) {
+        // Questions already ready — launch immediately
+        videoOv.remove();
+        _compQuizRunTextQuiz(questionsReady, eduLevel);
+      } else {
+        // Still generating — show spinner on button, wait
+        skipPressed = true;
+        const skipBtn = document.getElementById('comp-quiz-video-skip');
+        if (skipBtn) {
+          skipBtn.innerHTML = '⏳ Please wait…';
+          skipBtn.disabled = true;
+          skipBtn.style.opacity = '0.7';
+        }
+      }
+    });
+
   } else {
-    // ── Image-quadrant flow ─────────────────────────────────────────────
-    _compQuizRunImageQuiz(parsed.url, questions, eduLevel);
+    // ── IMAGE FLOW: show spinner while generating (no video to show) ──────
+    const loadOv = document.createElement('div');
+    loadOv.id = 'comp-quiz-loading-overlay';
+    loadOv.innerHTML = `
+      <div class="cql-spinner"></div>
+      <div class="cql-text">Analysing image and generating ${numQ} questions…</div>
+    `;
+    document.body.appendChild(loadOv);
+    try {
+      const questions = await _fetchQuestions();
+      loadOv.remove();
+      _compQuizRunImageQuiz(parsed.url, questions, eduLevel);
+    } catch (err) {
+      loadOv.remove();
+      if (window.showToast) window.showToast('Failed: ' + err.message, 'error');
+    }
   }
 };
 
-// ── Video-first: play video then launch comprehension quiz ────────────────
-function _compQuizRunVideoThenQuiz(videoId, questions, eduLevel) {
-  const videoOv = document.createElement('div');
-  videoOv.id = 'comp-quiz-video-overlay';
-  videoOv.innerHTML = `
-    <iframe
-      src="https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1"
-      allow="autoplay; fullscreen"
-      allowfullscreen>
-    </iframe>
-    <button id="comp-quiz-video-skip">⏭ Skip Video</button>
-  `;
-  document.body.appendChild(videoOv);
-
-  const doLaunch = () => {
-    videoOv.remove();
-    _compQuizRunTextQuiz(questions, eduLevel);
-  };
-  videoOv.querySelector('#comp-quiz-video-skip').addEventListener('click', doLaunch);
-}
-
-// ── Text quiz (after video) — standard quiz-style layout ─────────────────
-// Uses the standard #view-quiz with the existing comprehension answer engine
-function _compQuizRunTextQuiz(questions, eduLevel) {
+// ── Shared helper: hide all views, show view-comprehension + comp-question-stage ──
+function _compShowCompView(questions) {
   // Store questions
   window._compFromQuizQuestions = questions;
   window._compFromQuizIdx = 0;
   window._compFromQuizScore = 0;
   window._compFromQuizTotal = questions.length;
 
-  // Switch to the comprehension view (NOT quiz mode — avoids the normal quiz
-  // machinery, the answer-read-time hover bar, and image loading pipeline).
-  // Use _compSetModeOnly to skip the settings overlay that setMode('comprehension') shows.
-  window._compSetModeOnly = true;
-  setMode('comprehension');
-  window._compSetModeOnly = false;
+  // Hide every other view explicitly (mirrors setMyReportsMode pattern)
+  document.body.classList.remove('quiz-active', 'quiz-comp-img', 'education-active');
+  const toHide = ['view-landing', 'view-education', 'view-edit', 'view-math-game',
+                  'view-peppa-game', 'view-quiz', 'view-admin', 'view-my-reports'];
+  toHide.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.add('hidden');
+  });
 
-  // Manually show view-comprehension (setMode with _compSetModeOnly skips this)
+  // Close any overlays
+  const quizOv = document.getElementById('quiz-settings-overlay');
+  if (quizOv) quizOv.classList.remove('show');
+  const compOv = document.getElementById('comp-settings-overlay');
+  if (compOv) compOv.style.display = 'none';
+
+  // Show view-comprehension
   const viewComp = document.getElementById('view-comprehension');
   if (viewComp) {
     viewComp.classList.remove('hidden');
     viewComp.style.cssText = 'display:flex;flex-direction:column;width:100%;height:100%;position:relative;min-height:0;flex:1;';
   }
-  // Hide the comprehension settings overlay (in case it was open)
-  const compOv = document.getElementById('comp-settings-overlay');
-  if (compOv) compOv.style.display = 'none';
 
-  // Show the question stage
+  // Show question stage
   const stage = document.getElementById('comp-question-stage');
   if (stage) {
     stage.style.display = 'flex';
@@ -6901,44 +6939,40 @@ function _compQuizRunTextQuiz(questions, eduLevel) {
     stage.style.height = '100%';
   }
 
-  // Initialise score display
-  const counter = document.getElementById('comp-q-counter');
+  // Reset score display
+  const counter    = document.getElementById('comp-q-counter');
   const scoreBadge = document.getElementById('comp-score-badge');
-  if (counter) counter.textContent = `Q 1 / ${questions.length}`;
+  if (counter)    counter.textContent    = `Q 1 / ${questions.length}`;
   if (scoreBadge) scoreBadge.textContent = '⭐ 0';
 
+  // Set comp-answers-grid to 2×2 quiz-style grid
+  const grid = document.getElementById('comp-answers-grid');
+  if (grid) {
+    grid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;' +
+      'gap:8px;padding:10px;box-sizing:border-box;width:100%;flex:1;min-height:0;overflow:hidden;';
+  }
+
+  mode = 'comprehension';
+}
+
+// ── Text quiz (after video) ───────────────────────────────────────────────
+function _compQuizRunTextQuiz(questions, eduLevel) {
+  _compShowCompView(questions);
   _compQuizRenderQuestion();
 }
 
 // ── Image-quadrant quiz ───────────────────────────────────────────────────
 function _compQuizRunImageQuiz(imageUrl, questions, eduLevel) {
-  // Enter quiz mode
-  setQuizMode();
-  document.getElementById('quiz-settings-overlay')?.classList.remove('show');
+  _compShowCompView(questions);
   document.body.classList.add('quiz-comp-img');
 
-  // Show the quadrant containers
-  const imgQ = document.getElementById('comp-img-quadrant');
-  const qQ   = document.getElementById('comp-q-quadrant');
+  // Show image quadrant containers
+  const imgQ  = document.getElementById('comp-img-quadrant');
+  const qQ    = document.getElementById('comp-q-quadrant');
   const imgEl = document.getElementById('comp-img-quadrant-img');
-  if (imgQ) imgQ.style.display = '';
-  if (qQ)  qQ.style.display  = '';
-  if (imgEl) imgEl.src = imageUrl;
-
-  // Store questions
-  window._compFromQuizQuestions = questions;
-  window._compFromQuizIdx = 0;
-  window._compFromQuizScore = 0;
-  window._compFromQuizTotal = questions.length;
-
-  // Move the comprehension answers grid into view-quiz if needed
-  // (It lives in comp-question-stage by default; we need it under #view-quiz
-  //  in quiz-comp-img mode so the CSS grid places it in row 2)
-  const viewQuizEl = document.getElementById('view-quiz');
-  let answersGrid  = document.getElementById('comp-answers-grid');
-  if (answersGrid && viewQuizEl && answersGrid.parentElement !== viewQuizEl) {
-    viewQuizEl.appendChild(answersGrid);
-  }
+  if (imgQ)  imgQ.style.display  = '';
+  if (qQ)    qQ.style.display    = '';
+  if (imgEl) imgEl.src           = imageUrl;
 
   _compQuizRenderQuestion();
 }
@@ -8815,6 +8849,7 @@ window.renderAdminReportsPanel = async () => {
         <td><div class="text-xs text-slate-400 bg-slate-800 px-2 py-1 rounded inline-block">${subjs2.join(', ')}</div></td>
         <td><div style="font-size:0.72rem;color:#64748b;">${med2}</div></td>
         <td id="reviewed-cell-${d.id}">${rev2}</td>
+        <td id="quality-cell-${d.id}">${_imgQualityBadge(data)}</td>
         <td style="white-space:nowrap;">
           <button onclick="openAdminReportModal('${d.id}')" class="px-3 py-1 bg-violet-600/20 hover:bg-violet-600/40 text-violet-300 rounded text-xs transition-colors">View Details</button>
           <button onclick="deleteQuizReport('${d.id}', true)" style="margin-left:6px;padding:3px 10px;border:1px solid rgba(248,113,113,0.3);border-radius:6px;background:rgba(248,113,113,0.08);color:#f87171;font-size:0.7rem;cursor:pointer;" title="Delete this report">🗑 Delete</button>
@@ -9079,6 +9114,9 @@ window.setQuestionImageAccuracy = async (docId, qIdx, value) => {
       }
       // Update button styles in-place — no modal re-render
       _updateRatingBtns(`qrb-${docId}-${qIdx}`, value);
+      // Live-refresh the quality cell in the reports table
+      const qcell = document.getElementById(`quality-cell-${docId}`);
+      if (qcell) qcell.innerHTML = _imgQualityBadge(cache[docId]);
     }
 
     // Persist to quiz_reports
@@ -9169,10 +9207,54 @@ function _countRatableImages(report) {
   return { total, rated };
 }
 
-// Update the Reviewed table cell in-place after all images are rated
+// Returns { good, neutral, bad, rated } across all ratable images in a report.
+// good = rating===1, neutral = rating===0, bad = rating===-1.
+function _calcImageQuality(report) {
+  const qs = _normArrLocal(report.questions);
+  let good = 0, neutral = 0, bad = 0, rated = 0;
+  for (const q of qs) {
+    const hasQAcc = q.questionImageAccuracy !== undefined && q.questionImageAccuracy !== null;
+    if (q.questionImageKeyword || hasQAcc) {
+      if (hasQAcc) {
+        rated++;
+        if (q.questionImageAccuracy === 1)  good++;
+        else if (q.questionImageAccuracy === 0) neutral++;
+        else bad++;
+      }
+    } else {
+      for (const a of _normArrLocal(q.answers)) {
+        const hasAcc = a.accuracy !== undefined && a.accuracy !== null;
+        if (a.url || a.imageKeyword || hasAcc) {
+          if (hasAcc) {
+            rated++;
+            if (a.accuracy === 1)  good++;
+            else if (a.accuracy === 0) neutral++;
+            else bad++;
+          }
+        }
+      }
+    }
+  }
+  return { good, neutral, bad, rated };
+}
+
+// Render the image quality badge HTML for a given report data object.
+function _imgQualityBadge(report) {
+  const { good, rated } = _calcImageQuality(report);
+  if (rated === 0) return `<span style="color:#475569;font-size:0.72rem;">—</span>`;
+  const pct = Math.round((good / rated) * 100);
+  const col = pct >= 70 ? '#34d399' : pct >= 40 ? '#fbbf24' : '#f87171';
+  const emoji = pct >= 70 ? '👍' : pct >= 40 ? '😐' : '👎';
+  return `<span style="font-size:0.72rem;font-weight:700;color:${col};" title="${good} good out of ${rated} rated">${emoji} ${pct}% <span style="font-weight:400;color:#64748b;">(${good}/${rated})</span></span>`;
+}
+
+// Update the Reviewed table cell and image quality cell in-place after rating changes
 function _updateReviewedCell(docId) {
+  const cache = window._adminReportsCache?.[docId] ? window._adminReportsCache : window._userReportsCache;
   const cell = document.getElementById(`reviewed-cell-${docId}`);
   if (cell) cell.innerHTML = `<span style="color:#34d399;font-size:0.72rem;">✓ ${new Date().toLocaleDateString()}</span>`;
+  const qcell = document.getElementById(`quality-cell-${docId}`);
+  if (qcell && cache?.[docId]) qcell.innerHTML = _imgQualityBadge(cache[docId]);
 }
 window.closeAdminReportModal = () => {
   document.getElementById('admin-report-modal').style.display = 'none';
@@ -9213,6 +9295,9 @@ window.setReportAccuracy = async (docId, qIdx, aIdx, value) => {
       }
       // Update button styles in-place — no modal re-render
       _updateRatingBtns(`rb-${docId}-${qIdx}-${aIdx}`, value);
+      // Live-refresh the quality cell in the reports table
+      const qcell = document.getElementById(`quality-cell-${docId}`);
+      if (qcell) qcell.innerHTML = _imgQualityBadge(cache[docId]);
     }
 
     // ── 2. Persist to quiz_reports
@@ -9467,6 +9552,7 @@ window.renderUserReports = async () => {
         <td><div style="font-size:0.72rem;color:#94a3b8;background:rgba(255,255,255,0.05);padding:2px 8px;border-radius:4px;display:inline-block;">${subjStr}</div></td>
         <td><div style="font-size:0.72rem;color:#64748b;">${medStr}</div></td>
         <td id="reviewed-cell-${d.id}">${reviewed}</td>
+        <td id="quality-cell-${d.id}">${_imgQualityBadge(data)}</td>
         <td style="white-space:nowrap;">
           <button onclick="openUserReportModal('${d.id}')" class="px-3 py-1 bg-amber-600/20 hover:bg-amber-600/40 text-amber-300 rounded text-xs transition-colors">View Details</button>
           <button onclick="deleteQuizReport('${d.id}', false)" style="margin-left:6px;padding:3px 10px;border:1px solid rgba(248,113,113,0.3);border-radius:6px;background:rgba(248,113,113,0.08);color:#f87171;font-size:0.7rem;cursor:pointer;transition:all 0.15s;" title="Delete this report and all its ratings">🗑 Delete</button>
