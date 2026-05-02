@@ -1719,6 +1719,10 @@ function setMode(newMode) {
   }
   if (newMode !== 'quiz') stopQuizMusic();
 
+  // Always hide admin view when leaving admin mode
+  const _adminView = document.getElementById('view-admin');
+  if (_adminView && newMode !== 'admin') _adminView.classList.add('hidden');
+
   // Clear active classes
   document.body.classList.remove('quiz-active', 'education-active');
 
