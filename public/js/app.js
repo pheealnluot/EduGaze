@@ -1796,6 +1796,8 @@ let initialSettings = loadQuizSettings() || {
   dwellTimeMs: 2000,
   qReadEnabled: true,
   qReadTimeMs: 1000,
+  aReadEnabled: false,
+  aReadTimeMs: 2000,
   theme: 'ben-holly',
   questionSource: 'ai',
   fontSize: 'medium',
@@ -1819,10 +1821,10 @@ if (initialSettings.qReadEnabled === undefined) initialSettings.qReadEnabled = t
 if (!initialSettings.imageSources) {
   const old = initialSettings.imageSourceMode;
   initialSettings.imageSources = {
-    pixabay:  !old || old === 'auto' || old === 'pixabay',
+    pixabay: !old || old === 'auto' || old === 'pixabay',
     unsplash: old === 'unsplash',
     wikimedia: !old || old === 'auto' || old === 'wikimedia',
-    ai:       !old || old === 'auto' || old === 'ai',
+    ai: !old || old === 'auto' || old === 'ai',
   };
   delete initialSettings.imageSourceMode;
 }
@@ -1832,6 +1834,8 @@ if (initialSettings.imageSources && !Object.values(initialSettings.imageSources)
 }
 if (!initialSettings.qReadTimeMs) initialSettings.qReadTimeMs = 3000;
 if (!initialSettings.dwellTimeMs && initialSettings.dwellTimeMs !== 0) initialSettings.dwellTimeMs = 2000;
+if (initialSettings.aReadEnabled === undefined) initialSettings.aReadEnabled = false;
+if (!initialSettings.aReadTimeMs) initialSettings.aReadTimeMs = 2000;
 
 let quizSettings = initialSettings;
 
@@ -1890,10 +1894,10 @@ function enterQuizHeaderMode() {
           </div>`;
 
     // Wire long-press / dblclick on sidebar buttons (after innerHTML injection)
-    addDoubleTapOrDblClick(document.getElementById('sb-btn-home'),     () => setMode('landing'));
-    addDoubleTapOrDblClick(document.getElementById('sb-btn-reload'),   () => window.forceReloadQuizImages());
+    addDoubleTapOrDblClick(document.getElementById('sb-btn-home'), () => setMode('landing'));
+    addDoubleTapOrDblClick(document.getElementById('sb-btn-reload'), () => window.forceReloadQuizImages());
     addDoubleTapOrDblClick(document.getElementById('sb-btn-settings'), () => window.openQuizSettings());
-    addDoubleTapOrDblClick(document.getElementById('sb-btn-exit'),     () => setMode('landing'));
+    addDoubleTapOrDblClick(document.getElementById('sb-btn-exit'), () => setMode('landing'));
 
   } else {
     // Normal mode: standard header buttons
@@ -2133,6 +2137,35 @@ function initQuizSettingsUI() {
   };
   qReadInput.oninput = e => syncQRead(e.target.value);
   qReadSlider.oninput = e => syncQRead(e.target.value);
+
+  // ARead (Answer Read Time)
+  const aReadChk = document.getElementById('quiz-aread-enabled');
+  const aReadInput = document.getElementById('quiz-aread-input');
+  const aReadSlider = document.getElementById('quiz-aread-slider');
+  const aReadControls = document.getElementById('quiz-aread-controls');
+  if (aReadChk && aReadInput && aReadSlider && aReadControls) {
+    aReadChk.checked = quizSettings.aReadEnabled;
+    aReadInput.value = quizSettings.aReadTimeMs;
+    aReadSlider.value = quizSettings.aReadTimeMs;
+    const updateAReadState = () => {
+      aReadControls.classList.toggle('opacity-40', !aReadChk.checked);
+      aReadControls.classList.toggle('pointer-events-none', !aReadChk.checked);
+    };
+    updateAReadState();
+    aReadChk.onchange = e => {
+      quizSettings.aReadEnabled = e.target.checked;
+      updateAReadState();
+      saveQuizSettings();
+    };
+    const syncARead = val => {
+      quizSettings.aReadTimeMs = Number(val);
+      aReadInput.value = val;
+      aReadSlider.value = val;
+      saveQuizSettings();
+    };
+    aReadInput.oninput = e => syncARead(e.target.value);
+    aReadSlider.oninput = e => syncARead(e.target.value);
+  }
 
   // Font Size chips
   const applyQuizFontSize = () => {
@@ -2854,48 +2887,67 @@ async function resolveVisual(keyword, context = [], questionText = '', opts = {}
   // query term AND reject Pixabay results that don't belong to that domain.
   const _inDomain = (terms) => terms.some(t => qtxtLower.includes(t) || subject.includes(t));
 
-  const domainIsAnimal    = _inDomain(['animal', 'mammal', 'reptile', 'bird', 'fish', 'insect', 'amphibian', 'wildlife', 'creature', 'species', 'classify', 'habitat', 'predator', 'prey', 'science',
+  const domainIsAnimal = _inDomain(['animal', 'mammal', 'reptile', 'bird', 'fish', 'insect', 'amphibian', 'wildlife', 'creature', 'species', 'classify', 'habitat', 'predator', 'prey', 'science',
     // Common pets and animals that appear in custom subjects like "dogs", "cats"
     'dog', 'cat', 'pet', 'puppy', 'kitten', 'breed', 'paw', 'fur', 'tail', 'canine', 'feline',
     'rabbit', 'hamster', 'horse', 'pony', 'elephant', 'lion', 'tiger', 'bear', 'wolf', 'fox',
     'deer', 'monkey', 'gorilla', 'whale', 'dolphin', 'shark', 'octopus', 'parrot', 'penguin']);
-  const domainIsFood      = _inDomain(['food', 'eat', 'fruit', 'vegetable', 'meal', 'diet', 'nutrition', 'cook', 'ingredient']);
+  const domainIsFood = _inDomain(['food', 'eat', 'fruit', 'vegetable', 'meal', 'diet', 'nutrition', 'cook', 'ingredient']);
   const domainIsTransport = _inDomain(['transport', 'vehicle', 'travel', 'road', 'drive', 'fly', 'sail']);
-  const domainIsPlant     = _inDomain(['plant', 'flower', 'tree', 'leaf', 'garden', 'botany', 'photosynthesis']);
-  const domainIsBody      = _inDomain(['body', 'organ', 'skeleton', 'muscle', 'sense', 'health', 'human']);
-  const domainIsWeather   = _inDomain(['weather', 'climate', 'rain', 'cloud', 'storm', 'temperature']);
-  const domainIsSpace     = _inDomain(['space', 'planet', 'solar', 'star', 'galaxy', 'moon', 'orbit']);
-  const domainIsLandmark  = _inDomain(['landmark', 'monument', 'country', 'capital', 'geography', 'flag', 'world']);
+  const domainIsPlant = _inDomain(['plant', 'flower', 'tree', 'leaf', 'garden', 'botany', 'photosynthesis']);
+  const domainIsBody = _inDomain(['body', 'organ', 'skeleton', 'muscle', 'sense', 'health', 'human']);
+  const domainIsWeather = _inDomain(['weather', 'climate', 'rain', 'cloud', 'storm', 'temperature']);
+  const domainIsSpace = _inDomain(['space', 'planet', 'solar', 'star', 'galaxy', 'moon', 'orbit']);
+  const domainIsLandmark = _inDomain(['landmark', 'monument', 'country', 'capital', 'geography', 'flag', 'world']);
 
   // ── Step 2: Build enriched Pixabay query ─────────────────────────────────
   // Append a domain-specific disambiguating qualifier to the keyword.
   // This directly steers Pixabay's semantic ranking.
   let enrichedQuery = keyword; // default: search as-is
 
+  // ── Proper-noun detection ─────────────────────────────────────────────────
+  // If the answer is a named entity (e.g. "Balto", "Hachiko", "Rin Tin Tin")
+  // Pixabay won't have that specific photo — it will return random or wrong results
+  // (e.g. "Rin Tin Tin" → metal tins). Fix: prepend the singular subject so the
+  // query is contextually grounded ("dog Balto", "dog Hachiko", "dog Rin Tin Tin").
+  const _isProperNoun = /^[A-Z]/.test(keyword) &&
+    !['True', 'False', 'Yes', 'No', 'North', 'South', 'East', 'West',
+      'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday',
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December',
+    ].includes(keyword);
+  if (_isProperNoun && subject) {
+    // Derive singular from subject (strip trailing 's' for simple plurals: "dogs"→"dog")
+    const singularSubject = subject.replace(/s$/i, '').toLowerCase().trim();
+    if (singularSubject && singularSubject.length > 1) {
+      enrichedQuery = `${singularSubject} ${keyword}`;
+    }
+  }
+
   if (domainIsAnimal && !domainIsFood && !domainIsTransport) {
-    enrichedQuery = `${keyword} animal wildlife`;
+    enrichedQuery = `${enrichedQuery} animal wildlife`;
   } else if (domainIsFood && !domainIsAnimal) {
-    enrichedQuery = `${keyword} food`;
+    enrichedQuery = `${enrichedQuery} food`;
   } else if (domainIsTransport) {
-    enrichedQuery = `${keyword} vehicle`;
+    enrichedQuery = `${enrichedQuery} vehicle`;
   } else if (domainIsPlant) {
-    enrichedQuery = `${keyword} nature`;
+    enrichedQuery = `${enrichedQuery} nature`;
   } else if (domainIsBody) {
-    enrichedQuery = `${keyword} anatomy`;
+    enrichedQuery = `${enrichedQuery} anatomy`;
   } else if (domainIsWeather) {
-    enrichedQuery = `${keyword} weather`;
+    enrichedQuery = `${enrichedQuery} weather`;
   } else if (domainIsSpace) {
-    enrichedQuery = `${keyword} space astronomy`;
+    enrichedQuery = `${enrichedQuery} space astronomy`;
   }
   // Note: if domain is ambiguous or unknown, use keyword as-is (safe fallback)
 
   // ── Step 3: Pixabay category ─────────────────────────────────────────────
   let pixCategory = '';
-  if (domainIsAnimal && !domainIsFood)      pixCategory = 'animals';
-  else if (domainIsFood)                    pixCategory = 'food';
-  else if (domainIsTransport)               pixCategory = 'transportation';
+  if (domainIsAnimal && !domainIsFood) pixCategory = 'animals';
+  else if (domainIsFood) pixCategory = 'food';
+  else if (domainIsTransport) pixCategory = 'transportation';
   else if (domainIsPlant || domainIsWeather) pixCategory = 'nature';
-  else if (domainIsSpace)                   pixCategory = 'science';
+  else if (domainIsSpace) pixCategory = 'science';
   // Fallback: use a static map for common concrete keywords not inferrable from question
   else {
     const _staticCatMap = {
@@ -2925,14 +2977,14 @@ async function resolveVisual(keyword, context = [], questionText = '', opts = {}
   }
   // Always reject: keyword-specific known confusors (thin safety net)
   const _alwaysReject = {
-    apple:  ['computer', 'laptop', 'iphone', 'mac'],
-    mouse:  ['computer', 'peripheral', 'device'],
-    bat:    ['baseball', 'cricket'],
-    crane:  ['construction', 'machinery'],
-    bark:   ['dog', 'puppy', 'canine'],
-    bass:   ['guitar', 'music', 'instrument'],
+    apple: ['computer', 'laptop', 'iphone', 'mac'],
+    mouse: ['computer', 'peripheral', 'device'],
+    bat: ['baseball', 'cricket'],
+    crane: ['construction', 'machinery'],
+    bark: ['dog', 'puppy', 'canine'],
+    bass: ['guitar', 'music', 'instrument'],
     orange: ['sunset', 'sunrise'],
-    bull:   ['stock', 'market', 'finance'],
+    bull: ['stock', 'market', 'finance'],
   };
   const alwaysReject = _alwaysReject[kw] || [];
   const negTags = [...new Set([...dynamicNegTags, ...alwaysReject])];
@@ -4158,6 +4210,11 @@ function renderQuizBoard() {
     }
   }
   grid.innerHTML = '';
+  // Clean up any leftover aRead bar/hint from the previous question
+  const _oldABar = document.getElementById('quiz-aread-bar');
+  if (_oldABar) _oldABar.remove();
+  const _oldAHint = document.getElementById('quiz-aread-hint');
+  if (_oldAHint) _oldAHint.remove();
 
   // ── 2-answer detection (True/False, Yes/No) ──────────────────────────
   // Detect binary questions and reduce to 2 answers for cleaner UX.
@@ -4189,6 +4246,7 @@ function renderQuizBoard() {
   }
   const isTwoAnswer = displayAnswers.length === 2;
 
+  const _aReadEnabled = quizSettings.aReadEnabled && quizSettings.aReadTimeMs > 0;
   // Apply grid layout
   grid.className = 'quiz-answers-grid-inner';
   Object.assign(grid.style, {
@@ -4216,6 +4274,11 @@ function renderQuizBoard() {
   // _skipQRead: called by doSelect to instantly complete the bar (assigned by shouldDelay block).
   let _qReadDone = true;       // default: no delay → selection always allowed
   let _skipQRead = () => { };   // no-op by default; overwritten if qRead is active
+
+  // _aReadDone / _skipARead: parallel state for Answer Read Time.
+  // When aRead is active, doSelect is gated until the global answer-read bar finishes.
+  let _aReadDone = true;       // becomes false when aRead is active
+  let _skipARead = () => { };  // no-op by default; overwritten when aRead is active
 
   // Question read time — questionContainer is always flex-row (← text →).
   // The image goes AFTER questionContainer inside qSection (the outer flex-column section).
@@ -4336,7 +4399,8 @@ function renderQuizBoard() {
     const _correctAnsObj = q.answers?.find(a => String(a.id) === String(q.correctId));
     resolveVisual(q.questionImageKeyword, [], q.question, {
       forceAI: _isMathSubject,
-      correctAnswer: _correctAnsObj?.text || ''
+      correctAnswer: _correctAnsObj?.text || '',
+      subject: q._subject || q.subject || ''
     }).then(res => {
       _stopLoader();
       if (res?.url) {
@@ -4778,6 +4842,12 @@ function renderQuizBoard() {
         requestAnimationFrame(() => requestAnimationFrame(() => doSelect()));
         return;
       }
+      // If aRead bar hasn't completed yet, skip it instantly then re-invoke after 2 frames
+      if (!_aReadDone) {
+        _skipARead();
+        requestAnimationFrame(() => requestAnimationFrame(() => doSelect()));
+        return;
+      }
       if (isCorrect) {
         quizQuestionAnswered = true;
         _voAbortGen++; // cancel any ongoing answer TTS
@@ -4873,6 +4943,8 @@ function renderQuizBoard() {
 
     const startDwell = () => {
       if (quizSettings.dwellTimeMs === 0) return;
+      // Don't start dwell timer while the aRead global bar is still filling
+      if (!_aReadDone) return;
       let start = null;
       const animate = (t) => {
         if (currentGen !== quizRenderGen) return;
@@ -4907,6 +4979,122 @@ function renderQuizBoard() {
 
     grid.appendChild(card);
   });
+
+  // ── Answer Read Time global bar ────────────────────────────────────────
+  // Thin progress bar injected as a flex sibling ABOVE the answer grid.
+  // Hover anywhere over the grid → bar advances.
+  // Click anywhere on grid OR keypress → bar skips instantly.
+  const _aReadActive = _aReadEnabled;
+  if (_aReadActive) {
+    _aReadDone = false;
+
+    // ─ Bar wrapper: thin strip between question and grid ──────────────────
+    // Inserted before the grid in the same flex-column parent (#view-quiz)
+    const aBarOuter = document.createElement('div');
+    aBarOuter.id = 'quiz-aread-bar';
+    aBarOuter.style.cssText = [
+      'width:100%',
+      'height:3px',           // same height as qRead bar
+      'position:relative',
+      'flex-shrink:0',        // never squash when flex parent is tight
+      'border-radius:2px',
+      'overflow:hidden',
+      'background:rgba(255,255,255,0.07)',
+      'margin-bottom:4px',    // small gap before the answer grid
+    ].join(';');
+    const aBarInner = document.createElement('div');
+    aBarInner.style.cssText = [
+      'height:100%',
+      'width:0%',
+      'background:linear-gradient(90deg,#10b981,#06b6d4)',
+      'border-radius:2px',
+      'transition:background 0.4s',
+    ].join(';');
+    aBarOuter.appendChild(aBarInner);
+
+    // Insert the bar BEFORE the grid in the flex container
+    const viewQuiz = grid.parentElement;
+    if (viewQuiz) viewQuiz.insertBefore(aBarOuter, grid);
+    const aBar = aBarOuter;
+
+    // ─ Hint label: absolute centred inside the bar strip ──────────────
+    const aBarHint = document.createElement('div');
+    aBarHint.id = 'quiz-aread-hint';
+    aBarHint.style.cssText = [
+      'position:absolute', 'inset:0',
+      'display:flex', 'align-items:center', 'justify-content:center',
+      'font-size:0.5rem', 'font-weight:800',
+      'color:rgba(16,185,129,0.9)',
+      'letter-spacing:0.12em',
+      'text-transform:uppercase',
+      'white-space:nowrap',
+      'pointer-events:none',
+      'overflow:visible',
+      'opacity:0',
+      'transition:opacity 0.3s',
+    ].join(';');
+    aBarHint.textContent = '▶ ◀';
+    aBarOuter.appendChild(aBarHint);
+    // Fade in hint after short delay (only if still waiting)
+    setTimeout(() => { if (!_aReadDone) aBarHint.style.opacity = '1'; }, 400);
+
+    let aElapsed = 0, aHovering = false, aLastT = null, aDone = false;
+
+    const _onAReadComplete = () => {
+      if (aDone) return;
+      aDone = true;
+      _aReadDone = true;
+      // Flash to completion colour — bar stays visible as a read indicator
+      aBarInner.style.width = '100%';
+      aBarInner.style.background = 'linear-gradient(90deg,#7c3aed,#a855f7)';
+      aBarHint.style.opacity = '0';
+      // Remove interaction listeners; bar stays in DOM until next question cleans it up
+      document.removeEventListener('keydown', _onAReadKey, true);
+      grid.removeEventListener('click', _onAReadGridClick, true);
+      grid.removeEventListener('mouseenter', _onGridEnter);
+      grid.removeEventListener('mouseleave', _onGridLeave);
+    };
+
+    const aAnimate = (t) => {
+      if (currentGen !== quizRenderGen || aDone) return;
+      if (!aLastT) aLastT = t;
+      const dt = t - aLastT; aLastT = t;
+      if (aHovering) aElapsed += dt;
+      const pct = Math.min((aElapsed / quizSettings.aReadTimeMs) * 100, 100);
+      aBarInner.style.width = `${pct}%`;
+      if (pct >= 100) { _onAReadComplete(); return; }
+      requestAnimationFrame(aAnimate);
+    };
+
+    // ─ Hover detection on the GRID container ───────────────────────
+    // Cards must NOT have pointer-events:none (they'd miss mouse events).
+    // Instead we listen on the grid wrapper itself — mouse entering ANY part
+    // of the grid area (including cards) triggers grid's mouseenter.
+    const _onGridEnter = () => { aHovering = true; aBarHint.style.opacity = '0'; };
+    const _onGridLeave = () => { aHovering = false; aLastT = null; };
+    grid.addEventListener('mouseenter', _onGridEnter);
+    grid.addEventListener('mouseleave', _onGridLeave);
+
+    // Click on grid → skip bar instantly
+    const _onAReadGridClick = () => { aElapsed = quizSettings.aReadTimeMs; };
+    grid.addEventListener('click', _onAReadGridClick, true);
+
+    // Any key → skip bar instantly
+    const _onAReadKey = (e) => {
+      if (['Space', 'Enter', 'ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp'].includes(e.code)) {
+        e.preventDefault();
+        aElapsed = quizSettings.aReadTimeMs;
+      }
+    };
+    document.addEventListener('keydown', _onAReadKey, true);
+
+    // _skipARead: jump to completion (called from doSelect guard)
+    _skipARead = () => { aElapsed = quizSettings.aReadTimeMs; };
+
+    // Kick off the animation loop
+    requestAnimationFrame(aAnimate);
+  }
+
   // After cards are in the DOM, size the grid multiple times to catch async image loads
   requestAnimationFrame(() => _sizeAnswerGrid());
   setTimeout(() => _sizeAnswerGrid(), 150);
@@ -5823,7 +6011,7 @@ function triggerTotoroCelebration() {
     const snd = new Audio(_TOTORO_FX_SOUNDS[Math.floor(Math.random() * _TOTORO_FX_SOUNDS.length)]);
     snd.volume = 0.8;
     snd.play().catch(err => console.error('Totoro FX sound failed:', err));
-  } catch (_) {}
+  } catch (_) { }
 
   if (_totoroToastT) { clearTimeout(_totoroToastT); _totoroToastT = null; }
   toast.innerHTML = '';
@@ -5873,7 +6061,7 @@ function playTotoroIntro(onDone) {
   video.currentTime = 0;
   video.volume = 0.9;
   const playPromise = video.play();
-  if (playPromise) playPromise.catch(() => {});
+  if (playPromise) playPromise.catch(() => { });
 
   requestAnimationFrame(() => requestAnimationFrame(() => {
     overlay.style.transition = 'opacity 0.5s ease';
@@ -5936,8 +6124,8 @@ function playTotoroOutro(onDone) {
   try {
     outroAudio = new Audio('assets/totoro/My Neighbor Totoro - Ending Theme Song.mp3');
     outroAudio.volume = 0.8;
-    outroAudio.play().catch(() => {});
-  } catch (e) {}
+    outroAudio.play().catch(() => { });
+  } catch (e) { }
 
   // Reveal banner
   setTimeout(() => {
@@ -5994,7 +6182,7 @@ function playTotoroOutro(onDone) {
     if (finished) return; finished = true;
     clearInterval(spawnId);
     charTimers.forEach(t => clearTimeout(t));
-    if (outroAudio) { try { outroAudio.pause(); outroAudio.currentTime = 0; } catch (e) {} }
+    if (outroAudio) { try { outroAudio.pause(); outroAudio.currentTime = 0; } catch (e) { } }
     overlay.style.display = 'none';
     if (banner) { banner.style.opacity = '0'; banner.style.transform = 'scale(0.5)'; }
     charStage.innerHTML = '';
@@ -6974,7 +7162,7 @@ function triggerTRCelebration() {
     const snd = new Audio(fxFile);
     snd.volume = 0.8;
     snd.play().catch(err => console.error('Turning Red FX sound failed:', err));
-  } catch (_) {}
+  } catch (_) { }
 
   if (_trToastT) { clearTimeout(_trToastT); _trToastT = null; }
   toast.innerHTML = '';
@@ -6997,7 +7185,7 @@ function triggerTRCelebration() {
     const x = xPositions[i] + (Math.random() * 8 - 4); // ±4% jitter
     const y = 25 + Math.random() * 40;
     img.style.left = `${x}%`;
-    img.style.top  = `${y}%`;
+    img.style.top = `${y}%`;
     // Stagger animation delay for each character
     const delay = (i * 0.15).toFixed(2);
     img.style.animationDelay = `${delay}s, ${(parseFloat(delay) + 0.55).toFixed(2)}s, 2.9s`;
@@ -7016,7 +7204,7 @@ function triggerTRCelebration() {
 // ── Intro scene: play title video, skip on click / keypress ────────────────
 function playTRIntro(onDone) {
   const overlay = document.getElementById('tr-intro-overlay');
-  const video   = document.getElementById('tr-intro-video');
+  const video = document.getElementById('tr-intro-video');
   if (!overlay || !video) { onDone(); return; }
 
   const settingsOverlay = document.getElementById('quiz-settings-overlay');
@@ -7028,20 +7216,20 @@ function playTRIntro(onDone) {
     if (done) return;
     done = true;
     document.removeEventListener('keydown', onKey, true);
-    document.removeEventListener('click',   onClickEvt, true);
+    document.removeEventListener('click', onClickEvt, true);
     video.pause();
     overlay.style.transition = 'opacity 0.6s ease';
-    overlay.style.opacity    = '0';
+    overlay.style.opacity = '0';
     setTimeout(() => {
-      overlay.style.display    = 'none';
-      overlay.style.opacity    = '';
+      overlay.style.display = 'none';
+      overlay.style.opacity = '';
       overlay.style.transition = '';
-      video.currentTime        = 0;
+      video.currentTime = 0;
       onDone();
     }, 650);
   };
 
-  const onKey      = (e) => { e.stopPropagation(); finish(); };
+  const onKey = (e) => { e.stopPropagation(); finish(); };
   const onClickEvt = (e) => { e.stopPropagation(); finish(); };
 
   // 2. Show overlay
@@ -7049,12 +7237,12 @@ function playTRIntro(onDone) {
   overlay.style.display = 'flex';
   requestAnimationFrame(() => requestAnimationFrame(() => {
     overlay.style.transition = 'opacity 0.5s ease';
-    overlay.style.opacity    = '1';
+    overlay.style.opacity = '1';
   }));
 
   // 3. Start video
   video.currentTime = 0;
-  video.volume      = 0.9;
+  video.volume = 0.9;
 
   // Detect playback failure (e.g. unsupported codec on macOS/Safari)
   let playbackConfirmed = false;
@@ -7079,8 +7267,8 @@ function playTRIntro(onDone) {
   // 4. Attach skip handlers after 800ms cooldown
   setTimeout(() => {
     if (!done) {
-      document.addEventListener('keydown', onKey,      true);
-      document.addEventListener('click',   onClickEvt, true);
+      document.addEventListener('keydown', onKey, true);
+      document.addEventListener('click', onClickEvt, true);
     }
   }, 800);
 
@@ -7090,11 +7278,11 @@ function playTRIntro(onDone) {
 
 // ── Outro / Victory scene: YouTube video + character pop-ins ───────────────
 function playTROutro(onDone) {
-  const overlay   = document.getElementById('tr-outro-overlay');
-  const bgEl      = document.getElementById('tr-outro-bg');
-  const banner    = document.getElementById('tr-outro-banner');
+  const overlay = document.getElementById('tr-outro-overlay');
+  const bgEl = document.getElementById('tr-outro-bg');
+  const banner = document.getElementById('tr-outro-banner');
   const charStage = document.getElementById('tr-outro-char-stage');
-  const iframeEl  = document.getElementById('tr-outro-iframe');
+  const iframeEl = document.getElementById('tr-outro-iframe');
   if (!overlay) { onDone(); return; }
 
   // Random background (shown behind/before YouTube loads)
@@ -7144,11 +7332,11 @@ function playTROutro(onDone) {
     charStage.appendChild(img);
     requestAnimationFrame(() => requestAnimationFrame(() => {
       img.style.transform = 'translate(-50%,-50%) scale(1)';
-      img.style.opacity   = '1';
+      img.style.opacity = '1';
     }));
     // Fade out after 6s
     const t = setTimeout(() => {
-      img.style.opacity   = '0';
+      img.style.opacity = '0';
       img.style.transform = 'translate(-50%,-50%) scale(0.6)';
       setTimeout(() => img.remove(), 600);
     }, 6000);
@@ -7165,15 +7353,15 @@ function playTROutro(onDone) {
     finished = true;
     clearInterval(spawnInterval);
     charTimers.forEach(clearTimeout);
-    document.removeEventListener('keydown', onKey2,      true);
-    document.removeEventListener('click',   onClickEvt2, true);
+    document.removeEventListener('keydown', onKey2, true);
+    document.removeEventListener('click', onClickEvt2, true);
     // Stop YouTube by clearing src
     if (iframeEl) iframeEl.src = '';
     overlay.style.transition = 'opacity 0.8s ease';
-    overlay.style.opacity    = '0';
+    overlay.style.opacity = '0';
     setTimeout(() => {
-      overlay.style.display    = 'none';
-      overlay.style.opacity    = '';
+      overlay.style.display = 'none';
+      overlay.style.opacity = '';
       overlay.style.transition = '';
       charStage.innerHTML = '';
       if (banner) { banner.style.opacity = '0'; }
@@ -7181,10 +7369,10 @@ function playTROutro(onDone) {
     }, 850);
   };
 
-  const onKey2      = (e) => { e.stopPropagation(); finish(); };
+  const onKey2 = (e) => { e.stopPropagation(); finish(); };
   const onClickEvt2 = (e) => { e.stopPropagation(); finish(); };
-  document.addEventListener('keydown', onKey2,      true);
-  document.addEventListener('click',   onClickEvt2, true);
+  document.addEventListener('keydown', onKey2, true);
+  document.addEventListener('click', onClickEvt2, true);
 
   // Absolute safety cap — 10 minutes
   setTimeout(() => finish(), 600000);
@@ -7262,7 +7450,7 @@ function triggerZooCelebration() {
     const snd = new Audio(fxFile);
     snd.volume = 0.8;
     snd.play().catch(err => console.error('Zootopia FX sound failed:', err));
-  } catch (_) {}
+  } catch (_) { }
 
   if (_zooToastT) { clearTimeout(_zooToastT); _zooToastT = null; }
   toast.innerHTML = '';
@@ -7282,7 +7470,7 @@ function triggerZooCelebration() {
     const x = xPositions[i] + (Math.random() * 8 - 4);
     const y = 25 + Math.random() * 40;
     img.style.left = `${x}%`;
-    img.style.top  = `${y}%`;
+    img.style.top = `${y}%`;
     const delay = (i * 0.15).toFixed(2);
     img.style.animationDelay = `${delay}s, ${(parseFloat(delay) + 0.55).toFixed(2)}s, 2.9s`;
     toast.appendChild(img);
@@ -7299,9 +7487,9 @@ function triggerZooCelebration() {
 
 // ── Intro: YouTube clip from 0:07 to 1:48, skippable ──────────────────────
 function playZooIntro(onDone) {
-  const overlay   = document.getElementById('zoo-intro-overlay');
-  const iframeEl  = document.getElementById('zoo-intro-iframe');
-  const skipZone  = document.getElementById('zoo-intro-skip-zone');
+  const overlay = document.getElementById('zoo-intro-overlay');
+  const iframeEl = document.getElementById('zoo-intro-iframe');
+  const skipZone = document.getElementById('zoo-intro-skip-zone');
   if (!overlay) { onDone(); return; }
 
   const settingsOverlay = document.getElementById('quiz-settings-overlay');
@@ -7312,11 +7500,11 @@ function playZooIntro(onDone) {
     iframeEl.src = 'https://www.youtube.com/embed/g9lmhBYB11U?autoplay=1&start=7&end=108&controls=0&rel=0&modestbranding=1';
   }
 
-  overlay.style.opacity    = '0';
-  overlay.style.display    = 'block';
+  overlay.style.opacity = '0';
+  overlay.style.display = 'block';
   requestAnimationFrame(() => requestAnimationFrame(() => {
     overlay.style.transition = 'opacity 0.5s ease';
-    overlay.style.opacity    = '1';
+    overlay.style.opacity = '1';
   }));
 
   let done = false;
@@ -7327,16 +7515,16 @@ function playZooIntro(onDone) {
     if (skipZone) skipZone.removeEventListener('click', onClickEvt);
     if (iframeEl) iframeEl.src = '';
     overlay.style.transition = 'opacity 0.6s ease';
-    overlay.style.opacity    = '0';
+    overlay.style.opacity = '0';
     setTimeout(() => {
-      overlay.style.display    = 'none';
-      overlay.style.opacity    = '';
+      overlay.style.display = 'none';
+      overlay.style.opacity = '';
       overlay.style.transition = '';
       onDone();
     }, 650);
   };
 
-  const onKey      = (e) => { e.stopPropagation(); finish(); };
+  const onKey = (e) => { e.stopPropagation(); finish(); };
   const onClickEvt = (e) => { e.stopPropagation(); finish(); };
 
   // 800ms cooldown so the "Start Quiz" click doesn't instantly skip
@@ -7353,10 +7541,10 @@ function playZooIntro(onDone) {
 
 // ── Outro: YouTube ending song + character pop-ins ─────────────────────────
 function playZooOutro(onDone) {
-  const overlay   = document.getElementById('zoo-outro-overlay');
+  const overlay = document.getElementById('zoo-outro-overlay');
   const charStage = document.getElementById('zoo-outro-char-stage');
-  const banner    = document.getElementById('zoo-outro-banner');
-  const iframeEl  = document.getElementById('zoo-outro-iframe');
+  const banner = document.getElementById('zoo-outro-banner');
+  const iframeEl = document.getElementById('zoo-outro-iframe');
   if (!overlay) { onDone(); return; }
 
   charStage.innerHTML = '';
@@ -7398,10 +7586,10 @@ function playZooOutro(onDone) {
     charStage.appendChild(img);
     requestAnimationFrame(() => requestAnimationFrame(() => {
       img.style.transform = 'translate(-50%,-50%) scale(1)';
-      img.style.opacity   = '1';
+      img.style.opacity = '1';
     }));
     const t = setTimeout(() => {
-      img.style.opacity   = '0';
+      img.style.opacity = '0';
       img.style.transform = 'translate(-50%,-50%) scale(0.6)';
       setTimeout(() => img.remove(), 600);
     }, 6000);
@@ -7417,14 +7605,14 @@ function playZooOutro(onDone) {
     finished = true;
     clearInterval(spawnInterval);
     charTimers.forEach(clearTimeout);
-    document.removeEventListener('keydown', onKey2,      true);
-    document.removeEventListener('click',   onClickEvt2, true);
+    document.removeEventListener('keydown', onKey2, true);
+    document.removeEventListener('click', onClickEvt2, true);
     if (iframeEl) iframeEl.src = '';
     overlay.style.transition = 'opacity 0.8s ease';
-    overlay.style.opacity    = '0';
+    overlay.style.opacity = '0';
     setTimeout(() => {
-      overlay.style.display    = 'none';
-      overlay.style.opacity    = '';
+      overlay.style.display = 'none';
+      overlay.style.opacity = '';
       overlay.style.transition = '';
       charStage.innerHTML = '';
       if (banner) banner.style.opacity = '0';
@@ -7432,10 +7620,10 @@ function playZooOutro(onDone) {
     }, 850);
   };
 
-  const onKey2      = (e) => { e.stopPropagation(); finish(); };
+  const onKey2 = (e) => { e.stopPropagation(); finish(); };
   const onClickEvt2 = (e) => { e.stopPropagation(); finish(); };
-  document.addEventListener('keydown', onKey2,      true);
-  document.addEventListener('click',   onClickEvt2, true);
+  document.addEventListener('keydown', onKey2, true);
+  document.addEventListener('click', onClickEvt2, true);
 
   // Absolute safety cap — 10 minutes
   setTimeout(() => finish(), 600000);
@@ -7450,7 +7638,7 @@ function setAdminMode() {
   if (!isAdmin) { showToast('Access denied.', 'error'); return; }
   mode = 'admin';
   // Hide all views
-  ['view-landing','view-education','view-edit','view-math-game','view-peppa-game','view-quiz'].forEach(id => {
+  ['view-landing', 'view-education', 'view-edit', 'view-math-game', 'view-peppa-game', 'view-quiz'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.classList.add('hidden');
   });
@@ -7462,18 +7650,18 @@ function setAdminMode() {
   renderAdminPanel();
 }
 
-window.renderAdminPanel = async function() {
+window.renderAdminPanel = async function () {
   if (!isAdmin || !user) return;
   const loadingEl = document.getElementById('admin-table-loading');
-  const tableEl   = document.getElementById('admin-users-table');
-  const emptyEl   = document.getElementById('admin-table-empty');
-  const tbody     = document.getElementById('admin-users-tbody');
-  const badgeEl   = document.querySelector('.admin-badge-tag');
+  const tableEl = document.getElementById('admin-users-table');
+  const emptyEl = document.getElementById('admin-table-empty');
+  const tbody = document.getElementById('admin-users-tbody');
+  const badgeEl = document.querySelector('.admin-badge-tag');
 
   if (loadingEl) loadingEl.style.display = '';
-  if (tableEl)   tableEl.style.display   = 'none';
-  if (emptyEl)   emptyEl.classList.add('hidden');
-  if (badgeEl)   badgeEl.textContent = `👑 ${user.email}`;
+  if (tableEl) tableEl.style.display = 'none';
+  if (emptyEl) emptyEl.classList.add('hidden');
+  if (badgeEl) badgeEl.textContent = `👑 ${user.email}`;
 
   try {
     const snap = await getDocs(collection(db, 'users'));
@@ -7490,14 +7678,14 @@ window.renderAdminPanel = async function() {
     // Update stats
     const nowMs = Date.now();
     const todayMs = 86400000;
-    const totalAdmins  = _adminUsersCache.filter(u => u.isAdmin).length;
-    const activeToday  = _adminUsersCache.filter(u => (nowMs - new Date(u.lastLogin || 0).getTime()) < todayMs).length;
-    const guests       = _adminUsersCache.filter(u => !u.email || u.isAnonymous).length;
+    const totalAdmins = _adminUsersCache.filter(u => u.isAdmin).length;
+    const activeToday = _adminUsersCache.filter(u => (nowMs - new Date(u.lastLogin || 0).getTime()) < todayMs).length;
+    const guests = _adminUsersCache.filter(u => !u.email || u.isAnonymous).length;
 
     const el = id => document.getElementById(id);
-    if (el('admin-stat-total'))  el('admin-stat-total').textContent  = _adminUsersCache.length;
+    if (el('admin-stat-total')) el('admin-stat-total').textContent = _adminUsersCache.length;
     if (el('admin-stat-admins')) el('admin-stat-admins').textContent = totalAdmins;
-    if (el('admin-stat-today'))  el('admin-stat-today').textContent  = activeToday;
+    if (el('admin-stat-today')) el('admin-stat-today').textContent = activeToday;
     if (el('admin-stat-guests')) el('admin-stat-guests').textContent = guests;
 
     _renderAdminRows(_adminUsersCache, tbody);
@@ -7582,9 +7770,9 @@ window.switchAdminTab = (tab) => {
   const tabBtn = document.getElementById('tab-' + tab);
   if (tabBtn) tabBtn.classList.add('active');
 
-  const qaPane  = document.getElementById('admin-tab-qa');
+  const qaPane = document.getElementById('admin-tab-qa');
   const actPane = document.getElementById('admin-tab-activity');
-  if (qaPane)  qaPane.style.display  = tab === 'qa' ? '' : 'none';
+  if (qaPane) qaPane.style.display = tab === 'qa' ? '' : 'none';
   if (actPane) actPane.style.display = tab === 'activity' ? '' : 'none';
 
   if (tab === 'activity') {

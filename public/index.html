@@ -743,6 +743,27 @@
               (0-10000ms)</p>
           </div>
 
+          <!-- Answer Read Time -->
+          <div class="space-y-3 border-t border-slate-800 pt-5">
+            <div class="flex items-center gap-3 mb-2">
+              <input type="checkbox" id="quiz-aread-enabled"
+                class="w-4 h-4 text-emerald-500 bg-slate-900 border-slate-700 rounded focus:ring-emerald-500">
+              <label for="quiz-aread-enabled"
+                class="text-xs font-bold text-slate-400 uppercase tracking-wider cursor-pointer select-none">Answer
+                Read Time Before Selection</label>
+            </div>
+            <div id="quiz-aread-controls"
+              class="flex items-center gap-3 opacity-40 pointer-events-none transition-opacity">
+              <input type="number" id="quiz-aread-input" min="0" max="10000" step="100" value="2000"
+                class="w-24 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-emerald-500 transition-all font-mono text-sm">
+              <input type="range" id="quiz-aread-slider" min="0" max="10000" step="100" value="2000"
+                class="flex-1 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-500">
+            </div>
+            <p class="text-[10px] text-slate-500">After answers appear, hover over any answer to start a global read
+              bar. Only when the bar completes can individual answers be selected. Click or press any key to skip.
+              (0-10000ms)</p>
+          </div>
+
           <!-- Voice Over -->
           <div class="space-y-1 border-t border-slate-800 pt-5">
             <div class="flex items-center gap-3">
