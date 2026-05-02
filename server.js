@@ -27,8 +27,9 @@ app.use(compression());
 
 // Serve strictly static assets from the public directory
 app.use(express.static(path.join(__dirname, 'public'), {
-   maxAge: 0, // Disable caching for development
-   etag: true
+   maxAge: 0,
+   etag: false,  // disable ETags so browser always fetches fresh JS/CSS
+   lastModified: false,
 }));
 
 // Parse JSON request bodies (needed for the Gemini proxy)
@@ -73,6 +74,46 @@ app.post('/api/quiz-generate', async (req, res) => {
     res.status(response.ok ? 200 : response.status).json(data);
   } catch (err) {
     console.error('[Gemini proxy error]', err.message);
+    res.status(502).json({ error: err.message });
+  }
+});
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Admin Action proxy ───────────────────────────────────────────────────────
+// Forwards to the deployed Cloud Function so admin features work locally.
+const ADMIN_FUNCTION_URL = 'https://adminaction-xclutmzc7a-uc.a.run.app';
+
+app.post('/api/admin-action', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization || '';
+    const response = await fetch(ADMIN_FUNCTION_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': authHeader,
+      },
+      body: JSON.stringify(req.body),
+    });
+    const data = await response.json().catch(() => ({}));
+    res.status(response.status).json(data);
+  } catch (err) {
+    console.error('[admin-action proxy error]', err.message);
+    res.status(502).json({ error: err.message });
+  }
+});
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Pixabay proxy ────────────────────────────────────────────────────────────
+const PIXABAY_FUNCTION_URL = 'https://pixabaysearch-xclutmzc7a-uc.a.run.app';
+
+app.get('/api/pixabay-search', async (req, res) => {
+  try {
+    const qs = new URLSearchParams(req.query).toString();
+    const response = await fetch(`${PIXABAY_FUNCTION_URL}?${qs}`);
+    const data = await response.json().catch(() => ({}));
+    res.status(response.status).json(data);
+  } catch (err) {
+    console.error('[pixabay proxy error]', err.message);
     res.status(502).json({ error: err.message });
   }
 });

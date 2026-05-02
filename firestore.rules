@@ -2,8 +2,40 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // Helper: check if the requesting user is an admin
+    function isAdmin() {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
+    }
+
+    // configs — user quiz/Q&A data
     match /configs/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if isAdmin();
+    }
+
+    // users — user registry (login metadata, admin flag)
+    match /users/{userId} {
+      // Any authenticated user can read their own doc
+      allow read: if request.auth != null && request.auth.uid == userId;
+      // Admins can read all user docs
+      allow read: if isAdmin();
+
+      // Users can CREATE their own doc with any isAdmin value.
+      // (The Cloud Function is the real security gatekeeper for privileged ops.)
+      allow create: if request.auth != null && request.auth.uid == userId;
+
+      // Users can UPDATE their own doc BUT cannot change the isAdmin field.
+      allow update: if request.auth != null && request.auth.uid == userId
+                    && request.resource.data.isAdmin == resource.data.isAdmin;
+
+      // Admins can fully write any user doc (grant/revoke admin, etc.)
+      allow write: if isAdmin();
+
+      // Only admins can delete user docs
+      allow delete: if isAdmin();
     }
   }
 }

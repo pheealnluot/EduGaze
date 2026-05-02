@@ -23,6 +23,10 @@
         "function": "pixabaySearch"
       },
       {
+        "source": "/api/admin-action",
+        "function": "adminAction"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

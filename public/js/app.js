@@ -1,6 +1,6 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-app.js';
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, linkWithCredential, EmailAuthProvider, updatePassword, reauthenticateWithCredential, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-auth.js';
-import { getFirestore, doc, getDoc, setDoc } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore.js';
+import { getFirestore, doc, getDoc, setDoc, updateDoc, arrayUnion, collection, getDocs, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore.js';
 
 // Firebase configuration
 const firebaseConfig = {
@@ -76,8 +76,10 @@ CATEGORIES.forEach(cat => {
 });
 let user = null;
 let pendingPassword = null;
+const FIRST_ADMIN_EMAIL = 'tissuepeanut@gmail.com';
 let isInitialLoadComplete = false;
 let isEditMode = false;
+let isAdmin = false;
 
 async function loadDataFromFirestore() {
   if (!user) return;
@@ -478,6 +480,77 @@ btnSavePassword.onclick = async () => {
   }
 };
 
+
+async function registerUserInFirestore() {
+  console.log('[admin] registerUserInFirestore called');
+  if (!user || user.uid === 'guest-local') return;
+  try {
+    const userRef = doc(db, 'users', user.uid);
+    const snap = await getDoc(userRef);
+    const now = new Date().toISOString();
+    const isFirstAdmin = user.email === FIRST_ADMIN_EMAIL;
+
+    if (!snap.exists()) {
+      await setDoc(userRef, {
+        uid: user.uid,
+        email: user.email || '',
+        displayName: user.displayName || user.email || 'User',
+        isAdmin: isFirstAdmin,
+        isAnonymous: !!user.isAnonymous,
+        loginCount: 1,
+        sessionDurationMs: 0,
+        questionCount: 0,
+        createdAt: now,
+        lastLogin: now,
+        activities: [{ type: 'login', timestamp: now, detail: 'First login' }]
+      });
+      isAdmin = isFirstAdmin;
+      if (isFirstAdmin) {
+        try {
+          const resp = await fetch('/api/admin-action', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'bootstrapFirstAdmin', targetEmail: FIRST_ADMIN_EMAIL })
+          });
+          if (resp.ok) console.log('[admin] Bootstrap successful');
+        } catch (e) { console.warn('[admin] Bootstrap error:', e.message); }
+      }
+    } else {
+      const data = snap.data();
+      isAdmin = data.isAdmin === true;
+      await updateDoc(userRef, {
+        loginCount: (data.loginCount || 0) + 1,
+        lastLogin: now,
+        activities: arrayUnion({ type: 'login', timestamp: now, detail: 'Recurring login' })
+      });
+    }
+
+    console.log('[admin] isAdmin resolved to:', isAdmin);
+    window.isAdmin = isAdmin;
+    const adminCard = document.getElementById('admin-hub-card');
+    if (adminCard) {
+      if (isAdmin) {
+        adminCard.classList.remove('hidden');
+        adminCard.onclick = () => window.setMode('admin');
+        console.log('[admin] Admin card shown');
+      } else {
+        adminCard.classList.add('hidden');
+      }
+    }
+  } catch (err) { console.warn('[registerUserInFirestore] Error:', err.message); }
+}
+
+async function logUserActivity(type, detail, metadata = {}) {
+  if (!user || user.uid === 'guest-local' || user.isAnonymous) return;
+  try {
+    const userRef = doc(db, 'users', user.uid);
+    await updateDoc(userRef, {
+      activities: arrayUnion({ type, detail, metadata, timestamp: new Date().toISOString() }),
+      lastActive: serverTimestamp()
+    });
+  } catch (e) { /* non-critical, silent fail */ }
+}
+
 async function handleAuthStateChanged(u) {
   user = u;
   if (user) {
@@ -508,6 +581,7 @@ async function handleAuthStateChanged(u) {
       // Now load cloud data in the background (if not local-only guest)
       if (user.uid !== 'guest-local') {
         await loadDataFromFirestore();
+        await registerUserInFirestore();
       } else {
         // For local guest, just load from localStorage
         const stored = localStorage.getItem(STORAGE_KEY);
@@ -523,6 +597,7 @@ async function handleAuthStateChanged(u) {
       // Already initialized, but auth changed (e.g. login/out)
       if (user.uid !== 'guest-local') {
         await loadDataFromFirestore();
+        await registerUserInFirestore();
       }
       if (mode === 'education') renderEducationBoard();
       else renderEditBoard();
@@ -1659,6 +1734,7 @@ function setMode(newMode) {
   else if (mode === 'math-game') setMathGameMode();
   else if (mode === 'peppa-game') setPeppaGameMode();
   else if (mode === 'quiz') setQuizMode();
+  else if (mode === 'admin') setAdminMode();
 }
 window.setMode = setMode;
 
@@ -1774,22 +1850,30 @@ function enterQuizHeaderMode() {
     const userEl = document.getElementById('display-user');
     const userInitial = (userEl?.textContent?.trim() || 'G')[0].toUpperCase();
 
+
     sidebar.innerHTML = `
           <div style="display:flex;flex-direction:column;align-items:center;gap:10px;">
-            <span class="quiz-sidebar-logo" ondblclick="setMode('landing')" title="Double-click: back to home">EduGaze</span>
+            <span class="quiz-sidebar-logo" id="sb-btn-home" title="Double-click or long-press: back to home">EduGaze</span>
             <div class="quiz-sidebar-user" title="${userEl?.textContent?.trim() || 'Guest'}">${userInitial}</div>
           </div>
           <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
-            <button class="quiz-sidebar-btn" ondblclick="window.forceReloadQuizImages()" title="Double-click: Reload Images" style="color:#60a5fa;">
+            <button class="quiz-sidebar-btn" id="sb-btn-reload" title="Double-click or long-press: Reload Images" style="color:#60a5fa;">
               <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
             </button>
-            <button class="quiz-sidebar-btn" ondblclick="window.openQuizSettings()" title="Double-click: Settings">
+            <button class="quiz-sidebar-btn" id="sb-btn-settings" title="Double-click or long-press: Settings">
               <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
             </button>
-            <button class="quiz-sidebar-btn" ondblclick="setMode('landing')" title="Double-click: Exit Quiz" style="color:#f87171;">
+            <button class="quiz-sidebar-btn" id="sb-btn-exit" title="Double-click or long-press: Exit Quiz" style="color:#f87171;">
               <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
             </button>
           </div>`;
+
+    // Wire long-press / dblclick on sidebar buttons (after innerHTML injection)
+    addDoubleTapOrDblClick(document.getElementById('sb-btn-home'),     () => setMode('landing'));
+    addDoubleTapOrDblClick(document.getElementById('sb-btn-reload'),   () => window.forceReloadQuizImages());
+    addDoubleTapOrDblClick(document.getElementById('sb-btn-settings'), () => window.openQuizSettings());
+    addDoubleTapOrDblClick(document.getElementById('sb-btn-exit'),     () => setMode('landing'));
+
   } else {
     // Normal mode: standard header buttons
     document.body.classList.remove('quiz-img-sidebar');
@@ -1798,19 +1882,21 @@ function enterQuizHeaderMode() {
     btnEducation.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg> Settings`;
     btnEducation.className = 'flex items-center gap-2 px-4 py-2 rounded-lg transition-all bg-violet-900/60 text-violet-300 hover:bg-violet-800/80 border border-violet-700/40';
     btnEducation.onclick = null;
-    btnEducation.ondblclick = () => window.openQuizSettings();
-    btnEducation.title = 'Double-click to open settings';
+    btnEducation.ondblclick = null;
+    addDoubleTapOrDblClick(btnEducation, () => window.openQuizSettings());
+    btnEducation.title = 'Double-click or long-press to open settings';
 
-    // Replace btn-edit with "Exit" (double-click)
+    // Replace btn-edit with "Exit" (double-click / long-press)
     btnEdit.textContent = 'Exit';
     btnEdit.className = 'flex items-center gap-2 px-4 py-2 rounded-lg transition-all bg-slate-800 text-slate-400 hover:bg-slate-700 border border-slate-700';
     btnEdit.onclick = null;
-    btnEdit.ondblclick = () => setMode('landing');
-    btnEdit.title = 'Double-click to exit Quiz';
+    btnEdit.ondblclick = null;
+    addDoubleTapOrDblClick(btnEdit, () => setMode('landing'));
+    btnEdit.title = 'Double-click or long-press to exit Quiz';
 
     // Update hint text
     const hint = document.getElementById('header-mode-hint');
-    if (hint) hint.textContent = 'Double-click buttons to use them';
+    if (hint) hint.textContent = 'Double-click (or long-press) buttons to use them';
   }
 }
 
@@ -5864,29 +5950,69 @@ function setQuizMode() {
   document.getElementById('quiz-settings-overlay').classList.add('show');
 }
 
+// ─────────────────────────────────────────────────────────────
+// LONG-PRESS / DOUBLE-CLICK UTILITY
+// On desktop: fires on dblclick.
+// On touch devices (iPad/phone): fires on a 600ms long-press.
+// Usage: addDoubleTapOrDblClick(element, handler)
+// ─────────────────────────────────────────────────────────────
+function addDoubleTapOrDblClick(el, handler) {
+  if (!el) return;
+
+  // Desktop: standard dblclick
+  el.addEventListener('dblclick', (e) => {
+    handler(e);
+  });
+
+  // Touch: long press (600ms hold)
+  let _lpTimer = null;
+  let _lpFired = false;
+
+  el.addEventListener('touchstart', (e) => {
+    _lpFired = false;
+    _lpTimer = setTimeout(() => {
+      _lpFired = true;
+      handler(e);
+      // Brief visual feedback pulse
+      el.style.transition = 'opacity 0.15s';
+      el.style.opacity = '0.5';
+      setTimeout(() => { el.style.opacity = ''; }, 150);
+    }, 600);
+  }, { passive: true });
+
+  el.addEventListener('touchend', () => {
+    clearTimeout(_lpTimer);
+    _lpTimer = null;
+  }, { passive: true });
+
+  el.addEventListener('touchmove', () => {
+    clearTimeout(_lpTimer);
+    _lpTimer = null;
+  }, { passive: true });
+}
+
 // Navigation Event Listeners
 const logoElement = document.getElementById('logo');
 if (logoElement) {
-  logoElement.ondblclick = () => setMode('landing');
+  addDoubleTapOrDblClick(logoElement, () => setMode('landing'));
 }
 
 if (btnEducation) {
-  // Context-aware: in quiz mode single click does nothing (need dblclick),
-  // in all other modes single click goes to education mode.
+  // Single click → education mode (non-quiz); dblclick/long-press not needed here
   btnEducation.addEventListener('click', () => {
     if (mode !== 'quiz') setMode('education');
   });
 }
 
 if (btnEdit) {
-  // Context-aware: in quiz mode single click does nothing (need dblclick for Exit),
-  // in all other modes double-click goes to edit mode.
-  btnEdit.addEventListener('dblclick', () => {
+  // Non-quiz: dblclick/long-press → edit mode
+  addDoubleTapOrDblClick(btnEdit, () => {
     if (mode !== 'quiz') setMode('edit');
   });
 }
 
-btnPrevEdu.addEventListener('dblclick', () => {
+// Education nav arrows — dblclick / long-press
+addDoubleTapOrDblClick(btnPrevEdu, () => {
   if (currentQuestionIndex > 0) {
     currentQuestionIndex--;
     selectedId = null; wrongSelectionsCount = {};
@@ -5894,7 +6020,7 @@ btnPrevEdu.addEventListener('dblclick', () => {
   }
 });
 
-btnNextEdu.addEventListener('dblclick', () => {
+addDoubleTapOrDblClick(btnNextEdu, () => {
   const list = appData.categories[appData.selectedCategory || 'Activity'];
   if (currentQuestionIndex < list.length - 1) {
     currentQuestionIndex++;
@@ -5903,11 +6029,11 @@ btnNextEdu.addEventListener('dblclick', () => {
   }
 });
 
-// Quiz nav arrows (dblclick, same as edu mode)
+// Quiz nav arrows — dblclick / long-press
 const btnQuizPrev = document.getElementById('btn-quiz-prev');
 const btnQuizNext = document.getElementById('btn-quiz-next');
-if (btnQuizPrev) btnQuizPrev.addEventListener('dblclick', () => quizNavPrev());
-if (btnQuizNext) btnQuizNext.addEventListener('dblclick', () => quizNavNext());
+if (btnQuizPrev) addDoubleTapOrDblClick(btnQuizPrev, () => quizNavPrev());
+if (btnQuizNext) addDoubleTapOrDblClick(btnQuizNext, () => quizNavNext());
 
 // Edit nav
 btnPrevEdit.addEventListener('click', () => {
@@ -6693,7 +6819,7 @@ function triggerTRCelebration() {
   }, 3600);
 }
 
-// ── Intro scene: play title .mkv, skip on click / keypress ────────────────
+// ── Intro scene: play title video, skip on click / keypress ────────────────
 function playTRIntro(onDone) {
   const overlay = document.getElementById('tr-intro-overlay');
   const video   = document.getElementById('tr-intro-video');
@@ -6702,19 +6828,7 @@ function playTRIntro(onDone) {
   const settingsOverlay = document.getElementById('quiz-settings-overlay');
   if (settingsOverlay) settingsOverlay.classList.remove('show');
 
-  overlay.style.opacity   = '0';
-  overlay.style.display   = 'flex';
-
-  video.currentTime = 0;
-  video.volume      = 0.9;
-  const playPromise = video.play();
-  if (playPromise) playPromise.catch(() => {});
-
-  requestAnimationFrame(() => requestAnimationFrame(() => {
-    overlay.style.transition = 'opacity 0.5s ease';
-    overlay.style.opacity    = '1';
-  }));
-
+  // 1. Declare state and finish FIRST so all callbacks can reference them
   let done = false;
   const finish = () => {
     if (done) return;
@@ -6736,7 +6850,39 @@ function playTRIntro(onDone) {
   const onKey      = (e) => { e.stopPropagation(); finish(); };
   const onClickEvt = (e) => { e.stopPropagation(); finish(); };
 
-  // 800ms cooldown so the "Start Quiz" click doesn't instantly skip
+  // 2. Show overlay
+  overlay.style.opacity = '0';
+  overlay.style.display = 'flex';
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    overlay.style.transition = 'opacity 0.5s ease';
+    overlay.style.opacity    = '1';
+  }));
+
+  // 3. Start video
+  video.currentTime = 0;
+  video.volume      = 0.9;
+
+  // Detect playback failure (e.g. unsupported codec on macOS/Safari)
+  let playbackConfirmed = false;
+  video.addEventListener('canplay', () => { playbackConfirmed = true; }, { once: true });
+
+  const playPromise = video.play();
+  if (playPromise) {
+    playPromise.catch(err => {
+      console.warn('[TR Intro] Playback failed:', err.message, '— skipping intro.');
+      finish();
+    });
+  }
+
+  // If video never starts loading within 2s, skip gracefully
+  setTimeout(() => {
+    if (!playbackConfirmed && !done) {
+      console.warn('[TR Intro] Video not loading — skipping intro.');
+      finish();
+    }
+  }, 2000);
+
+  // 4. Attach skip handlers after 800ms cooldown
   setTimeout(() => {
     if (!done) {
       document.addEventListener('keydown', onKey,      true);
@@ -6744,7 +6890,7 @@ function playTRIntro(onDone) {
     }
   }, 800);
 
-  // Also end naturally when video ends
+  // End naturally when video ends
   video.addEventListener('ended', finish, { once: true });
 }
 
@@ -7100,3 +7246,203 @@ function playZooOutro(onDone) {
   // Absolute safety cap — 10 minutes
   setTimeout(() => finish(), 600000);
 }
+// ============================================================
+// ADMIN PANEL
+// ============================================================
+let _adminUsersCache = [];
+let _activeAdminUserId = null;
+
+function setAdminMode() {
+  if (!isAdmin) { showToast('Access denied.', 'error'); return; }
+  mode = 'admin';
+  // Hide all views
+  ['view-landing','view-education','view-edit','view-math-game','view-peppa-game','view-quiz'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.add('hidden');
+  });
+  const adminView = document.getElementById('view-admin');
+  if (adminView) adminView.classList.remove('hidden');
+  const categoryTabs = document.getElementById('category-tabs');
+  if (categoryTabs) categoryTabs.classList.add('hidden');
+  stopQuizMusic();
+  renderAdminPanel();
+}
+
+window.renderAdminPanel = async function() {
+  if (!isAdmin || !user) return;
+  const loadingEl = document.getElementById('admin-table-loading');
+  const tableEl   = document.getElementById('admin-users-table');
+  const emptyEl   = document.getElementById('admin-table-empty');
+  const tbody     = document.getElementById('admin-users-tbody');
+  const badgeEl   = document.querySelector('.admin-badge-tag');
+
+  if (loadingEl) loadingEl.style.display = '';
+  if (tableEl)   tableEl.style.display   = 'none';
+  if (emptyEl)   emptyEl.classList.add('hidden');
+  if (badgeEl)   badgeEl.textContent = `👑 ${user.email}`;
+
+  try {
+    const snap = await getDocs(collection(db, 'users'));
+    _adminUsersCache = [];
+    snap.forEach(d => _adminUsersCache.push({ id: d.id, ...d.data() }));
+
+    // Sort admins first, then by lastLogin desc
+    _adminUsersCache.sort((a, b) => {
+      if (a.isAdmin && !b.isAdmin) return -1;
+      if (!a.isAdmin && b.isAdmin) return 1;
+      return new Date(b.lastLogin || 0) - new Date(a.lastLogin || 0);
+    });
+
+    // Update stats
+    const nowMs = Date.now();
+    const todayMs = 86400000;
+    const totalAdmins  = _adminUsersCache.filter(u => u.isAdmin).length;
+    const activeToday  = _adminUsersCache.filter(u => (nowMs - new Date(u.lastLogin || 0).getTime()) < todayMs).length;
+    const guests       = _adminUsersCache.filter(u => !u.email || u.isAnonymous).length;
+
+    const el = id => document.getElementById(id);
+    if (el('admin-stat-total'))  el('admin-stat-total').textContent  = _adminUsersCache.length;
+    if (el('admin-stat-admins')) el('admin-stat-admins').textContent = totalAdmins;
+    if (el('admin-stat-today'))  el('admin-stat-today').textContent  = activeToday;
+    if (el('admin-stat-guests')) el('admin-stat-guests').textContent = guests;
+
+    _renderAdminRows(_adminUsersCache, tbody);
+
+    if (loadingEl) loadingEl.style.display = 'none';
+    if (_adminUsersCache.length === 0) {
+      if (emptyEl) emptyEl.classList.remove('hidden');
+    } else {
+      if (tableEl) tableEl.style.display = '';
+    }
+  } catch (err) {
+    console.error('[renderAdminPanel]', err);
+    if (loadingEl) loadingEl.style.display = 'none';
+  }
+};
+
+function _renderAdminRows(users, tbody) {
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  users.forEach(u => {
+    const tr = document.createElement('tr');
+    const lastLogin = u.lastLogin ? new Date(u.lastLogin).toLocaleString() : 'Never';
+    const initials = (u.displayName || u.email || 'G').charAt(0).toUpperCase();
+    const actCount = (u.activities || []).length;
+    tr.innerHTML = `
+      <td style="padding:0.6rem 0.75rem">
+        <div style="display:flex;align-items:center;gap:0.5rem">
+          <div style="width:2rem;height:2rem;border-radius:50%;background:#334155;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.75rem;color:#cbd5e1;flex-shrink:0">${initials}</div>
+          <div>
+            <div style="font-weight:700;color:#f1f5f9;font-size:0.82rem">${u.displayName || 'Anonymous'}</div>
+            <div style="color:#64748b;font-size:0.72rem">${u.email || 'Guest'}</div>
+          </div>
+        </div>
+      </td>
+      <td style="padding:0.6rem 0.75rem">
+        <span style="padding:0.2rem 0.6rem;border-radius:999px;font-size:0.68rem;font-weight:700;${u.isAdmin ? 'background:rgba(220,38,38,0.15);color:#f87171;border:1px solid rgba(220,38,38,0.3)' : 'background:rgba(100,116,139,0.15);color:#94a3b8;border:1px solid rgba(100,116,139,0.3)'}">
+          ${u.isAdmin ? 'Admin' : 'User'}
+        </span>
+      </td>
+      <td style="padding:0.6rem 0.75rem;font-size:0.75rem;color:#94a3b8">${lastLogin}</td>
+      <td style="padding:0.6rem 0.75rem;font-size:0.75rem;color:#60a5fa;text-align:center">${u.loginCount || 1}</td>
+      <td style="padding:0.6rem 0.75rem;font-size:0.75rem;color:#a78bfa;text-align:center">${actCount}</td>
+      <td style="padding:0.6rem 0.75rem">
+        <div style="display:flex;gap:0.3rem;flex-wrap:wrap">
+          <button onclick="window.openAdminModal('${u.id}')" class="admin-action-btn view">Activity</button>
+          <button onclick="window.toggleAdminStatus('${u.id}', ${!u.isAdmin})" class="admin-action-btn grant">${u.isAdmin ? 'Revoke' : 'Grant Admin'}</button>
+          <button onclick="window.deleteUserProfile('${u.id}')" class="admin-action-btn delete">Delete</button>
+        </div>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+window.filterAdminTable = (query) => {
+  const q = query.toLowerCase();
+  const rows = document.querySelectorAll('#admin-users-tbody tr');
+  rows.forEach(tr => {
+    tr.style.display = tr.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+};
+
+window.openAdminModal = (uid) => {
+  const u = _adminUsersCache.find(x => x.id === uid);
+  if (!u) return;
+  _activeAdminUserId = uid;
+  document.getElementById('admin-modal-title').textContent = u.displayName || u.email || 'User Details';
+  document.getElementById('admin-modal-subtitle').textContent = `UID: ${u.id}`;
+  document.getElementById('admin-content-modal').classList.add('open');
+  window.switchAdminTab('activity');
+};
+
+window.closeAdminModal = () => {
+  document.getElementById('admin-content-modal').classList.remove('open');
+};
+
+window.switchAdminTab = (tab) => {
+  const u = _adminUsersCache.find(x => x.id === _activeAdminUserId);
+  if (!u) return;
+
+  document.querySelectorAll('.admin-modal-tab').forEach(t => t.classList.remove('active'));
+  const tabBtn = document.getElementById('tab-' + tab);
+  if (tabBtn) tabBtn.classList.add('active');
+
+  const qaPane  = document.getElementById('admin-tab-qa');
+  const actPane = document.getElementById('admin-tab-activity');
+  if (qaPane)  qaPane.style.display  = tab === 'qa' ? '' : 'none';
+  if (actPane) actPane.style.display = tab === 'activity' ? '' : 'none';
+
+  if (tab === 'activity') {
+    const list = document.getElementById('admin-modal-activity-list');
+    if (!list) return;
+    list.innerHTML = '';
+    const activities = [...(u.activities || [])].reverse();
+    if (activities.length === 0) {
+      list.innerHTML = '<div style="color:#475569;text-align:center;padding:2rem">No activity recorded yet.</div>';
+      return;
+    }
+    activities.forEach(a => {
+      const div = document.createElement('div');
+      div.className = 'admin-activity-row';
+      const meta = a.metadata && Object.keys(a.metadata).length > 0
+        ? `<pre style="font-size:0.65rem;color:#475569;margin-top:0.3rem;white-space:pre-wrap;word-break:break-all">${JSON.stringify(a.metadata, null, 2)}</pre>`
+        : '';
+      div.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.5rem">
+          <span class="admin-activity-type ${a.type || 'login'}">${a.type || 'login'}</span>
+          <span class="admin-activity-time">${new Date(a.timestamp).toLocaleString()}</span>
+        </div>
+        <div style="font-size:0.8rem;color:#cbd5e1;margin-top:0.3rem">${a.detail || ''}</div>
+        ${meta}
+      `;
+      list.appendChild(div);
+    });
+  }
+};
+
+window.toggleAdminStatus = async (uid, newStatus) => {
+  if (!confirm(`${newStatus ? 'Grant' : 'Revoke'} admin status?`)) return;
+  try {
+    const resp = await fetch('/api/admin-action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'setAdmin', targetUid: uid, isAdmin: newStatus })
+    });
+    if (resp.ok) { showToast('Status updated', 'success'); window.renderAdminPanel(); }
+    else showToast('Error updating status', 'error');
+  } catch (e) { console.error(e); }
+};
+
+window.deleteUserProfile = async (uid) => {
+  if (!confirm('Delete this user profile? Auth account remains, only Firestore data is removed.')) return;
+  try {
+    const resp = await fetch('/api/admin-action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'deleteUser', targetUid: uid })
+    });
+    if (resp.ok) { showToast('Profile deleted', 'success'); window.renderAdminPanel(); }
+    else showToast('Error deleting profile', 'error');
+  } catch (e) { console.error(e); }
+};
