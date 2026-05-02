@@ -1,6 +1,6 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-app.js';
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, linkWithCredential, EmailAuthProvider, updatePassword, reauthenticateWithCredential, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-auth.js';
-import { getFirestore, doc, getDoc, setDoc, updateDoc, arrayUnion, collection, getDocs, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore.js';
+import { getFirestore, doc, getDoc, setDoc, updateDoc, arrayUnion, collection, getDocs, serverTimestamp, addDoc } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore.js';
 
 // Firebase configuration
 const firebaseConfig = {
@@ -562,6 +562,12 @@ async function handleAuthStateChanged(u) {
     displayUser.textContent = isGuest ? 'Guest' : (user.email || 'User');
     btnLogout.classList.remove('hidden');
 
+    const myReportsCard = document.getElementById('my-reports-hub-card');
+    if (myReportsCard) {
+      if (isGuest) myReportsCard.classList.add('hidden');
+      else myReportsCard.classList.remove('hidden');
+    }
+
     if (!isGuest) {
       displayUser.classList.add('hover:text-blue-400', 'cursor-pointer', 'transition-colors');
       if (isEditMode) {
@@ -576,7 +582,7 @@ async function handleAuthStateChanged(u) {
       // Let the background UI render defaults first so it doesn't look like it's "hanging"
       if (mode === 'education') renderEducationBoard();
       else if (mode === 'edit') renderEditBoard();
-      else setMode('landing'); // Default to landing hub
+      else if (mode === 'landing') setMode('landing'); // Only go to landing if already there
 
       // Now load cloud data in the background (if not local-only guest)
       if (user.uid !== 'guest-local') {
@@ -592,7 +598,7 @@ async function handleAuthStateChanged(u) {
       // Refresh UI with loaded data
       if (mode === 'education') renderEducationBoard();
       else if (mode === 'edit') renderEditBoard();
-      else setMode('landing');
+      else if (mode === 'landing') setMode('landing'); // Only reset to landing if already there
     } else {
       // Already initialized, but auth changed (e.g. login/out)
       if (user.uid !== 'guest-local') {
@@ -600,7 +606,8 @@ async function handleAuthStateChanged(u) {
         await registerUserInFirestore();
       }
       if (mode === 'education') renderEducationBoard();
-      else renderEditBoard();
+      else if (mode === 'edit') renderEditBoard();
+      // For all other modes (quiz, comprehension, landing, etc.) do nothing — preserve current view
     }
   } else {
     // User is null - clear app state and show login
@@ -808,7 +815,68 @@ window.setMode = (newMode) => {
   else if (newMode === 'math-game') setMathGameMode();
   else if (newMode === 'peppa-game') setPeppaGameMode();
   else if (newMode === 'quiz') setQuizMode();
+  else if (newMode === 'my-reports') setMyReportsMode();
+  else if (newMode === 'admin') {
+    // Basic routing to admin view
+    document.body.classList.remove('quiz-active', 'education-active');
+    viewLanding.classList.add('hidden');
+    viewEducation.classList.add('hidden');
+    viewEdit.classList.add('hidden');
+    viewMathGame.classList.add('hidden');
+    viewPeppaGame.classList.add('hidden');
+    if (viewQuiz) viewQuiz.classList.add('hidden');
+    const viewMyReports = document.getElementById('view-my-reports');
+    if (viewMyReports) viewMyReports.classList.add('hidden');
+    const viewAdmin = document.getElementById('view-admin');
+    if (viewAdmin) {
+      viewAdmin.classList.remove('hidden');
+      window.switchAdminTab('users');
+    }
+  }
+  else if (newMode === 'comprehension') {
+    // If called from startComprehensionAdventure just to update mode variable, skip overlay
+    if (window._compSetModeOnly) { mode = 'comprehension'; return; }
+    // Show the fixed settings overlay immediately (DOM is always ready).
+    // comprehension.js may still be loading — retry until it wires controls.
+    const ov = document.getElementById('comp-settings-overlay');
+    if (ov) ov.style.display = 'flex';
+    if (window.setComprehensionMode) {
+      window.setComprehensionMode();
+    } else {
+      // comprehension.js not yet executed — poll until ready (max 3 s)
+      let attempts = 0;
+      const poll = setInterval(() => {
+        attempts++;
+        if (window.setComprehensionMode) { clearInterval(poll); window.setComprehensionMode(); }
+        else if (attempts > 30) clearInterval(poll);
+      }, 100);
+    }
+  }
 };
+
+function setMyReportsMode() {
+  mode = 'my-reports';
+  isEditMode = false;
+  document.body.classList.remove('quiz-active', 'education-active');
+  viewLanding.classList.add('hidden');
+  viewEducation.classList.add('hidden');
+  viewEdit.classList.add('hidden');
+  viewMathGame.classList.add('hidden');
+  viewPeppaGame.classList.add('hidden');
+  if (viewQuiz) viewQuiz.classList.add('hidden');
+  const viewAdmin = document.getElementById('view-admin');
+  if (viewAdmin) viewAdmin.classList.add('hidden');
+  restoreHeaderFromQuizMode();
+  categoryTabs.classList.add('hidden');
+  btnLogout.classList.remove('hidden');
+  stopQuizMusic();
+  
+  const viewMyReports = document.getElementById('view-my-reports');
+  if (viewMyReports) {
+    viewMyReports.classList.remove('hidden');
+    window.renderUserReports();
+  }
+}
 
 function setLandingMode() {
   mode = 'landing';
@@ -820,6 +888,15 @@ function setLandingMode() {
   viewMathGame.classList.add('hidden');
   viewPeppaGame.classList.add('hidden');
   if (viewQuiz) viewQuiz.classList.add('hidden');
+  const viewAdmin = document.getElementById('view-admin');
+  if (viewAdmin) viewAdmin.classList.add('hidden');
+  const viewMyReports = document.getElementById('view-my-reports');
+  if (viewMyReports) viewMyReports.classList.add('hidden');
+  const viewComp = document.getElementById('view-comprehension');
+  if (viewComp) { viewComp.classList.add('hidden'); viewComp.style.cssText = ''; }
+  // Also close the fixed comprehension settings overlay if open
+  const compSettingsOv = document.getElementById('comp-settings-overlay');
+  if (compSettingsOv) compSettingsOv.style.display = 'none';
   restoreHeaderFromQuizMode();
   btnEducation.classList.replace('bg-blue-600', 'bg-slate-800');
   btnEdit.classList.replace('bg-blue-600', 'bg-slate-800');
@@ -1739,6 +1816,8 @@ function setMode(newMode) {
   else if (mode === 'peppa-game') setPeppaGameMode();
   else if (mode === 'quiz') setQuizMode();
   else if (mode === 'admin') setAdminMode();
+  else if (mode === 'my-reports') setMyReportsMode();
+  else if (mode === 'comprehension') { if (window.setComprehensionMode) window.setComprehensionMode(); }
 }
 window.setMode = setMode;
 
@@ -1925,7 +2004,26 @@ function enterQuizHeaderMode() {
   }
 }
 
+async function saveQuizReportNow() {
+  if (!window.quizReport) return; // already saved or not started
+  if (window.quizReport._saved) return; // guard against double-save
+  window.quizReport._saved = true;
+  window.quizReport.endedAt = window.quizReport.endedAt || new Date().toISOString();
+  window.quizReport.durationMs = new Date(window.quizReport.endedAt) - new Date(window.quizReport.startedAt);
+  try {
+    const docRef = await addDoc(collection(db, 'quiz_reports'), window.quizReport);
+    console.log('[QuizReport] Saved! Doc ID:', docRef.id);
+    window.quizReport = null;
+  } catch (err) {
+    console.error('[QuizReport] Failed to save:', err.code, err.message);
+    window.quizReport._saved = false; // allow retry
+  }
+}
+
 function restoreHeaderFromQuizMode() {
+  // Save any in-progress quiz report when leaving quiz mode
+  saveQuizReportNow();
+
   document.body.classList.remove('quiz-active', 'quiz-img-sidebar');
   // Restore btn-education
   btnEducation.innerHTML = 'Education Mode';
@@ -4274,6 +4372,7 @@ function renderQuizBoard() {
   // _skipQRead: called by doSelect to instantly complete the bar (assigned by shouldDelay block).
   let _qReadDone = true;       // default: no delay → selection always allowed
   let _skipQRead = () => { };   // no-op by default; overwritten if qRead is active
+  let _answersReadyAt = new Date().toISOString(); // when answers became interactive
 
   // _aReadDone / _skipARead: parallel state for Answer Read Time.
   // When aRead is active, doSelect is gated until the global answer-read bar finishes.
@@ -4467,6 +4566,7 @@ function renderQuizBoard() {
       if (done) return;
       done = true;
       _qReadDone = true;
+      _answersReadyAt = new Date().toISOString();
       grid.style.opacity = '1';
       grid.style.pointerEvents = 'auto';
       bar.style.background = 'linear-gradient(90deg,#10b981,#06b6d4)';
@@ -4561,6 +4661,7 @@ function renderQuizBoard() {
   } else {
     // No qRead delay — answers immediately interactive
     _qReadDone = true;
+    _answersReadyAt = new Date().toISOString();
     grid.style.opacity = '1';
     grid.style.pointerEvents = '';
     grid.style.transition = '';
@@ -4848,7 +4949,49 @@ function renderQuizBoard() {
         requestAnimationFrame(() => requestAnimationFrame(() => doSelect()));
         return;
       }
+      if (!q._userSelections) q._userSelections = [];
+      const _now = new Date().toISOString();
+      const _prev = q._userSelections.length > 0 ? q._userSelections[q._userSelections.length - 1].timestamp : null;
+      const _deltaMs = _prev ? (new Date(_now) - new Date(_prev)) : (new Date(_now) - new Date(_answersReadyAt));
+      q._userSelections.push({
+        answerId: answer.id,
+        state: isCorrect ? 'correct' : 'wrong',
+        method: (typeof _selectionMethod !== 'undefined') ? _selectionMethod : 'click',
+        timestamp: _now,
+        deltaMs: _deltaMs
+      });
+
       if (isCorrect) {
+        // Build tracking record for this question
+        if (window.quizReport) {
+          const qRecord = {
+            question: q.question,
+            subject: q.subject || q._subject || '',
+            correctAnswerIds: q.correctAnswerIds || [q.correctId],
+            userSelections: q._userSelections,
+            hintShown: !!q._hintShown,
+            questionImageKeyword: q.questionImageKeyword || q.qImageKeyword || '',
+            questionImageUrl: (() => {
+              const kw = q.questionImageKeyword || q.qImageKeyword || '';
+              if (kw && quizResolvedVisuals.has(kw)) {
+                const vis = quizResolvedVisuals.get(kw);
+                return { url: vis.url || '', svg: vis.svg || '', source: vis.source || '' };
+              }
+              return null;
+            })(),
+            answers: displayAnswers.map(a => {
+              const rec = { id: a.id, text: a.text, imageKeyword: a.imageKeyword || '' };
+              if (a.imageKeyword && quizResolvedVisuals.has(a.imageKeyword)) {
+                const vis = quizResolvedVisuals.get(a.imageKeyword);
+                rec.url = vis.url || vis.svg || '';
+                rec.source = vis.source || (vis.svg ? 'ai' : '');
+              }
+              return rec;
+            })
+          };
+          window.quizReport.questions.push(qRecord);
+        }
+
         quizQuestionAnswered = true;
         _voAbortGen++; // cancel any ongoing answer TTS
         quizSpeakCancel();
@@ -4937,6 +5080,7 @@ function renderQuizBoard() {
         if (quizSettings.hintThreshold > 0 && quizSettings.hintThreshold < 11 &&
           quizWrongAttempts >= quizSettings.hintThreshold) {
           showQuizHint(q);
+          q._hintShown = true;
         }
       }
     };
@@ -4970,11 +5114,12 @@ function renderQuizBoard() {
       removeOverlay();
     };
 
-    card.addEventListener('mouseenter', startDwell);
-    card.addEventListener('mouseleave', stopDwell);
-    card.addEventListener('click', doSelect);
-    card.addEventListener('touchstart', (e) => { e.preventDefault(); startDwell(); });
-    card.addEventListener('touchend', (e) => { e.preventDefault(); stopDwell(); doSelect(); });
+    let _selectionMethod = 'click'; // default; overridden to 'hover' when dwell fires
+    card.addEventListener('mouseenter', () => { _selectionMethod = 'hover'; startDwell(); });
+    card.addEventListener('mouseleave', () => { _selectionMethod = 'click'; stopDwell(); });
+    card.addEventListener('click', () => { _selectionMethod = 'click'; doSelect(); });
+    card.addEventListener('touchstart', (e) => { e.preventDefault(); _selectionMethod = 'hover'; startDwell(); });
+    card.addEventListener('touchend', (e) => { e.preventDefault(); stopDwell(); _selectionMethod = 'click'; doSelect(); });
     card.addEventListener('touchcancel', (e) => { e.preventDefault(); stopDwell(); });
 
     grid.appendChild(card);
@@ -6204,12 +6349,15 @@ function playTotoroOutro(onDone) {
 
 // Override showQuizWin to support theme celebrations
 function showQuizWin() {
-  const standardFinish = () => {
+  const standardFinish = async () => {
     const overlay = document.getElementById('quiz-win-overlay');
     const msg = document.getElementById('quiz-win-message');
     if (msg) msg.textContent = `Amazing! You got ${quizScore} correct answer${quizScore !== 1 ? 's' : ''} in a row!`;
     if (overlay) overlay.classList.add('show');
     stopQuizMusic();
+    
+    // Save the quiz report (shared helper handles dedup)
+    await saveQuizReportNow();
   };
   if (quizSettings.theme === 'ben-holly') playBenHollyOutro(standardFinish);
   else if (quizSettings.theme === 'kung-fu-panda') playKungFuPandaOutro(standardFinish);
@@ -6244,6 +6392,15 @@ function _doStartQuiz() {
   quizQuestionQueue = [];  // discard pre-fetched queue from prior settings
   quizHistory = []; quizHistoryIdx = -1;
   quizRenderGen++;
+  
+  // Initialize Quiz Report Tracking
+  window.quizReport = {
+    userId: user ? user.uid : 'guest',
+    startedAt: new Date().toISOString(),
+    quizSettings: JSON.parse(JSON.stringify(quizSettings)),
+    questions: []
+  };
+
   updateQuizScoreBar();
   // Start music
   startQuizMusic();
@@ -7080,7 +7237,7 @@ function renderCategoryTabs() {
   });
 }
 renderCategoryTabs();
-onAuthStateChanged(auth, handleAuthStateChanged);
+// (onAuthStateChanged already registered above — duplicate removed)
 // Settings event listener for Peppa speed
 const peppaSpeedInput = document.getElementById('input-peppa-speed');
 if (peppaSpeedInput) {
@@ -7638,7 +7795,7 @@ function setAdminMode() {
   if (!isAdmin) { showToast('Access denied.', 'error'); return; }
   mode = 'admin';
   // Hide all views
-  ['view-landing', 'view-education', 'view-edit', 'view-math-game', 'view-peppa-game', 'view-quiz'].forEach(id => {
+  ['view-landing', 'view-education', 'view-edit', 'view-math-game', 'view-peppa-game', 'view-quiz', 'view-my-reports'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.classList.add('hidden');
   });
@@ -7748,6 +7905,12 @@ window.filterAdminTable = (query) => {
   });
 };
 
+window.getQuestionAccuracy = (qData) => {
+  const sels = Array.isArray(qData.userSelections) ? qData.userSelections : (qData.userSelections ? Object.values(qData.userSelections) : []);
+  const correct = sels.filter(s => s.state === 'correct').length;
+  return `${correct}/${sels.length}`;
+};
+
 window.openAdminModal = (uid) => {
   const u = _adminUsersCache.find(x => x.id === uid);
   if (!u) return;
@@ -7763,6 +7926,23 @@ window.closeAdminModal = () => {
 };
 
 window.switchAdminTab = (tab) => {
+  // ── OUTER panel tabs (users / reports / image-ratings)
+  const outerTabs = { users: 'admin-view-users', reports: 'admin-view-reports', 'image-ratings': 'admin-view-image-ratings' };
+  if (outerTabs[tab]) {
+    Object.keys(outerTabs).forEach(k => {
+      const pane = document.getElementById(outerTabs[k]);
+      const btn  = document.getElementById(`admin-tab-${k}`);
+      if (pane) pane.classList.toggle('hidden', k !== tab);
+      if (btn)  btn.className = btn.className
+        .replace(/border-violet-500 text-violet-400|border-transparent text-slate-400/g, '')
+        .trim() + (k === tab ? ' border-violet-500 text-violet-400' : ' border-transparent text-slate-400');
+    });
+    if (tab === 'reports') window.renderAdminReportsPanel?.();
+    if (tab === 'image-ratings') window.renderImageRatingsPanel?.();
+    return;
+  }
+
+  // ── INNER modal tabs (qa / activity)
   const u = _adminUsersCache.find(x => x.id === _activeAdminUserId);
   if (!u) return;
 
@@ -7828,3 +8008,869 @@ window.deleteUserProfile = async (uid) => {
     else showToast('Error deleting profile', 'error');
   } catch (e) { console.error(e); }
 };
+
+
+
+window.renderAdminReportsPanel = async () => {
+  if (!isAdmin || !user) return;
+  const loadingEl = document.getElementById('admin-reports-loading');
+  const tableEl = document.getElementById('admin-reports-table');
+  const emptyEl = document.getElementById('admin-reports-empty');
+  const tbody = document.getElementById('admin-reports-tbody');
+
+  if (loadingEl) loadingEl.style.display = '';
+  if (tableEl) tableEl.style.display = 'none';
+  if (emptyEl) emptyEl.classList.add('hidden');
+
+  try {
+    const { collection, getDocs, query, orderBy, limit } = await import('https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore.js');
+    const q = query(collection(db, 'quiz_reports'), orderBy('endedAt', 'desc'), limit(50));
+    const snap = await getDocs(q);
+    
+    if (loadingEl) loadingEl.style.display = 'none';
+    if (snap.empty) {
+      if (emptyEl) emptyEl.classList.remove('hidden');
+      return;
+    }
+    if (tableEl) tableEl.style.display = '';
+    
+    tbody.innerHTML = '';
+    window._adminReportsCache = {};
+    
+    snap.forEach(d => {
+      const data = d.data();
+      window._adminReportsCache[d.id] = data;
+      
+      const tr = document.createElement('tr');
+      const dateStr = new Date(data.startedAt).toLocaleString();
+      const durSec = Math.round((data.durationMs || 0) / 1000);
+      const score = data.questions ? data.questions.filter(q => q.userSelections && q.userSelections.length > 0 && q.userSelections[q.userSelections.length - 1].state === 'correct').length : 0;
+      const total = data.questions ? data.questions.length : 0;
+      const ct2 = data.quizSettings?.contentTypes || [];
+      const med2 = ct2.includes('image') && ct2.includes('text') ? 'Text + Image'
+               : ct2.includes('image') ? 'Image only'
+               : ct2.includes('text') ? 'Text only' : '—';
+      const subjs2 = [].concat(data.quizSettings?.subjects || []);
+      if (data.quizSettings?.customSubject) subjs2.push(`"${data.quizSettings.customSubject}"`);
+      const rev2   = data.reviewCompletedAt
+        ? `<span style="color:#34d399;font-size:0.72rem;">✓ ${new Date(data.reviewCompletedAt).toLocaleDateString()}</span>`
+        : `<span style="color:#475569;font-size:0.72rem;">—</span>`;
+
+      tr.id = `report-row-${d.id}`;
+      tr.innerHTML = `
+        <td><div class="text-sm text-slate-300">${dateStr}</div></td>
+        <td><div class="text-xs text-slate-500 font-mono">${data.userId}</div></td>
+        <td><div class="text-sm text-slate-400">${durSec}s</div></td>
+        <td><div class="text-sm text-violet-400 font-bold" title="Questions answered correctly / total recorded">${score}/${total}</div></td>
+        <td><div class="text-xs text-slate-400 bg-slate-800 px-2 py-1 rounded inline-block">${subjs2.join(', ')}</div></td>
+        <td><div style="font-size:0.72rem;color:#64748b;">${med2}</div></td>
+        <td id="reviewed-cell-${d.id}">${rev2}</td>
+        <td style="white-space:nowrap;">
+          <button onclick="openAdminReportModal('${d.id}')" class="px-3 py-1 bg-violet-600/20 hover:bg-violet-600/40 text-violet-300 rounded text-xs transition-colors">View Details</button>
+          <button onclick="deleteQuizReport('${d.id}', true)" style="margin-left:6px;padding:3px 10px;border:1px solid rgba(248,113,113,0.3);border-radius:6px;background:rgba(248,113,113,0.08);color:#f87171;font-size:0.7rem;cursor:pointer;" title="Delete this report">🗑 Delete</button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  } catch (err) {
+    console.error('[renderAdminReportsPanel]', err);
+    if (loadingEl) loadingEl.style.display = 'none';
+    if (emptyEl) { emptyEl.textContent = 'Error loading reports.'; emptyEl.classList.remove('hidden'); }
+  }
+};
+
+// ── Shared report modal renderer ────────────────────────────────
+function _renderReportModal(data, docId, isAdminView) {
+  const modal = document.getElementById('admin-report-modal');
+  const title = document.getElementById('admin-report-title');
+  const sub   = document.getElementById('admin-report-subtitle');
+  const body  = document.getElementById('admin-report-body');
+  if (!modal || !body) return;
+
+  // expand to near-fullscreen
+  const modalInner = modal.firstElementChild;
+  if (modalInner) { modalInner.style.width = '96vw'; modalInner.style.maxWidth = '1400px'; modalInner.style.maxHeight = '94vh'; }
+
+  const s = data.quizSettings || {};
+  const durSec = Math.round((data.durationMs || 0) / 1000);
+  const isImageQuiz = (s.contentTypes || []).includes('image');
+  // Normalise questions AND userSelections (older Firestore docs may store as object maps)
+  const _toArr = (v) => Array.isArray(v) ? v : (v && typeof v === 'object' ? Object.values(v) : []);
+  const _normSels = (q) => _toArr(q.userSelections);
+
+  const score  = _toArr(data.questions).filter(q => { const s = _normSels(q); return s.length > 0 && s[s.length-1].state === 'correct'; }).length;
+
+  // source badge helper
+  const srcBadge = (src) => {
+    const map = { pixabay:'#10b981', unsplash:'#f59e0b', wikimedia:'#3b82f6', ai:'#8b5cf6' };
+    const c = map[src] || '#64748b';
+    return src ? `<span style="font-size:0.65rem;font-weight:700;padding:1px 7px;border-radius:4px;background:${c}22;color:${c};border:1px solid ${c}44;text-transform:uppercase;">${src}</span>` : '';
+  };
+
+  // subject includes custom free-text
+  const subjectParts = [...(s.subjects||[])];
+  if (s.customSubject) subjectParts.push(`"${s.customSubject}"`);
+  const subjects = subjectParts.join(', ') || '—';
+
+  const level  = s.eduLevel || '—';
+  const theme  = s.theme || 'normal';
+  const target = s.correctTarget || '—';
+
+  const srcList = [
+    s.imageSources?.pixabay   ? 'Pixabay'   : '',
+    s.imageSources?.unsplash  ? 'Unsplash'  : '',
+    s.imageSources?.wikimedia ? 'Wikimedia' : '',
+    s.imageSources?.ai        ? 'AI Gen'    : ''
+  ].filter(Boolean).join(' · ') || '—';
+
+  const contentTypes = s.contentTypes || [];
+  const medium = contentTypes.length
+    ? contentTypes.map(t => t === 'image' ? 'Image' : t === 'text' ? 'Text' : t).join(' + ')
+    : '—';
+
+  const dwellMs  = s.dwellTimeMs != null ? (s.dwellTimeMs === 0 ? 'Instant' : `${s.dwellTimeMs} ms`) : '—';
+  const qReadTxt = s.qReadEnabled && s.qReadTimeMs > 0 ? `${s.qReadTimeMs} ms` : 'Off';
+  const aReadTxt = s.aReadEnabled && s.aReadTimeMs > 0 ? `${s.aReadTimeMs} ms` : 'Off';
+  const voiceTxt = s.voiceOver ? 'On' : 'Off';
+  const hintTxt  = (!s.hintThreshold || s.hintThreshold >= 11) ? 'Never' : `After ${s.hintThreshold} wrong`;
+
+  title.textContent = isAdminView ? 'Quiz Report Details' : 'My Quiz Report';
+  sub.textContent   = `${new Date(data.startedAt).toLocaleString()}  ·  ${durSec}s  ·  ${score}/${_toArr(data.questions).length} answered correctly`;
+
+  const pc = (lbl, val) =>
+    `<div style="min-width:100px;"><div style="font-size:0.58rem;color:#64748b;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:3px;">${lbl}</div><div style="font-size:0.78rem;color:#f1f5f9;font-weight:600;">${val}</div></div>`;
+
+  let html = `
+    <div style="display:flex;flex-wrap:wrap;gap:10px 24px;margin-bottom:1.25rem;padding:12px 16px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:12px;">
+      ${pc('Subject', subjects)}
+      ${pc('Level', level)}
+      ${pc('Medium', medium)}
+      ${pc('Img Sources', srcList)}
+      ${pc('Theme', theme)}
+      ${pc('Target', `${target} correct`)}
+      ${pc('Selection Dwell', dwellMs)}
+      ${pc('Q Read Delay', qReadTxt)}
+      ${pc('A Read Delay', aReadTxt)}
+      ${pc('Voice Over', voiceTxt)}
+      ${pc('Hints', hintTxt)}
+      ${isAdminView ? pc('User', `<span style="font-size:0.62rem;font-family:monospace;color:#94a3b8;">${data.userId}</span>`) : ''}
+    </div>
+    <div style="display:flex;flex-direction:column;gap:16px;">`;
+
+  _toArr(data.questions).forEach((q, qIdx) => {
+    const sels = _normSels(q);
+    const hasQuestionImage = !!(q.questionImageUrl?.url || q.questionImageUrl?.svg || q.questionImageKeyword);
+    // Show answer-level rating buttons if:
+    //   a) answers have stored image URL (normal), OR
+    //   b) answers have been previously rated (legacy without saved URL), OR
+    //   c) the quiz was an Image-type quiz (so reviewer can always rate image quality)
+    const hasAnswerImages = !hasQuestionImage && (
+      _normArrLocal(q.answers).some(a => a.url || a.imageKeyword) ||
+      _normArrLocal(q.answers).some(a => a.accuracy !== undefined && a.accuracy !== null) ||
+      isImageQuiz
+    );
+
+    const selHtml = sels.map((sel, i) => {
+      const ansText    = _normArrLocal(q.answers).find(a => a.id === sel.answerId)?.text || sel.answerId;
+      const colour     = sel.state === 'correct' ? '#34d399' : '#f87171';
+      const methodIcon = sel.method === 'hover' ? '⏱' : '🖱';
+      const deltaLabel = i === 0 ? 'time from answers appearing to this pick' : 'time since previous pick';
+      const delta = sel.deltaMs != null
+        ? `<span style="color:#64748b;font-size:0.62rem;" title="${deltaLabel}"> ${(sel.deltaMs/1000).toFixed(1)}s</span>`
+        : '';
+      return `<span style="display:inline-flex;align-items:center;gap:2px;color:${colour};white-space:nowrap;">${i+1}. ${ansText} <span title="${sel.method||'click'}">${methodIcon}</span>${delta}</span>`;
+    }).join(`<span style="color:#334155;margin:0 3px;">→</span>`);
+
+    // Question image section (shown when quiz was image-at-question mode)
+    let qImgHtml = '';
+    if (hasQuestionImage) {
+      const qi = q.questionImageUrl || {};
+      const qiSrc = qi.source || 'pixabay';
+      const srcMap = { pixabay:'#10b981', unsplash:'#f59e0b', wikimedia:'#3b82f6', ai:'#8b5cf6' };
+      const qiCol  = srcMap[qiSrc] || '#64748b';
+      let qiImg = '';
+      if (qi.svg) {
+        qiImg = `<div style="width:100%;max-height:320px;background:#070d1a;border-radius:10px;overflow:hidden;display:flex;align-items:center;justify-content:center;">${qi.svg}</div>`;
+      } else if (qi.url) {
+        qiImg = `<img src="${qi.url}" style="width:100%;max-height:320px;object-fit:contain;background:#070d1a;border-radius:10px;display:block;" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" /><div style="display:none;width:100%;height:180px;background:#070d1a;border-radius:10px;align-items:center;justify-content:center;color:#334155;font-size:0.7rem;">Image unavailable</div>`;
+      } else {
+        qiImg = `<div style="width:100%;height:180px;background:#070d1a;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#334155;font-size:0.75rem;">Image not saved for older report — keyword: <em style="color:#475569;margin-left:4px;">${q.questionImageKeyword || '?'}</em></div>`;
+      }
+      const qiAccVal = q.questionImageAccuracy;
+      // Unified amber selection style: selected = yellow-lit, others = dimmed
+      const _qiBtn = (v, icon) => {
+        const sel = (qiAccVal === v);
+        const s = sel
+          ? 'background:rgba(251,191,36,0.22);color:#fbbf24;border:1px solid rgba(251,191,36,0.45);font-weight:700;'
+          : 'background:rgba(255,255,255,0.04);color:#334155;border:1px solid transparent;';
+        return `<button id="qrb-${docId}-${qIdx}-${v}" onclick="setQuestionImageAccuracy('${docId}',${qIdx},${v})" style="${s}border-radius:6px;padding:4px 10px;cursor:pointer;font-size:1rem;transition:all 0.2s;">${icon}</button>`;
+      };
+      const qiThumb = `
+        <div style="display:flex;align-items:center;gap:6px;margin-top:8px;">
+          <span style="font-size:0.6rem;color:#475569;">Image OK?</span>
+          ${_qiBtn(1,  '\uD83D\uDC4D')}
+          ${_qiBtn(0,  '\uD83D\uDE10')}
+          ${_qiBtn(-1, '\uD83D\uDC4E')}
+          <span style="font-size:0.6rem;color:#64748b;margin-left:4px;">
+            ${srcBadge(qiSrc)} <span style="font-style:italic;">${q.questionImageKeyword || ''}</span>
+          </span>
+        </div>`;
+      qImgHtml = `<div style="margin-bottom:14px;">${qiImg}${qiThumb}</div>`;
+    }
+
+    // Answer cards
+    const gridCols = hasAnswerImages
+      ? (_normArrLocal(q.answers).length <= 2 ? '1fr 1fr' : 'repeat(auto-fill,minmax(260px,1fr))')
+      : 'repeat(auto-fill,minmax(140px,1fr))';
+
+    const cardHtml = _normArrLocal(q.answers).map((a, aIdx) => {
+      const isCorrect = (q.correctAnswerIds||[]).includes(a.id);
+      const border    = isCorrect ? '1px solid rgba(52,211,153,0.4)' : '1px solid rgba(51,65,85,0.5)';
+      const bg        = isCorrect ? 'rgba(52,211,153,0.04)' : 'rgba(8,14,28,0.5)';
+
+      let imgHtml = '';
+      if (hasAnswerImages) {
+        if (a.url && a.url.trim().startsWith('<svg')) {
+          imgHtml = `<div style="width:100%;height:180px;background:#070d1a;border-radius:8px;overflow:hidden;display:flex;align-items:center;justify-content:center;">${a.url}</div>`;
+        } else if (a.url) {
+          imgHtml = `<img src="${a.url}" style="width:100%;height:180px;object-fit:contain;background:#070d1a;border-radius:8px;display:block;" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" /><div style="display:none;width:100%;height:180px;background:#070d1a;border-radius:8px;align-items:center;justify-content:center;color:#334155;font-size:0.7rem;">Image unavailable</div>`;
+        } else {
+          imgHtml = `<div style="width:100%;height:180px;background:#070d1a;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#334155;font-size:0.7rem;">No image saved</div>`;
+        }
+      }
+
+      // Hint badge: shown on correct answer if hint was triggered this question
+      const hintBadge = (q.hintShown && isCorrect)
+        ? `<div style="font-size:0.65rem;color:#fbbf24;background:rgba(251,191,36,0.12);border:1px solid rgba(251,191,36,0.3);border-radius:4px;padding:2px 7px;margin-top:4px;display:inline-block;">💡 Hint was shown</div>`
+        : '';
+
+      // Unified amber selection: selected = amber-lit, others = dimmed
+      const accVal = a.accuracy;
+      const _aBtn = (v, icon) => {
+        const sel = (accVal === v);
+        const s = sel
+          ? 'background:rgba(251,191,36,0.22);color:#fbbf24;border:1px solid rgba(251,191,36,0.45);font-weight:700;'
+          : 'background:rgba(255,255,255,0.04);color:#334155;border:1px solid transparent;';
+        return `<button id="rb-${docId}-${qIdx}-${aIdx}-${v}" onclick="setReportAccuracy('${docId}',${qIdx},${aIdx},${v})" style="${s}border-radius:6px;padding:4px 10px;cursor:pointer;font-size:1rem;transition:all 0.2s;">${icon}</button>`;
+      };
+      const thumbsHtml = hasAnswerImages ? `
+        <div style="display:flex;align-items:center;gap:6px;margin-top:8px;">
+          <span style="font-size:0.6rem;color:#475569;">Image OK?</span>
+          ${_aBtn(1,  '\uD83D\uDC4D')}
+          ${_aBtn(0,  '\uD83D\uDE10')}
+          ${_aBtn(-1, '\uD83D\uDC4E')}
+        </div>` : '';
+
+      return `
+        <div style="background:${bg};border:${border};border-radius:12px;padding:10px 12px;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;margin-bottom:4px;">
+            <span style="font-size:0.85rem;font-weight:600;color:#e2e8f0;">${a.text || a.label || a.answer || a.id || '—'}</span>
+            ${isCorrect ? '<span style="font-size:0.6rem;color:#34d399;background:rgba(52,211,153,0.1);padding:2px 7px;border-radius:4px;flex-shrink:0;">✓ Correct</span>' : ''}
+          </div>
+          ${hintBadge}
+          ${imgHtml}
+          ${hasAnswerImages ? `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:6px;">${srcBadge(a.source)}<span style="font-size:0.65rem;color:#64748b;font-style:italic;">${a.imageKeyword || 'no keyword'}</span></div>` : ''}
+          ${thumbsHtml}
+        </div>`;
+    }).join('');
+
+    html += `
+      <div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);border-radius:14px;padding:16px 20px;">
+        <div style="font-size:0.95rem;font-weight:700;color:#f1f5f9;margin-bottom:2px;">Q${qIdx+1}: ${q.question || q.text || '<span style="color:#475569;font-style:italic;">question text not saved</span>'}</div>
+        ${(!q.question && !q.text) ? '<div style="font-size:0.65rem;color:#64748b;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.07);border-radius:6px;padding:4px 10px;margin-bottom:8px;display:inline-block;">⚠ Older report — question & answer text were not captured. You can still rate image quality below.</div>' : ''}
+        <div style="font-size:0.68rem;color:#64748b;margin-bottom:10px;">${q.subject || ''}</div>
+        <div style="font-size:0.8rem;margin-bottom:14px;display:flex;flex-wrap:wrap;align-items:center;gap:5px;line-height:1.8;">
+          <strong style="color:#94a3b8;margin-right:2px;">Selections:</strong>
+          ${selHtml || '<span style="color:#334155;">—</span>'}
+        </div>
+        ${qImgHtml}
+        <div style="display:grid;grid-template-columns:${gridCols};gap:${hasAnswerImages?'14px':'8px'};">${cardHtml}</div>
+      </div>`;
+  });
+
+  html += '</div>';
+  body.innerHTML = html;
+  modal.style.display = 'flex';
+}
+
+window.openAdminReportModal = (docId) => {
+  const data = window._adminReportsCache?.[docId];
+  if (!data) return;
+  window._activeReportCtx = { docId, isAdmin: true };
+  _renderReportModal(data, docId, true);
+};
+
+window.setQuestionImageAccuracy = async (docId, qIdx, value) => {
+  // Immediate feedback
+  _ensureRatingCSS();
+  _playRatingSound(value);
+  const popBtn = document.getElementById(`qrb-${docId}-${qIdx}-${value}`);
+  if (popBtn) { popBtn.classList.remove('thumb-pop'); void popBtn.offsetWidth; popBtn.classList.add('thumb-pop'); }
+
+  try {
+    const { doc, updateDoc, addDoc, collection } =
+      await import('https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore.js');
+
+    const ctx = window._activeReportCtx;
+    const cache = ctx?.isAdmin ? window._adminReportsCache : window._userReportsCache;
+    const reopenFn = ctx?.isAdmin ? window.openAdminReportModal : window.openUserReportModal;
+
+    if (cache?.[docId]) {
+      const qs = _normArrLocal(cache[docId].questions);
+      if (qs[qIdx]) qs[qIdx].questionImageAccuracy = value;
+      cache[docId].questions = qs;
+      // Check review completion
+      const { total, rated } = _countRatableImages(cache[docId]);
+      if (total > 0 && rated >= total && !cache[docId].reviewCompletedAt) {
+        cache[docId].reviewCompletedAt = new Date().toISOString();
+        _updateReviewedCell(docId);
+      }
+      // Update button styles in-place — no modal re-render
+      _updateRatingBtns(`qrb-${docId}-${qIdx}`, value);
+    }
+
+    // Persist to quiz_reports
+    const updates = { [`questions.${qIdx}.questionImageAccuracy`]: value };
+    if (cache?.[docId]?.reviewCompletedAt) updates.reviewCompletedAt = cache[docId].reviewCompletedAt;
+    await updateDoc(doc(db, 'quiz_reports', docId), updates);
+
+    // Write to image_ratings collection
+    const report = cache?.[docId] || {};
+    const qs2 = _normArrLocal(report.questions);
+    const q   = qs2[qIdx] || {};
+    await addDoc(collection(db, 'image_ratings'), {
+      quizReportId: docId,
+      quizStartedAt: report.startedAt || null,
+      subject: q.subject || report.quizSettings?.subjects?.[0] || '',
+      imageKeyword: q.questionImageKeyword || '',
+      source: q.questionImageUrl?.source || '',
+      answerId: 'question',
+      answerText: q.question || '',
+      rating: value,
+      ratedAt: new Date().toISOString(),
+      ratedBy: user?.uid || 'unknown'
+    });
+  } catch (err) {
+    console.error('[setQuestionImageAccuracy]', err);
+  }
+};
+
+
+// shared helper (module-level) for local array normalization
+function _normArrLocal(v) { return Array.isArray(v) ? v : (v && typeof v === 'object' ? Object.values(v) : []); }
+
+// Update rating button styles in-place (avoids reopening modal)
+function _updateRatingBtns(prefix, selected) {
+  const SEL = 'background:rgba(251,191,36,0.22);color:#fbbf24;border:1px solid rgba(251,191,36,0.45);font-weight:700;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:1rem;transition:all 0.2s;';
+  const DEF = 'background:rgba(255,255,255,0.04);color:#334155;border:1px solid transparent;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:1rem;transition:all 0.2s;';
+  [1, 0, -1].forEach(v => {
+    const btn = document.getElementById(`${prefix}-${v}`);
+    if (btn) btn.style.cssText = (v === selected ? SEL : DEF);
+  });
+}
+
+// Rating sound — three tones for 👍 / 😐 / 👎
+function _playRatingSound(value) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.frequency.value = value === 1 ? 880 : value === 0 ? 528 : 330;
+    osc.type = 'sine';
+    gain.gain.setValueAtTime(0.12, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.28);
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.28);
+  } catch(e) {}
+}
+
+// Inject pop-animation CSS once
+function _ensureRatingCSS() {
+  if (document.getElementById('_rating-anim')) return;
+  const s = document.createElement('style');
+  s.id = '_rating-anim';
+  s.textContent = `@keyframes _thumbPop{0%{transform:scale(1)}38%{transform:scale(1.55) rotate(-8deg)}68%{transform:scale(0.88)}100%{transform:scale(1)}} .thumb-pop{animation:_thumbPop 0.38s cubic-bezier(.34,1.56,.64,1) both;}`;
+  document.head.appendChild(s);
+}
+
+// Count ratable vs rated images in a cached report
+// Detects images by URL/keyword OR by presence of an accuracy rating (older reports
+// where images were not persisted but ratings were still applied)
+function _countRatableImages(report) {
+  const qs = _normArrLocal(report.questions);
+  let total = 0, rated = 0;
+  for (const q of qs) {
+    const hasQImgRating = q.questionImageAccuracy !== undefined && q.questionImageAccuracy !== null;
+    if (q.questionImageKeyword || hasQImgRating) {
+      total++;
+      if (hasQImgRating) rated++;
+    } else {
+      for (const a of _normArrLocal(q.answers)) {
+        const hasAcc = a.accuracy !== undefined && a.accuracy !== null;
+        if (a.url || a.imageKeyword || hasAcc) {
+          total++;
+          if (hasAcc) rated++;
+        }
+      }
+    }
+  }
+  return { total, rated };
+}
+
+// Update the Reviewed table cell in-place after all images are rated
+function _updateReviewedCell(docId) {
+  const cell = document.getElementById(`reviewed-cell-${docId}`);
+  if (cell) cell.innerHTML = `<span style="color:#34d399;font-size:0.72rem;">✓ ${new Date().toLocaleDateString()}</span>`;
+}
+window.closeAdminReportModal = () => {
+  document.getElementById('admin-report-modal').style.display = 'none';
+};
+
+// Track which modal is open so re-render goes to the right view
+window._activeReportCtx = null; // { docId, isAdmin }
+
+window.setReportAccuracy = async (docId, qIdx, aIdx, value) => {
+  // ── Immediate feedback: sound + button pop
+  _ensureRatingCSS();
+  _playRatingSound(value);
+  const popBtn = document.getElementById(`rb-${docId}-${qIdx}-${aIdx}-${value}`);
+  if (popBtn) { popBtn.classList.remove('thumb-pop'); void popBtn.offsetWidth; popBtn.classList.add('thumb-pop'); }
+
+  try {
+    const { doc, updateDoc, addDoc, collection } =
+      await import('https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore.js');
+
+    const ctx = window._activeReportCtx;
+    const cache = ctx?.isAdmin ? window._adminReportsCache : window._userReportsCache;
+    const reopenFn = ctx?.isAdmin ? window.openAdminReportModal : window.openUserReportModal;
+
+    // ── 1. Update local cache optimistically
+    if (cache?.[docId]) {
+      const qs = _normArrLocal(cache[docId].questions);
+      if (qs[qIdx]) {
+        const answers = _normArrLocal(qs[qIdx].answers);
+        answers[aIdx] = { ...answers[aIdx], accuracy: value };
+        qs[qIdx].answers = answers;
+        cache[docId].questions = qs;
+      }
+      // Check review completion
+      const { total, rated } = _countRatableImages(cache[docId]);
+      if (total > 0 && rated >= total && !cache[docId].reviewCompletedAt) {
+        cache[docId].reviewCompletedAt = new Date().toISOString();
+        _updateReviewedCell(docId);
+      }
+      // Update button styles in-place — no modal re-render
+      _updateRatingBtns(`rb-${docId}-${qIdx}-${aIdx}`, value);
+    }
+
+    // ── 2. Persist to quiz_reports
+    const docRef = doc(db, 'quiz_reports', docId);
+    const updates = { [`questions.${qIdx}.answers.${aIdx}.accuracy`]: value };
+    if (cache?.[docId]?.reviewCompletedAt) updates.reviewCompletedAt = cache[docId].reviewCompletedAt;
+    await updateDoc(docRef, updates);
+
+    // ── 3. Write to image_ratings for consolidated view
+    const report = cache?.[docId] || {};
+    const qs2 = _normArrLocal(report.questions);
+    const q   = qs2[qIdx] || {};
+    const ans  = _normArrLocal(q.answers)[aIdx] || {};
+    if (ans.imageKeyword || ans.url) {
+      await addDoc(collection(db, 'image_ratings'), {
+        quizReportId: docId,
+        quizStartedAt: report.startedAt || null,
+        subject: q.subject || report.quizSettings?.subjects?.[0] || '',
+        imageKeyword: ans.imageKeyword || '',
+        source: ans.source || '',
+        answerId: ans.id || '',
+        answerText: ans.text || '',
+        rating: value,
+        ratedAt: new Date().toISOString(),
+        ratedBy: user?.uid || 'unknown'
+      });
+    }
+  } catch (err) {
+    console.error('[setReportAccuracy]', err);
+  }
+};
+
+// ── Image Ratings Panel ──────────────────────────────────────────
+window.renderImageRatingsPanel = async () => {
+  const loadEl  = document.getElementById('image-ratings-loading');
+  const chartEl = document.getElementById('image-ratings-chart-wrap');
+  const emptyEl = document.getElementById('image-ratings-empty');
+  if (!loadEl) return;
+
+  loadEl.style.display = '';
+  if (chartEl) chartEl.style.display = 'none';
+  if (emptyEl) emptyEl.classList.add('hidden');
+
+  try {
+    const { collection, getDocs, query, orderBy, limit } =
+      await import('https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore.js');
+
+    const snap = await getDocs(
+      query(collection(db, 'image_ratings'), orderBy('ratedAt', 'asc'), limit(500))
+    );
+
+    loadEl.style.display = 'none';
+    if (snap.empty) { if (emptyEl) emptyEl.classList.remove('hidden'); return; }
+
+    // Group by quiz session (quizReportId), compute % approval per session
+    const sessionMap = {};
+    snap.forEach(d => {
+      const r = d.data();
+      if (!sessionMap[r.quizReportId]) {
+        sessionMap[r.quizReportId] = { date: r.quizStartedAt || r.ratedAt, up: 0, down: 0, subject: r.subject };
+      }
+      if (r.rating === 1)  sessionMap[r.quizReportId].up++;
+      if (r.rating === -1) sessionMap[r.quizReportId].down++;
+    });
+
+    const sessions = Object.values(sessionMap)
+      .sort((a, b) => new Date(a.date) - new Date(b.date))
+      .map(s => ({ ...s, pct: s.up + s.down > 0 ? Math.round(100 * s.up / (s.up + s.down)) : null }));
+
+    if (!sessions.length) { if (emptyEl) emptyEl.classList.remove('hidden'); return; }
+
+    // ── SVG sparkline chart
+    const W = 800, H = 260, PL = 52, PR = 20, PT = 20, PB = 48;
+    const iW = W - PL - PR, iH = H - PT - PB;
+    const n = sessions.length;
+    const xStep = n > 1 ? iW / (n - 1) : iW / 2;
+    const xOf   = i => PL + (n > 1 ? i * xStep : iW / 2);
+    const yOf   = pct => PT + iH - (pct / 100) * iH;
+
+    // Y gridlines at 0, 25, 50, 75, 100
+    let gridLines = [0, 25, 50, 75, 100].map(v => {
+      const y = yOf(v);
+      return `<line x1="${PL}" y1="${y}" x2="${W - PR}" y2="${y}" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>
+              <text x="${PL - 6}" y="${y + 4}" text-anchor="end" font-size="9" fill="#475569">${v}%</text>`;
+    }).join('');
+
+    // Points + line
+    const pts = sessions.filter(s => s.pct !== null);
+    let pathD = '';
+    pts.forEach((s, i) => {
+      const idx = sessions.indexOf(s);
+      const x = xOf(idx), y = yOf(s.pct);
+      pathD += i === 0 ? `M${x},${y}` : ` L${x},${y}`;
+    });
+
+    // Fill area
+    const firstIdx = sessions.indexOf(pts[0]);
+    const lastIdx  = sessions.indexOf(pts[pts.length - 1]);
+    const fillD = pathD + ` L${xOf(lastIdx)},${PT + iH} L${xOf(firstIdx)},${PT + iH} Z`;
+
+    // Dots
+    const dots = pts.map(s => {
+      const idx = sessions.indexOf(s);
+      const x = xOf(idx), y = yOf(s.pct);
+      const col = s.pct >= 70 ? '#34d399' : s.pct >= 40 ? '#fbbf24' : '#f87171';
+      return `<circle cx="${x}" cy="${y}" r="5" fill="${col}" stroke="#0f172a" stroke-width="2">
+        <title>${new Date(s.date).toLocaleDateString()}: ${s.pct}% (${s.up}👍 ${s.down}👎) ${s.subject}</title>
+      </circle>`;
+    }).join('');
+
+    // X-axis labels (show max 8 evenly)
+    const labelStep = Math.max(1, Math.ceil(n / 8));
+    let xLabels = '';
+    sessions.forEach((s, i) => {
+      if (i % labelStep !== 0 && i !== n - 1) return;
+      const x = xOf(i);
+      const lbl = new Date(s.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      xLabels += `<text x="${x}" y="${PT + iH + 18}" text-anchor="middle" font-size="9" fill="#64748b">${lbl}</text>`;
+    });
+
+    // Summary stats
+    const allUp   = sessions.reduce((s, x) => s + x.up, 0);
+    const allDown = sessions.reduce((s, x) => s + x.down, 0);
+    const total   = allUp + allDown;
+    const overallPct = total > 0 ? Math.round(100 * allUp / total) : 0;
+    const overallCol = overallPct >= 70 ? '#34d399' : overallPct >= 40 ? '#fbbf24' : '#f87171';
+
+    const svg = `
+      <svg width="100%" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="display:block;overflow:visible;">
+        <defs>
+          <linearGradient id="ratingFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#34d399" stop-opacity="0.25"/>
+            <stop offset="100%" stop-color="#34d399" stop-opacity="0.02"/>
+          </linearGradient>
+        </defs>
+        ${gridLines}
+        <!-- 50% threshold line -->
+        <line x1="${PL}" y1="${yOf(50)}" x2="${W-PR}" y2="${yOf(50)}" stroke="rgba(251,191,36,0.3)" stroke-width="1" stroke-dasharray="4,3"/>
+        <!-- fill area -->
+        <path d="${fillD}" fill="url(#ratingFill)"/>
+        <!-- sparkline -->
+        <path d="${pathD}" fill="none" stroke="#34d399" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        ${dots}
+        <!-- x labels -->
+        ${xLabels}
+        <!-- chart title -->
+        <text x="${PL}" y="${PT - 6}" font-size="10" font-weight="600" fill="#94a3b8">Image Approval Rate per Quiz Session</text>
+        <!-- overall badge -->
+        <rect x="${W - PR - 90}" y="${PT - 16}" width="86" height="18" rx="4" fill="${overallCol}22"/>
+        <text x="${W - PR - 47}" y="${PT - 4}" text-anchor="middle" font-size="10" font-weight="700" fill="${overallCol}">Overall: ${overallPct}% (${total} rated)</text>
+      </svg>`;
+
+    // Recent ratings table
+    const rows = [];
+    snap.forEach(d => {
+      const r = d.data();
+      rows.push(`<tr>
+        <td style="color:#94a3b8;font-size:0.72rem;">${new Date(r.ratedAt).toLocaleString()}</td>
+        <td style="font-size:0.75rem;color:#e2e8f0;">${r.answerText || '—'}</td>
+        <td style="font-size:0.72rem;color:#64748b;font-style:italic;">${r.imageKeyword || '—'}</td>
+        <td>${r.rating === 1 ? '<span style="color:#34d399;font-size:1rem;">👍</span>' : '<span style="color:#f87171;font-size:1rem;">👎</span>'}</td>
+        <td style="font-size:0.62rem;color:#64748b;">${r.source || '—'}</td>
+      </tr>`);
+    });
+
+    chartEl.innerHTML = `
+      <div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);border-radius:12px;padding:16px 20px;margin-bottom:16px;">
+        ${svg}
+      </div>
+      <div style="font-size:0.72rem;color:#94a3b8;font-weight:600;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.06em;">All Ratings (newest first)</div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:0.78rem;">
+          <thead><tr style="border-bottom:1px solid rgba(255,255,255,0.06);">
+            <th style="text-align:left;padding:6px 8px;color:#64748b;font-size:0.62rem;font-weight:700;text-transform:uppercase;">Rated At</th>
+            <th style="text-align:left;padding:6px 8px;color:#64748b;font-size:0.62rem;font-weight:700;text-transform:uppercase;">Answer</th>
+            <th style="text-align:left;padding:6px 8px;color:#64748b;font-size:0.62rem;font-weight:700;text-transform:uppercase;">Keyword</th>
+            <th style="text-align:left;padding:6px 8px;color:#64748b;font-size:0.62rem;font-weight:700;text-transform:uppercase;">Rating</th>
+            <th style="text-align:left;padding:6px 8px;color:#64748b;font-size:0.62rem;font-weight:700;text-transform:uppercase;">Source</th>
+          </tr></thead>
+          <tbody>${rows.reverse().join('')}</tbody>
+        </table>
+      </div>`;
+    chartEl.style.display = '';
+
+  } catch (err) {
+    console.error('[renderImageRatingsPanel]', err);
+    if (loadEl) loadEl.innerHTML = `<div style="color:#f87171;font-size:0.8rem;">Error: ${err.message}</div>`;
+  }
+};
+
+
+// ── User Quiz Reports Logic ───────────────────────────────────────
+window.renderUserReports = async () => {
+  if (!user || user.isAnonymous || user.isGuest) return;
+  const loadingEl = document.getElementById('user-reports-loading');
+  const tableEl   = document.getElementById('user-reports-table');
+  const emptyEl   = document.getElementById('user-reports-empty');
+  const tbody     = document.getElementById('user-reports-tbody');
+
+  if (loadingEl) loadingEl.style.display = '';
+  if (tableEl)   tableEl.style.display = 'none';
+  if (emptyEl)   emptyEl.classList.add('hidden');
+
+  try {
+    const { collection, getDocs, query, where, orderBy, limit } = await import('https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore.js');
+    const q = query(collection(db, 'quiz_reports'), where('userId', '==', user.uid), orderBy('startedAt', 'desc'), limit(20));
+    const snap = await getDocs(q);
+
+    if (loadingEl) loadingEl.style.display = 'none';
+    if (snap.empty) { if (emptyEl) emptyEl.classList.remove('hidden'); return; }
+    if (tableEl) tableEl.style.display = '';
+
+    tbody.innerHTML = '';
+    window._userReportsCache = {};
+
+    // Convert to array so we can assign chronological index (oldest = #1)
+    const repDocs = [];
+    snap.forEach(d => repDocs.push(d));
+    const repCount = repDocs.length;
+
+    repDocs.forEach((d, i) => {
+      const idx = repCount - i; // oldest = 1, newest = repCount
+      const data = d.data();
+
+      window._userReportsCache[d.id] = data;
+
+      const tr       = document.createElement('tr');
+      tr.id = `report-row-${d.id}`;
+      const dateStr  = new Date(data.startedAt).toLocaleString();
+      const durSec   = Math.round((data.durationMs || 0) / 1000);
+      const qs     = Array.isArray(data.questions) ? data.questions : (data.questions && typeof data.questions === 'object' ? Object.values(data.questions) : []);
+      // Normalize userSelections inside each question (may be stored as Firestore map)
+      const _normSels = (q) => Array.isArray(q.userSelections) ? q.userSelections : (q.userSelections && typeof q.userSelections === 'object' ? Object.values(q.userSelections) : []);
+      const score    = qs.filter(q => { const s = _normSels(q); return s.length > 0 && s[s.length - 1].state === 'correct'; }).length;
+      const total    = qs.length;
+      const subjs    = [].concat(data.quizSettings?.subjects || []);
+      if (data.quizSettings?.customSubject) subjs.push(`"${data.quizSettings.customSubject}"`);
+      const subjStr  = subjs.join(', ') || '—';
+      const ct       = data.quizSettings?.contentTypes || [];
+      const medStr   = ct.includes('image') && ct.includes('text') ? 'Text + Image'
+                     : ct.includes('image') ? 'Image only'
+                     : ct.includes('text') ? 'Text only' : '—';
+      const reviewed = data.reviewCompletedAt
+        ? `<span style="color:#34d399;font-size:0.72rem;">✓ ${new Date(data.reviewCompletedAt).toLocaleDateString()}</span>`
+        : `<span style="color:#334155;font-size:0.72rem;">—</span>`;
+
+      tr.innerHTML = `
+        <td><div style="font-size:0.72rem;color:#475569;font-weight:600;text-align:center;">${idx}</div></td>
+        <td><div style="font-size:0.82rem;color:#cbd5e1;">${dateStr}</div></td>
+        <td><div style="font-size:0.82rem;color:#94a3b8;">${durSec}s</div></td>
+        <td><div style="font-size:0.82rem;color:#fbbf24;font-weight:700;">${score}/${total}</div></td>
+        <td><div style="font-size:0.72rem;color:#94a3b8;background:rgba(255,255,255,0.05);padding:2px 8px;border-radius:4px;display:inline-block;">${subjStr}</div></td>
+        <td><div style="font-size:0.72rem;color:#64748b;">${medStr}</div></td>
+        <td id="reviewed-cell-${d.id}">${reviewed}</td>
+        <td style="white-space:nowrap;">
+          <button onclick="openUserReportModal('${d.id}')" class="px-3 py-1 bg-amber-600/20 hover:bg-amber-600/40 text-amber-300 rounded text-xs transition-colors">View Details</button>
+          <button onclick="deleteQuizReport('${d.id}', false)" style="margin-left:6px;padding:3px 10px;border:1px solid rgba(248,113,113,0.3);border-radius:6px;background:rgba(248,113,113,0.08);color:#f87171;font-size:0.7rem;cursor:pointer;transition:all 0.15s;" title="Delete this report and all its ratings">🗑 Delete</button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    // Render image quality trend chart from the loaded session data
+    window.renderUserImageQualityChart(window._userReportsCache);
+
+  } catch (err) {
+    console.error('[renderUserReports]', err);
+    if (loadingEl) loadingEl.style.display = 'none';
+    if (emptyEl) { emptyEl.textContent = 'Error loading reports: ' + err.message; emptyEl.classList.remove('hidden'); }
+  }
+};
+
+window.openUserReportModal = async (docId) => {
+  window._activeReportCtx = { docId, isAdmin: false };
+
+  // Use cache first — it’s kept up-to-date by setReportAccuracy/setQuestionImageAccuracy.
+  // Only hit Firestore on cache miss (first open for this session).
+  const cached = window._userReportsCache?.[docId];
+  if (cached) {
+    _renderReportModal(cached, docId, false);
+    return;
+  }
+
+  try {
+    const { doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore.js');
+    const snap = await getDoc(doc(db, 'quiz_reports', docId));
+    if (snap.exists()) {
+      const fresh = snap.data();
+      if (!window._userReportsCache) window._userReportsCache = {};
+      window._userReportsCache[docId] = fresh;
+      _renderReportModal(fresh, docId, false);
+    }
+  } catch (e) {
+    console.error('[openUserReportModal]', e);
+  }
+};
+
+// ── Delete Quiz Report ────────────────────────────────────────────
+window.deleteQuizReport = async (docId, isAdmin) => {
+  // Show inline confirmation overlay instead of native confirm()
+  const row = document.getElementById(`report-row-${docId}`);
+  if (!row) return;
+
+  // If a confirm UI already exists on this row, bail
+  if (row.querySelector('.delete-confirm-row')) return;
+
+  const actionsCell = row.cells[row.cells.length - 1];
+  const originalHTML = actionsCell.innerHTML;
+
+  actionsCell.innerHTML = `
+    <span style="font-size:0.72rem;color:#f87171;margin-right:8px;">Delete this report + all ratings?</span>
+    <button id="confirm-del-${docId}" style="padding:3px 10px;border-radius:6px;background:#ef4444;border:none;color:#fff;font-size:0.72rem;font-weight:700;cursor:pointer;margin-right:4px;">Yes, Delete</button>
+    <button onclick="document.getElementById('report-row-${docId}').cells[document.getElementById('report-row-${docId}').cells.length-1].innerHTML=window._delBackup_${docId}" style="padding:3px 10px;border-radius:6px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);color:#94a3b8;font-size:0.72rem;cursor:pointer;">Cancel</button>`;
+  window[`_delBackup_${docId}`] = originalHTML;
+
+  document.getElementById(`confirm-del-${docId}`).onclick = async () => {
+    row.style.opacity = '0.4';
+    try {
+      const { doc, deleteDoc, collection, query, where, getDocs } =
+        await import('https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore.js');
+
+      // Delete associated image_ratings
+      const rq = query(collection(db, 'image_ratings'), where('quizReportId', '==', docId));
+      const rSnap = await getDocs(rq);
+      await Promise.all(rSnap.docs.map(d => deleteDoc(d.ref)));
+
+      // Delete the quiz_reports doc
+      await deleteDoc(doc(db, 'quiz_reports', docId));
+
+      // Remove from cache and DOM
+      const cache = isAdmin ? window._adminReportsCache : window._userReportsCache;
+      if (cache) delete cache[docId];
+      row.remove();
+
+      // Re-render quality chart
+      if (!isAdmin && window._userReportsCache) window.renderUserImageQualityChart(window._userReportsCache);
+    } catch (err) {
+      console.error('[deleteQuizReport]', err);
+      row.style.opacity = '';
+      actionsCell.innerHTML = originalHTML;
+      alert('Failed to delete: ' + err.message);
+    }
+  };
+};
+
+// ── User Image Quality Trend Chart ───────────────────────────────
+window.renderUserImageQualityChart = (cache) => {
+  const wrap    = document.getElementById('user-quality-wrap');
+  const chartEl = document.getElementById('user-quality-chart');
+  const sumEl   = document.getElementById('user-quality-summary');
+  if (!wrap || !chartEl) return;
+
+  // Aggregate ALL sessions into totals
+  let good = 0, neutral = 0, bad = 0, unrated = 0, sessionCount = 0;
+  for (const data of Object.values(cache)) {
+    const qs = _normArrLocal(data.questions);
+    let hasRatable = false;
+    for (const q of qs) {
+      const hasQRating = q.questionImageAccuracy !== undefined && q.questionImageAccuracy !== null;
+      if (q.questionImageKeyword || hasQRating) {
+        hasRatable = true;
+        const v = q.questionImageAccuracy;
+        if (v === 1) good++; else if (v === 0) neutral++; else if (v === -1) bad++; else unrated++;
+      } else {
+        for (const a of _normArrLocal(q.answers)) {
+          const hasAcc = a.accuracy !== undefined && a.accuracy !== null;
+          if (a.url || a.imageKeyword || hasAcc) {
+            hasRatable = true;
+            const v = a.accuracy;
+            if (v === 1) good++; else if (v === 0) neutral++; else if (v === -1) bad++; else unrated++;
+          }
+        }
+      }
+    }
+    if (hasRatable) sessionCount++;
+  }
+
+  const rated = good + neutral + bad;
+  const totalImages = rated + unrated;
+  if (totalImages === 0) { wrap.classList.add('hidden'); return; }
+  wrap.classList.remove('hidden');
+
+  // Percentages of RATED images only (sum to 100%)
+  const pG = rated > 0 ? (good    / rated * 100).toFixed(1) : 0;
+  const pN = rated > 0 ? (neutral / rated * 100).toFixed(1) : 0;
+  const pB = rated > 0 ? (bad     / rated * 100).toFixed(1) : 0;
+
+  // Horizontal segmented bar (flex divs)
+  const seg = (pct, col, emoji, label) => pct > 0 ? `
+    <div style="width:${pct}%;background:${col};display:flex;align-items:center;justify-content:center;
+      padding:0 8px;white-space:nowrap;overflow:hidden;transition:width 0.4s ease;" title="${label}">
+      <span style="font-size:0.72rem;font-weight:800;color:#0f172a;mix-blend-mode:multiply;">
+        ${Number(pct) >= 9 ? `${emoji} ${pct}%` : ''}
+      </span>
+    </div>` : '';
+
+  chartEl.innerHTML = `
+    <div style="display:flex;height:40px;border-radius:10px;overflow:hidden;gap:2px;">
+      ${seg(pG, '#34d399', '\uD83D\uDC4D', `Good: ${good} (${pG}%)`)}
+      ${seg(pN, '#818cf8', '\uD83D\uDE10', `Neutral: ${neutral} (${pN}%)`)}
+      ${seg(pB, '#f87171', '\uD83D\uDC4E', `Bad: ${bad} (${pB}%)`)}
+    </div>
+    ${unrated > 0 ? `<div style="font-size:0.65rem;color:#475569;margin-top:6px;">${unrated} image${unrated!==1?'s':''} not yet rated (excluded from %)</div>` : ''}`;
+
+  if (sumEl) sumEl.innerHTML = `
+    <span>Sessions: <strong style="color:#f1f5f9;">${sessionCount}</strong></span>
+    <span>Total ratings: <strong style="color:#f1f5f9;">${rated}</strong></span>
+    <span style="color:#34d399;">\uD83D\uDC4D ${good} good (${pG}%)</span>
+    <span style="color:#818cf8;">\uD83D\uDE10 ${neutral} neutral (${pN}%)</span>
+    <span style="color:#f87171;">\uD83D\uDC4E ${bad} bad (${pB}%)</span>
+  `;
+};
+

@@ -16,6 +16,19 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
+    // quiz_reports — detailed tracking of quiz sessions
+    match /quiz_reports/{reportId} {
+      // Anyone authenticated can create a report
+      allow create: if request.auth != null;
+      // Users can read a specific document if it belongs to them
+      allow get: if request.auth != null && resource.data.userId == request.auth.uid;
+      // Users can list/query their own reports (Firestore validates where clause matches)
+      allow list: if request.auth != null;
+      // Users can update/delete their own reports; admins can do anything
+      allow update: if request.auth != null && (resource.data.userId == request.auth.uid || isAdmin());
+      allow delete: if request.auth != null && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
     // users — user registry (login metadata, admin flag)
     match /users/{userId} {
       // Any authenticated user can read their own doc
@@ -36,6 +49,14 @@ service cloud.firestore {
 
       // Only admins can delete user docs
       allow delete: if isAdmin();
+    }
+
+    // image_ratings — per-image reviewer ratings
+    match /image_ratings/{ratingId} {
+      allow create: if request.auth != null;
+      allow read:   if request.auth != null && (resource.data.ratedBy == request.auth.uid || isAdmin());
+      allow delete: if request.auth != null && (resource.data.ratedBy == request.auth.uid || isAdmin());
+      allow list:   if request.auth != null;
     }
   }
 }

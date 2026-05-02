@@ -31,6 +31,10 @@
         "function": "adminAction"
       },
       {
+        "source": "/api/comprehension-generate",
+        "function": "comprehensionGenerate"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }
