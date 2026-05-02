@@ -2854,7 +2854,11 @@ async function resolveVisual(keyword, context = [], questionText = '', opts = {}
   // query term AND reject Pixabay results that don't belong to that domain.
   const _inDomain = (terms) => terms.some(t => qtxtLower.includes(t) || subject.includes(t));
 
-  const domainIsAnimal    = _inDomain(['animal', 'mammal', 'reptile', 'bird', 'fish', 'insect', 'amphibian', 'wildlife', 'creature', 'species', 'classify', 'habitat', 'predator', 'prey', 'science']);
+  const domainIsAnimal    = _inDomain(['animal', 'mammal', 'reptile', 'bird', 'fish', 'insect', 'amphibian', 'wildlife', 'creature', 'species', 'classify', 'habitat', 'predator', 'prey', 'science',
+    // Common pets and animals that appear in custom subjects like "dogs", "cats"
+    'dog', 'cat', 'pet', 'puppy', 'kitten', 'breed', 'paw', 'fur', 'tail', 'canine', 'feline',
+    'rabbit', 'hamster', 'horse', 'pony', 'elephant', 'lion', 'tiger', 'bear', 'wolf', 'fox',
+    'deer', 'monkey', 'gorilla', 'whale', 'dolphin', 'shark', 'octopus', 'parrot', 'penguin']);
   const domainIsFood      = _inDomain(['food', 'eat', 'fruit', 'vegetable', 'meal', 'diet', 'nutrition', 'cook', 'ingredient']);
   const domainIsTransport = _inDomain(['transport', 'vehicle', 'travel', 'road', 'drive', 'fly', 'sail']);
   const domainIsPlant     = _inDomain(['plant', 'flower', 'tree', 'leaf', 'garden', 'botany', 'photosynthesis']);
@@ -2979,7 +2983,10 @@ async function resolveVisual(keyword, context = [], questionText = '', opts = {}
           quizResolvedVisuals.set(keyword, res);
           return res;
         }
-      } catch (e) { /* Pixabay unavailable — fall through */ }
+        console.warn('[img] Pixabay returned no usable hits for:', pixabayQuery);
+      } catch (e) {
+        console.error('[img] Pixabay fetch error for "' + pixabayQuery + '":', e.message);
+      }
     }
 
     // ── Unsplash ───────────────────────────────────────────────────────────
@@ -4692,7 +4699,7 @@ function renderQuizBoard() {
       } else {
         // Hard timeout: if resolve takes > 12s (e.g. Unsplash 403 + all fallbacks fail), show error
         const _imgFallbackTimer = setTimeout(() => _showImgError(), 12000);
-        resolveVisual(imageKeyword, [], q.question).then(res => {
+        resolveVisual(imageKeyword, [], q.question, { subject: q._subject || q.subject || '' }).then(res => {
           clearTimeout(_imgFallbackTimer);
           if (res?.url) {
             ansImg.src = res.url;
@@ -4922,13 +4929,14 @@ function _sizeAnswerGrid() {
   if (!grid) return;
 
   if (isQuiz) {
-    // Measure remaining height after the question section — race-condition proof.
-    // Using the question section's actual height avoids stale grid.top readings.
+    // Use the actual rendered bottom of the question section to calculate
+    // remaining space — this is immune to header height, body padding,
+    // or any other elements above the grid.
     const qSection = document.querySelector('.quiz-question-section');
-    const qSectionH = qSection ? qSection.getBoundingClientRect().height : 0;
-    const bodyPad = parseFloat(getComputedStyle(document.body).paddingTop) || 0;
-    const gap = 8; // gap between question section and grid
-    const available = window.innerHeight - bodyPad - qSectionH - gap - 8;
+    if (!qSection) return;
+    const qBottom = qSection.getBoundingClientRect().bottom;
+    const gap = 16; // gap between question section and grid
+    const available = window.innerHeight - qBottom - gap;
     if (available > 80) {
       grid.style.setProperty('height', available + 'px', 'important');
     }
