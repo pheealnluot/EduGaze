@@ -1022,3 +1022,229 @@ body.quiz-active .quiz-score-row {
   border-color: rgba(13, 148, 136, 0.6);
   color: #5eead4;
 }
+
+/* ── Quiz / Comprehension mode toggle (top of settings panel) ─────────── */
+.qs-mode-btn {
+  padding: 0.65rem 0.5rem;
+  font-size: 0.82rem;
+  font-weight: 800;
+  cursor: pointer;
+  background: rgba(15, 23, 42, 0.5);
+  color: #64748b;
+  border: none;
+  transition: all 0.2s;
+  letter-spacing: 0.01em;
+}
+.qs-mode-btn:first-child { border-radius: 0.65rem 0 0 0.65rem; }
+.qs-mode-btn:last-child  { border-radius: 0 0.65rem 0.65rem 0; }
+.qs-mode-btn.active {
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  color: #fff;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.15);
+}
+.qs-mode-btn:hover:not(.active) {
+  background: rgba(30, 41, 59, 0.8);
+  color: #e2e8f0;
+}
+
+/* Comprehension URL input in settings */
+#qs-comp-url {
+  width: 100%;
+  box-sizing: border-box;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1.5px solid rgba(99,102,241,0.25);
+  border-radius: 0.75rem;
+  padding: 0.65rem 0.9rem;
+  color: #f1f5f9;
+  font-size: 0.82rem;
+  font-family: 'JetBrains Mono', monospace, sans-serif;
+  outline: none;
+  transition: border-color 0.2s;
+}
+#qs-comp-url:focus {
+  border-color: rgba(139,92,246,0.7);
+  box-shadow: 0 0 0 3px rgba(139,92,246,0.12);
+}
+#qs-comp-url-feedback {
+  font-size: 0.72rem;
+  font-weight: 700;
+  min-height: 1rem;
+  transition: color 0.2s;
+}
+#qs-comp-url-feedback.ok   { color: #34d399; }
+#qs-comp-url-feedback.err  { color: #f87171; }
+#qs-comp-url-feedback.info { color: #94a3b8; }
+
+/* ── Comprehension-from-quiz video-first overlay ─────────────────────── */
+#comp-quiz-video-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99990;
+  background: #000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+}
+#comp-quiz-video-overlay iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
+#comp-quiz-video-skip {
+  position: absolute;
+  bottom: 28px;
+  right: 28px;
+  z-index: 10;
+  padding: 10px 22px;
+  background: rgba(15,23,42,0.88);
+  border: 1.5px solid rgba(139,92,246,0.5);
+  border-radius: 99px;
+  color: #c4b5fd;
+  font-weight: 800;
+  font-size: 0.85rem;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  transition: all 0.2s;
+}
+#comp-quiz-video-skip:hover {
+  background: rgba(139,92,246,0.3);
+  border-color: #a78bfa;
+  color: #fff;
+}
+#comp-quiz-loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99990;
+  background: rgba(15,23,42,0.97);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+}
+#comp-quiz-loading-overlay .cql-spinner {
+  width: 52px;
+  height: 52px;
+  border: 4px solid rgba(139,92,246,0.2);
+  border-top-color: #a855f7;
+  border-radius: 50%;
+  animation: quizSpin 0.9s linear infinite;
+}
+#comp-quiz-loading-overlay .cql-text {
+  color: #94a3b8;
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-align: center;
+  max-width: 280px;
+  line-height: 1.5;
+}
+
+/* ── Image-quadrant quiz layout ─────────────────────────────────────── */
+/* Applied to <body> when quiz runs from an image URL                    */
+body.quiz-comp-img.quiz-active {
+  flex-direction: column;
+  padding: 0 !important;
+  overflow: hidden;
+}
+
+/* Hide the normal header in this mode */
+body.quiz-comp-img.quiz-active header {
+  display: none !important;
+}
+
+/* main fills the whole viewport */
+body.quiz-comp-img.quiz-active main {
+  width: 100% !important;
+  max-width: none !important;
+  padding: 0 !important;
+  display: grid !important;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  height: 100dvh !important;
+  overflow: hidden;
+  gap: 0;
+}
+
+/* view-quiz takes all 4 cells via column/row span */
+body.quiz-comp-img.quiz-active #view-quiz {
+  grid-column: 1 / -1;
+  grid-row: 1 / -1;
+  display: grid !important;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  width: 100% !important;
+  max-width: none !important;
+  height: 100dvh !important;
+  padding: 0 !important;
+  gap: 6px;
+  box-sizing: border-box;
+}
+
+/* Image quadrant — top-left */
+#comp-img-quadrant {
+  grid-column: 1;
+  grid-row: 1;
+  overflow: hidden;
+  background: #000;
+  position: relative;
+}
+#comp-img-quadrant img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Question quadrant — top-right */
+#comp-q-quadrant {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  box-sizing: border-box;
+  background: rgba(15,23,42,0.97);
+  overflow: hidden;
+  border-left: 1px solid rgba(255,255,255,0.05);
+}
+#comp-q-quadrant-text {
+  color: #f1f5f9;
+  font-weight: 800;
+  text-align: center;
+  line-height: 1.25;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  /* JS will dynamically set font-size to fill this box */
+}
+
+/* Answer grid — bottom two cells */
+body.quiz-comp-img.quiz-active #comp-answers-grid {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  display: grid !important;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 6px;
+  padding: 6px;
+  box-sizing: border-box;
+  overflow: hidden;
+  align-content: stretch;
+}
+
+/* hide the normal quiz question section in image-quadrant mode */
+body.quiz-comp-img.quiz-active .quiz-question-section { display: none !important; }
+body.quiz-comp-img.quiz-active #quiz-display-question { display: none !important; }
+body.quiz-comp-img.quiz-active #quiz-answers-grid     { display: none !important; }
+
+/* Score row — absolute top strip in image mode */
+body.quiz-comp-img.quiz-active .quiz-score-row {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  z-index: 100;
+  margin: 0 !important;
+}

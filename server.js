@@ -79,6 +79,26 @@ app.post('/api/quiz-generate', async (req, res) => {
 });
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ── Comprehension Generate proxy ─────────────────────────────────────────────
+// Forwards to the deployed Cloud Function so Comprehension Adventure works locally.
+const COMPREHENSION_FUNCTION_URL = 'https://comprehensiongenerate-xclutmzc7a-uc.a.run.app';
+
+app.post('/api/comprehension-generate', async (req, res) => {
+  try {
+    const response = await fetch(COMPREHENSION_FUNCTION_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body),
+    });
+    const data = await response.json().catch(() => ({}));
+    res.status(response.status).json(data);
+  } catch (err) {
+    console.error('[comprehension-generate proxy error]', err.message);
+    res.status(502).json({ error: err.message });
+  }
+});
+// ─────────────────────────────────────────────────────────────────────────────
+
 // ── Admin Action proxy ───────────────────────────────────────────────────────
 // Forwards to the deployed Cloud Function so admin features work locally.
 const ADMIN_FUNCTION_URL = 'https://adminaction-xclutmzc7a-uc.a.run.app';

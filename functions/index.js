@@ -102,13 +102,15 @@ exports.pixabaySearch = onRequest(
 
     const q        = req.query.q || '';
     const per_page = Math.min(parseInt(req.query.per_page || '5', 10), 20);
+    const category = req.query.category || ''; // optional Pixabay category filter
 
     if (!q) {
       res.status(400).json({ error: 'Missing query parameter: q' });
       return;
     }
 
-    const pixabayUrl = `https://pixabay.com/api/?key=${apiKey}&q=${encodeURIComponent(q)}&image_type=photo&orientation=horizontal&safesearch=true&per_page=${per_page}&min_width=400`;
+    let pixabayUrl = `https://pixabay.com/api/?key=${apiKey}&q=${encodeURIComponent(q)}&image_type=photo&orientation=horizontal&safesearch=true&per_page=${per_page}&min_width=400`;
+    if (category) pixabayUrl += `&category=${encodeURIComponent(category)}`;
 
     try {
       const response = await fetch(pixabayUrl);
@@ -329,11 +331,74 @@ exports.adminAction = onRequest(
   }
 );
 
+// ── YouTube transcript fetcher (free, no API key) ──────────────────────────
+// Fetches auto-generated or manual captions by:
+//   1. Scraping the YouTube watch page to find caption track URLs
+//   2. Fetching the JSON3-format caption track
+//   3. Joining all segment texts into a single transcript string
+async function fetchYouTubeTranscript(videoId) {
+  try {
+    // Fetch the watch page — YouTube embeds caption track metadata here
+    const pageRes = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+    });
+    if (!pageRes.ok) return null;
+    const html = await pageRes.text();
+
+    // Extract just the captionTracks array from ytInitialPlayerResponse
+    // YouTube embeds it as:  "captionTracks":[{...},{...}],"audioTracks"
+    const captionMatch = html.match(/"captionTracks"\s*:\s*(\[\{[\s\S]*?\}\])\s*,\s*"(?:audioTracks|translationLanguages|defaultAudioTrackIndex)"/);
+    if (!captionMatch) {
+      console.log(`[transcript] No captionTracks found for ${videoId}`);
+      return null;
+    }
+
+    let tracks;
+    try { tracks = JSON.parse(captionMatch[1]); } catch { return null; }
+    if (!tracks || tracks.length === 0) return null;
+
+    // Prefer English (manual first, then auto-generated), fall back to first available
+    const en = tracks.find(t => t.languageCode === 'en' && !t.kind) ||
+               tracks.find(t => t.languageCode === 'en') ||
+               tracks.find(t => t.languageCode?.startsWith('en')) ||
+               tracks[0];
+    if (!en?.baseUrl) return null;
+
+    // Fetch captions in JSON3 format (segments with timestamps)
+    const captRes = await fetch(en.baseUrl + '&fmt=json3');
+    if (!captRes.ok) return null;
+    const captData = await captRes.json();
+
+    // Flatten all segments into a plain text string
+    const events = captData?.events || [];
+    const transcript = events
+      .filter(e => e.segs)
+      .map(e => e.segs.map(s => (s.utf8 || '').replace(/\n/g, ' ')).join(''))
+      .join(' ')
+      .replace(/\[.*?\]/g, '')   // strip [Music], [Applause] etc.
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (transcript.length < 100) return null; // too short to be useful
+    console.log(`[transcript] Fetched ${transcript.length} chars for ${videoId} (lang: ${en.languageCode}${en.kind ? '/'+en.kind : ''})`);
+    return transcript;
+  } catch (err) {
+    console.warn('[transcript] Fetch failed:', err.message);
+    return null;
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
  * Comprehension Adventure — two-phase AI endpoint.
  *
  * Phase "source":  Gemini picks appropriate YouTube video / generates text passage / image keyword
  * Phase "questions": Gemini analyses the media content and returns N comprehension questions
+ *                    For video, the real transcript is fetched and sent to Gemini so questions
+ *                    are genuinely based on what was said in the video.
  *
  * Body: { phase, medium, subject, educationLevel, numQuestions, videoDurationMin,
  *          passageLength, mediaContent (for questions phase) }
@@ -492,53 +557,208 @@ Return ONLY valid JSON:
       // ════════════════════════════════════════════════════════════
       } else if (phase === 'questions') {
 
-        const isVideo = medium === 'video';
-        const isUserPasted = !mediaContent?.channel && isVideo; // user-pasted has no channel
-        const contentDescription = isVideo
-          ? (isUserPasted
-              ? `a YouTube video (URL: https://www.youtube.com/watch?v=${mediaContent?.videoId}) about the topic: ${subject}. Since you cannot view the video directly, generate high-quality comprehension questions based on what a typical educational video about "${subject}" for ${educationLevel} students would cover.`
-              : `a YouTube video titled "${mediaContent?.title}" by ${mediaContent?.channel}, about: ${mediaContent?.description}`)
-          : `a ${medium} passage/content titled "${mediaContent?.title}": \n\n${mediaContent?.passage || mediaContent?.caption || ''}`;
+        const isVideo   = medium === 'video';
+        const isImage   = medium === 'image';
+        const videoId   = mediaContent?.videoId || null;
+        const videoUrl  = videoId ? `https://www.youtube.com/watch?v=${videoId}` : null;
+        const imageUrl  = mediaContent?.imageUrl || null;
 
-        const prompt = `You are an expert at creating comprehension questions for ${educationLevel} students.
-Based on ${contentDescription}, generate exactly ${numQuestions} multiple-choice comprehension questions.
+        // ── Fetch YouTube transcript as supplementary grounding ──────────────
+        // Gemini natively watches the video AND sees the transcript below —
+        // double-grounding ensures questions are about this specific content.
+        let transcript = null;
+        if (isVideo && videoId) {
+          transcript = await fetchYouTubeTranscript(videoId);
+        }
 
-Rules:
-- Questions must be directly answerable from the content (true comprehension, not general knowledge)
-- Each question has exactly 4 answer options (A, B, C, D)
-- Only one answer is correct
-- Wrong answers should be plausible but clearly wrong to someone who watched/read the content
-- Language appropriate for ${educationLevel}
-- Question images should relate to the topic
+        // ════════════════════════════════════════════════════════════
+        // VIDEO PROMPT — mirrors Gemini app's "quiz on video" ability
+        // ════════════════════════════════════════════════════════════
+        const buildVideoPrompt = () => {
+          const transcriptSection = transcript
+            ? `\n\nHere is the full auto-generated transcript of the video for additional grounding:\n"""\n${transcript.slice(0, 6000)}\n"""\nUse the transcript to verify timestamps, quotes, and factual details.`
+            : '';
 
-Return ONLY valid JSON in this exact format:
-{
-  "questions": [
-    {
-      "question": "Question text here?",
-      "questionImageKeyword": "2-3 word image search term related to the question",
-      "subject": "${subject}",
-      "answers": [
-        { "id": "a", "text": "First option", "imageKeyword": "keyword for this answer" },
-        { "id": "b", "text": "Second option", "imageKeyword": "keyword" },
-        { "id": "c", "text": "Third option", "imageKeyword": "keyword" },
-        { "id": "d", "text": "Fourth option", "imageKeyword": "keyword" }
-      ],
-      "correctId": "a",
-      "explanation": "Brief explanation of why this answer is correct"
-    }
-  ]
-}`;
+          return (
+            `You are an expert educational content creator analysing a YouTube video for ${educationLevel} students.\n\n` +
 
-        const parts = [{ text: prompt }];
-        // NOTE: Gemini fileData only supports gs:// Cloud Storage URIs, NOT YouTube URLs.
-        // Questions are generated from the textual description in the prompt.
+            `## Your Task\n` +
+            `Watch the YouTube video provided above in its entirety. Pay close attention to:\n` +
+            `- **Narration and dialogue** — every word spoken\n` +
+            `- **Visuals and demonstrations** — what is physically shown on screen\n` +
+            `- **On-screen text** — titles, labels, captions, subtitles\n` +
+            `- **Key facts, sequences, and cause-effect relationships** presented\n` +
+            `- **Main characters, people, or subjects** featured\n` +
+            `- **Tone and purpose** — is it a tutorial, story, documentary, experiment?\n` +
+            `${transcriptSection}\n\n` +
 
-        const raw = await callGemini(parts);
+            `## Output Requirements\n` +
+            `Generate exactly **${numQuestions}** multiple-choice comprehension questions.\n\n` +
+
+            `### Strict Rules\n` +
+            `1. Every question must be answerable ONLY by someone who watched this specific video — not from general knowledge\n` +
+            `2. Distribute questions across the video timeline (beginning, middle, end)\n` +
+            `3. Include a mix of question types: recall ("What was shown..."), inference ("Why did..."), sequence ("What happened after..."), and vocabulary ("What does X mean in this context?")\n` +
+            `4. Each question has exactly 4 answer options (A, B, C, D)\n` +
+            `5. Only ONE answer is correct; distractors must be plausible to someone who didn't pay attention\n` +
+            `6. The "explanation" field must cite the SPECIFIC moment or quote from the video that proves the correct answer\n` +
+            `7. Language and cognitive complexity appropriate for education level: ${educationLevel}\n` +
+            `8. No meta-questions about the video itself (e.g. "What is the title?") — ask about the CONTENT\n` +
+            `9. Answer text must be plain English only — do NOT include Chinese characters, symbols, or non-Latin scripts in any answer option\n\n` +
+
+            `Return ONLY valid JSON in this exact format (no markdown, no commentary):\n` +
+            `{\n` +
+            `  "questions": [\n` +
+            `    {\n` +
+            `      "question": "Question text here?",\n` +
+            `      "answers": [\n` +
+            `        { "id": "a", "text": "First option" },\n` +
+            `        { "id": "b", "text": "Second option" },\n` +
+            `        { "id": "c", "text": "Third option" },\n` +
+            `        { "id": "d", "text": "Fourth option" }\n` +
+            `      ],\n` +
+            `      "correctId": "a",\n` +
+            `      "explanation": "Cite the specific video moment or quote that proves this answer"\n` +
+            `    }\n` +
+            `  ]\n` +
+            `}`
+          );
+        };
+
+        // ════════════════════════════════════════════════════════════
+        // IMAGE PROMPT — Gemini visually analyses the image
+        // ════════════════════════════════════════════════════════════
+        const buildImagePrompt = () => (
+          `You are an expert educational content creator analysing an image for ${educationLevel} students.\n\n` +
+
+          `## Your Task\n` +
+          `Examine the image provided above in full detail. Study:\n` +
+          `- **What is shown** — all objects, people, animals, places, and their relationships\n` +
+          `- **Text in the image** — labels, captions, signs, titles, annotations\n` +
+          `- **Colours, patterns, and visual details** that carry meaning\n` +
+          `- **Context and setting** — where does this appear to take place?\n` +
+          `- **Key concepts** the image illustrates (scientific, geographic, historical, artistic, etc.)\n\n` +
+
+          `## Output Requirements\n` +
+          `Generate exactly **${numQuestions}** multiple-choice comprehension questions about this specific image.\n\n` +
+
+          `### Strict Rules\n` +
+          `1. Every question must be answerable ONLY by carefully looking at THIS specific image\n` +
+          `2. Include a mix of: observation ("What colour is...?"), inference ("What is the person doing?"), label/text reading (if applicable), and deeper understanding ("What concept does this illustrate?")\n` +
+          `3. Each question has exactly 4 answer options (A, B, C, D)\n` +
+          `4. Only ONE answer is correct; wrong options must be visually plausible (e.g. nearby colours, similar objects)\n` +
+          `5. The "explanation" field must describe the SPECIFIC visual detail in the image that proves the answer\n` +
+          `6. Language and complexity appropriate for: ${educationLevel}\n` +
+          `7. Do NOT ask questions answerable by general knowledge alone — anchor every question in what's visually present\n` +
+          `8. Answer text must be plain English only — no Chinese characters or non-Latin scripts\n\n` +
+
+          `Return ONLY valid JSON (no markdown, no commentary):\n` +
+          `{\n` +
+          `  "questions": [\n` +
+          `    {\n` +
+          `      "question": "Question text here?",\n` +
+          `      "answers": [\n` +
+          `        { "id": "a", "text": "First option" },\n` +
+          `        { "id": "b", "text": "Second option" },\n` +
+          `        { "id": "c", "text": "Third option" },\n` +
+          `        { "id": "d", "text": "Fourth option" }\n` +
+          `      ],\n` +
+          `      "correctId": "a",\n` +
+          `      "explanation": "Describe the specific visual detail in the image that proves this answer"\n` +
+          `    }\n` +
+          `  ]\n` +
+          `}`
+        );
+
+        // ── Call Gemini ───────────────────────────────────────────────────────
+        // Primary: pass the media as fileData so Gemini natively analyses it.
+        // For video: Gemini watches visuals + audio + captions + metadata.
+        // For image: Gemini visually inspects the image in full resolution.
+        // Fallback: text-only prompt (transcript context embedded for video).
+        let raw;
+
+        if (isVideo && videoUrl) {
+          const prompt = buildVideoPrompt();
+          console.log('[comp questions] VIDEO prompt (first 300 chars):', prompt.slice(0, 300));
+          try {
+            raw = await callGemini([
+              { fileData: { fileUri: videoUrl } },
+              { text: prompt },
+            ]);
+            console.log(`[comp questions] Native video analysis succeeded for ${videoId}`);
+          } catch (videoErr) {
+            console.warn(`[comp questions] Native video analysis failed (${videoErr.message}), using transcript fallback`);
+            // Fallback: use the transcript as the content source.
+            // If we have no transcript, refuse to generate rather than hallucinate.
+            if (!transcript || transcript.trim().length < 50) {
+              throw new Error('Could not analyse the video (native analysis failed and no transcript available). Please try a different video.');
+            }
+            const fallbackPrompt =
+              `You are an expert educational content creator for ${educationLevel} students.\n\n` +
+              `Below is the full transcript of a YouTube video. Read it carefully — your questions MUST be based ONLY on what is stated in this transcript.\n\n` +
+              `TRANSCRIPT:\n"""\n${transcript.slice(0, 8000)}\n"""\n\n` +
+              `Generate exactly ${numQuestions} multiple-choice comprehension questions that test understanding of the content in the transcript above.\n\n` +
+              `Strict rules:\n` +
+              `1. Every question must be directly and uniquely answerable from the transcript text above\n` +
+              `2. Do NOT add questions from general knowledge — only from the transcript\n` +
+              `3. Each question has exactly 4 answer options (A, B, C, D)\n` +
+              `4. Only ONE answer is correct; distractors must be plausible to someone who skimmed the text\n` +
+              `5. The "explanation" must quote or paraphrase the specific transcript line that proves the answer\n` +
+              `6. Language appropriate for ${educationLevel}\n` +
+              `7. Answer text must be in English only — no Chinese characters, no symbols\n\n` +
+              `Return ONLY valid JSON:\n` +
+              `{ "questions": [{ "question": "?", "answers": [{"id":"a","text":""},{"id":"b","text":""},{"id":"c","text":""},{"id":"d","text":""}], "correctId": "a", "explanation": "" }] }`;
+            raw = await callGemini([{ text: fallbackPrompt }]);
+          }
+
+        } else if (isImage && imageUrl) {
+          const prompt = buildImagePrompt();
+          console.log('[comp questions] IMAGE prompt (first 300 chars):', prompt.slice(0, 300));
+          try {
+            // Attempt 1: pass image URL as a fileData URI (works for public HTTP images)
+            raw = await callGemini([
+              { fileData: { fileUri: imageUrl } },
+              { text: prompt },
+            ]);
+            console.log(`[comp questions] Native image analysis succeeded for ${imageUrl}`);
+          } catch (imgErr) {
+            console.warn(`[comp questions] Native image fileData failed (${imgErr.message}), trying inlineData fetch`);
+            try {
+              // Attempt 2: fetch the image bytes and pass as inlineData
+              const imgResp = await fetch(imageUrl);
+              if (!imgResp.ok) throw new Error(`Image fetch failed: ${imgResp.status}`);
+              const imgBuf  = await imgResp.arrayBuffer();
+              const imgB64  = Buffer.from(imgBuf).toString('base64');
+              const mimeType = imgResp.headers.get('content-type') || 'image/jpeg';
+              raw = await callGemini([
+                { inlineData: { mimeType, data: imgB64 } },
+                { text: prompt },
+              ]);
+              console.log(`[comp questions] Inline image analysis succeeded for ${imageUrl}`);
+            } catch (inlineErr) {
+              console.warn(`[comp questions] Inline image also failed (${inlineErr.message}), text-only fallback`);
+              raw = await callGemini([{ text: `An image was provided at this URL: ${imageUrl}\n\n` + prompt }]);
+            }
+          }
+
+        } else {
+          // Legacy text/passage path
+          const contentDescription =
+            `a ${medium} passage titled "${mediaContent?.title}":\n\n${mediaContent?.passage || mediaContent?.caption || ''}`;
+          const prompt =
+            `You are an expert at creating comprehension questions for ${educationLevel} students.\n` +
+            `Based on ${contentDescription}, generate exactly ${numQuestions} multiple-choice questions.\n\n` +
+            `Rules: questions directly from content, 4 options each, one correct answer, plausible distractors, ${educationLevel}-appropriate language.\n\n` +
+            `Return ONLY valid JSON:\n` +
+            `{ "questions": [{ "question": "?", "answers": [{"id":"a","text":""},{"id":"b","text":""},{"id":"c","text":""},{"id":"d","text":""}], "correctId": "a", "explanation": "" }] }`;
+          raw = await callGemini([{ text: prompt }]);
+        }
+
         const jsonMatch = raw.match(/\{[\s\S]*\}/);
         if (!jsonMatch) throw new Error('No JSON in Gemini response for questions');
         const qData = JSON.parse(jsonMatch[0]);
         res.status(200).json(qData);
+
 
       } else {
         res.status(400).json({ error: `Unknown phase: ${phase}` });

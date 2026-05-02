@@ -633,39 +633,56 @@ function _renderCompQuestion() {
   const qDisplay = _$('comp-display-question');
   if (qDisplay) qDisplay.textContent = q.question;
 
-  // Answer grid — build simple answer cards
+  // Answer grid — quiz-style cards
   const grid = _$('comp-answers-grid');
   if (!grid) return;
   grid.innerHTML = '';
+  delete grid.dataset.answered;
 
-  // 2×2 grid layout
+  // Remove any lingering explanation panel from last question
+  const oldEx = _$('comp-explanation-panel');
+  if (oldEx) oldEx.remove();
+
+  // 2×2 grid matching main quiz layout
   grid.style.cssText = `display:grid;grid-template-columns:1fr 1fr;gap:10px;
-    padding:12px;box-sizing:border-box;flex:1;align-content:center;`;
+    padding:12px;box-sizing:border-box;flex:1;align-content:stretch;`;
 
   const answers = q.answers || [];
   answers.forEach(ans => {
+    const isCorrect = String(ans.id) === String(q.correctId);
     const card = document.createElement('div');
     card.className = 'quiz-answer-card';
-    card.style.cssText = `display:flex;align-items:center;justify-content:center;
-      padding:16px 12px;border-radius:14px;background:rgba(15,23,42,0.8);
-      border:2px solid rgba(13,148,136,0.2);cursor:pointer;
-      font-size:1rem;font-weight:700;color:#f1f5f9;text-align:center;
-      transition:all 0.2s;min-height:80px;position:relative;`;
-    card.textContent = ans.text;
+    Object.assign(card.style, {
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      height: '100%', minHeight: '0', width: '100%',
+      padding: '1.5rem', boxSizing: 'border-box', textAlign: 'center',
+      background: '#20293a', border: 'none', borderRadius: '20px',
+      transition: 'transform 0.2s ease, background 0.2s ease',
+      position: 'relative', overflow: 'hidden', cursor: 'pointer', userSelect: 'none',
+    });
 
-    // Hover effect
+    const textSpan = document.createElement('span');
+    Object.assign(textSpan.style, {
+      color: '#f2f5f9', fontWeight: '700', textAlign: 'center', display: 'block',
+      width: '100%', overflowWrap: 'break-word', pointerEvents: 'none',
+      fontSize: 'clamp(0.8rem,2vh,1.1rem)', lineHeight: '1.35',
+    });
+    textSpan.textContent = ans.text;
+    card.appendChild(textSpan);
+
     card.addEventListener('mouseenter', () => {
-      if (!card.dataset.answered) card.style.borderColor = 'rgba(13,148,136,0.7)';
+      if (!card.dataset.answered && card.dataset.state !== 'wrong')
+        card.style.background = '#364154';
     });
     card.addEventListener('mouseleave', () => {
-      if (!card.dataset.answered) card.style.borderColor = 'rgba(13,148,136,0.2)';
+      if (card.dataset.state === 'wrong') card.style.background = '#7f1d1d';
+      else if (!card.dataset.answered) card.style.background = '#20293a';
     });
 
-    // Click to select
-    card.addEventListener('click', () => _compSelectAnswer(ans, q, answers, grid));
-
+    card.addEventListener('click', () => _compSelectAnswer(ans, q, answers, grid, isCorrect));
     grid.appendChild(card);
   });
+
 
   // qRead delay if enabled
   if (_compSettings.qReadEnabled && _compSettings.qReadTimeMs > 0) {
@@ -687,51 +704,144 @@ function _renderCompQuestion() {
 }
 
 // ── SELECT ANSWER ──────────────────────────────────────────────────────────
-function _compSelectAnswer(ans, q, allAnswers, grid) {
-  // Prevent double selection
+function _compSelectAnswer(ans, q, allAnswers, grid, isCorrect) {
   if (grid.dataset.answered) return;
-  grid.dataset.answered = 'true';
-  grid.style.pointerEvents = 'none';
-
-  const isCorrect = String(ans.id) === String(q.correctId);
-
-  // Highlight cards
-  Array.from(grid.children).forEach((card, i) => {
-    const cardAns = allAnswers[i];
-    if (!cardAns) return;
-    if (String(cardAns.id) === String(q.correctId)) {
-      card.style.background = 'rgba(16,185,129,0.25)';
-      card.style.borderColor = '#10b981';
-      card.style.color = '#6ee7b7';
-    } else if (String(cardAns.id) === String(ans.id) && !isCorrect) {
-      card.style.background = 'rgba(239,68,68,0.2)';
-      card.style.borderColor = '#ef4444';
-      card.style.color = '#fca5a5';
-      // Add X overlay
-      const xEl = document.createElement('div');
-      xEl.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:2.5rem;color:rgba(239,68,68,0.5);pointer-events:none;';
-      xEl.textContent = '✗';
-      card.appendChild(xEl);
-    }
-  });
 
   if (isCorrect) {
-    _compScore++;
-    if (window.showToast) window.showToast('✓ Correct!', 'success');
-  } else {
-    if (window.showToast) window.showToast('✗ Not quite — check the green answer', 'error');
-  }
+    // ── CORRECT ────────────────────────────────────────────────────────────
+    grid.dataset.answered = 'true';
+    grid.style.pointerEvents = 'none';
 
-  // Advance after delay
-  setTimeout(() => {
-    _compQIdx++;
-    if (_compQIdx >= _compTotal) {
-      _showCompWin();
-    } else {
-      _renderCompQuestion();
+    Array.from(grid.children).forEach((card, i) => {
+      const cardAns = allAnswers[i];
+      if (!cardAns) return;
+      if (String(cardAns.id) === String(q.correctId)) {
+        card.dataset.answered = 'true';
+        card.style.background = '#10b981';
+        card.style.animation = 'successBounce 0.75s ease';
+        card.style.transform = 'scale(1.03)';
+      } else {
+        card.style.opacity = '0.4';
+        card.style.pointerEvents = 'none';
+      }
+    });
+
+    _compScore++;
+    const scoreBadge = _$('comp-score-badge');
+    if (scoreBadge) scoreBadge.textContent = `⭐ ${_compScore}`;
+
+    // Sounds
+    if (window.playQuizCorrectSound) window.playQuizCorrectSound();
+    const greenCard = Array.from(grid.children).find(c => c.dataset.answered);
+    if (window.burstConfetti) window.burstConfetti(greenCard || grid);
+    try {
+      const sounds = ['correct1.mp3','correct2.mp3','correct3.mp3'];
+      const snd = new Audio('/assets/sounds/' + sounds[Math.floor(Math.random() * sounds.length)]);
+      snd.volume = 0.6;
+      snd.play().catch(() => {});
+    } catch (_) {}
+
+    // Theme character celebration
+    const theme = (typeof currentQuizTheme !== 'undefined') ? currentQuizTheme : 'normal';
+    if      (theme === 'ben-holly'     && window.triggerBenElfCelebration) window.triggerBenElfCelebration();
+    else if (theme === 'kung-fu-panda' && window.triggerKfpCelebration)    window.triggerKfpCelebration();
+    else if (theme === 'totoro'        && window.triggerTotoroCelebration) window.triggerTotoroCelebration();
+    else if (theme === 'turning-red'   && window.triggerTRCelebration)     window.triggerTRCelebration();
+    else if (theme === 'zootopia'      && window.triggerZooCelebration)    window.triggerZooCelebration();
+
+    setTimeout(() => {
+      _compQIdx++;
+      if (_compQIdx >= _compTotal) _showCompWin();
+      else _renderCompQuestion();
+    }, 1600);
+
+  } else {
+    // ── WRONG — grid stays interactive so player can retry ────────────────
+    Array.from(grid.children).forEach(c => {
+      if (c.dataset.state === 'wrong') {
+        c.dataset.state = '';
+        c.style.background = '#20293a';
+        const old = c.querySelector('.wrong-cross');
+        if (old) old.remove();
+      }
+    });
+
+    const wrongCard = Array.from(grid.children)[allAnswers.indexOf(ans)];
+    if (wrongCard) {
+      wrongCard.dataset.state = 'wrong';
+      wrongCard.style.background = 'rgba(239,68,68,0.18)';
+      const cross = document.createElement('div');
+      cross.className = 'wrong-cross';
+      cross.style.pointerEvents = 'none';
+      wrongCard.appendChild(cross);
+      wrongCard.style.transform = 'translateX(-10px)';
+      setTimeout(() => wrongCard.style.transform = 'translateX(10px)', 50);
+      setTimeout(() => wrongCard.style.transform = 'translateX(0)', 100);
     }
-  }, 1800);
+
+    if (window.playWrongSound) window.playWrongSound();
+
+    // Explanation panel — slides up from the bottom of the question stage
+    const oldPanel = _$('comp-explanation-panel');
+    if (oldPanel) oldPanel.remove();
+
+    const explanation = q.explanation || '';
+    const correctAns  = allAnswers.find(a => String(a.id) === String(q.correctId));
+    const correctText  = correctAns ? correctAns.text : '';
+
+    if (explanation || correctText) {
+      const panel = document.createElement('div');
+      panel.id = 'comp-explanation-panel';
+      panel.style.cssText = [
+        'position:absolute','bottom:0','left:0','right:0','z-index:200',
+        'background:linear-gradient(135deg,rgba(15,23,42,0.97),rgba(30,41,59,0.97))',
+        'border-top:2px solid rgba(239,68,68,0.4)',
+        'padding:14px 18px 16px',
+        'display:flex','flex-direction:column','gap:6px',
+        'transform:translateY(100%)',
+        'transition:transform 0.35s cubic-bezier(0.34,1.56,0.64,1)',
+        'box-shadow:0 -8px 32px rgba(0,0,0,0.5)',
+      ].join(';');
+
+      const header = document.createElement('div');
+      header.style.cssText = 'display:flex;align-items:center;gap:8px;';
+      const icon = document.createElement('span');
+      icon.textContent = '✗';
+      icon.style.cssText = 'font-size:1.1rem;color:#f87171;font-weight:900;flex-shrink:0;';
+      const htxt = document.createElement('span');
+      htxt.style.cssText = 'font-size:0.78rem;font-weight:800;color:#f87171;text-transform:uppercase;letter-spacing:0.06em;';
+      htxt.textContent = 'Not quite — try again!';
+      header.appendChild(icon); header.appendChild(htxt);
+      panel.appendChild(header);
+
+      if (correctText) {
+        const hint = document.createElement('div');
+        hint.style.cssText = 'font-size:0.75rem;color:#34d399;font-weight:700;';
+        hint.textContent = `✓ Correct answer: ${correctText}`;
+        panel.appendChild(hint);
+      }
+
+      if (explanation) {
+        const body = document.createElement('div');
+        body.style.cssText = 'font-size:0.8rem;color:#cbd5e1;line-height:1.5;';
+        body.textContent = explanation;
+        panel.appendChild(body);
+      }
+
+      const qStage = _$('comp-question-stage');
+      if (qStage) {
+        qStage.appendChild(panel);
+        requestAnimationFrame(() => { panel.style.transform = 'translateY(0)'; });
+        setTimeout(() => {
+          panel.style.transition = 'transform 0.3s ease';
+          panel.style.transform = 'translateY(100%)';
+          setTimeout(() => { if (panel.parentNode) panel.remove(); }, 320);
+        }, 4000);
+      }
+    }
+  }
 }
+
 
 // ── WIN ───────────────────────────────────────────────────────────────────
 function _showCompWin() {

@@ -2971,6 +2971,39 @@ async function resolveVisual(keyword, context = [], questionText = '', opts = {}
   // not diagrams, maps, icons, or flags. We detect real-world subjects by
   // checking that the keyword is NOT a geometry/math term.
   const isAbstractShape = /^(triangle|circle|square|rectangle|hexagon|pentagon|octagon|rhombus|parallelogram|trapezoid|ellipse|oval|star|heart|diamond shape)$/.test(kw);
+  // ── Chinese cultural keyword translation ────────────────────────────────────
+  // Even if the AI sends a Chinese festival name as the keyword, translate it
+  // to an English search term before hitting any image API. The search APIs
+  // don't understand Chinese cultural terms and return nonsense results.
+  const _chineseKeywordMap = {
+    '春节': 'Chinese New Year lanterns celebrations',
+    '农历新年': 'Chinese New Year lanterns celebrations',
+    '过年': 'Chinese New Year celebrations fireworks',
+    '端午节': 'Dragon Boat Festival race',
+    '中秋节': 'Mid-Autumn Festival mooncake lantern',
+    '国庆节': 'China National Day Tiananmen celebration',
+    '元宵节': 'Lantern Festival glowing lanterns night',
+    '清明节': 'Qingming Festival tomb offerings',
+    '七夕节': 'Qixi Festival Chinese Valentine stars',
+    '重阳节': 'Double Ninth Festival elderly chrysanthemum',
+    '冬至': 'Winter Solstice glutinous rice balls',
+    '元旦': 'New Year celebration fireworks',
+    '劳动节': 'Labor Day workers celebration',
+    '教师节': 'Teachers Day classroom students',
+    '儿童节': 'Childrens Day kids playing celebration',
+    '圣诞节': 'Christmas decorations tree gifts',
+    '万圣节': 'Halloween pumpkin costume trick treat',
+    '情人节': 'Valentines Day roses hearts love',
+  };
+  // Check if keyword (or trimmed keyword) is a known Chinese cultural term
+  const _trimmedKw = keyword.trim();
+  if (_chineseKeywordMap[_trimmedKw]) {
+    // Recursively resolve with the English translation
+    const _translated = _chineseKeywordMap[_trimmedKw];
+    console.log(`[img] Translating Chinese keyword "${_trimmedKw}" → "${_translated}"`);
+    return resolveVisual(_translated, context, questionText, opts);
+  }
+
   const hasChinese = /[\u4e00-\u9fff]/.test(keyword);
   const isFlag = kw.includes('flag');
 
@@ -3004,16 +3037,26 @@ async function resolveVisual(keyword, context = [], questionText = '', opts = {}
   let enrichedQuery = keyword; // default: search as-is
 
   // ── Proper-noun detection ─────────────────────────────────────────────────
-  // If the answer is a named entity (e.g. "Balto", "Hachiko", "Rin Tin Tin")
-  // Pixabay won't have that specific photo — it will return random or wrong results
-  // (e.g. "Rin Tin Tin" → metal tins). Fix: prepend the singular subject so the
-  // query is contextually grounded ("dog Balto", "dog Hachiko", "dog Rin Tin Tin").
+  // Named entities (people, places) need special handling:
+  //   - Pixabay won't have celebrity photos → use Wikipedia pageimages instead
+  //   - Even if keyword is "[Name] [action]", strip name for Pixabay scene search
   const _isProperNoun = /^[A-Z]/.test(keyword) &&
     !['True', 'False', 'Yes', 'No', 'North', 'South', 'East', 'West',
       'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday',
       'January', 'February', 'March', 'April', 'May', 'June',
       'July', 'August', 'September', 'October', 'November', 'December',
     ].includes(keyword);
+
+  // ── Detect whether keyword looks like "[Person Name] [doing something]" ────
+  // E.g. "Michael Phelps swimming", "Usain Bolt running", "Lionel Messi playing soccer"
+  // Split into: personPart (proper-noun prefix words) + actionPart (lowercase suffix)
+  const _kwWords = keyword.trim().split(/\s+/);
+  const _lastProperIdx = _kwWords.reduceRight((found, w, i) => found === -1 && /^[A-Z]/.test(w) ? i : found, -1);
+  const _personPart = _lastProperIdx >= 0 ? _kwWords.slice(0, _lastProperIdx + 1).join(' ') : '';
+  const _actionPart = _lastProperIdx >= 0 ? _kwWords.slice(_lastProperIdx + 1).join(' ') : '';
+  // Is this a "Person Name + action" keyword?
+  const _isPersonAction = _personPart.length > 0 && _actionPart.length > 0;
+
   if (_isProperNoun && subject) {
     // Derive singular from subject (strip trailing 's' for simple plurals: "dogs"→"dog")
     const singularSubject = subject.replace(/s$/i, '').toLowerCase().trim();
@@ -3021,6 +3064,41 @@ async function resolveVisual(keyword, context = [], questionText = '', opts = {}
       enrichedQuery = `${singularSubject} ${keyword}`;
     }
   }
+
+  // For "Person Name + action" keywords: build a Pixabay scene query using just
+  // the action part + domain context. E.g. "Usain Bolt running" → "sprinter running track"
+  // This is used as fallback when Wikipedia doesn't have the person.
+  const _buildSceneQuery = () => {
+    if (!_isPersonAction) return enrichedQuery;
+    const action = _actionPart.toLowerCase().trim();
+    // Map common sports/actions to richer Pixabay scene terms
+    const _sceneMap = {
+      swimming: 'swimmer pool olympic action',
+      running: 'athlete sprinting track action',
+      'playing soccer': 'soccer player ball action',
+      'playing football': 'football player field action',
+      'playing tennis': 'tennis player court action',
+      'playing basketball': 'basketball player jump action',
+      'playing golf': 'golf player swing course',
+      'playing cricket': 'cricket batsman pitch action',
+      gymnastics: 'gymnast routine arena action',
+      cycling: 'cyclist race track action',
+      boxing: 'boxer ring punch action',
+      wrestling: 'wrestler mat competition',
+      skating: 'ice skater rink action',
+      skiing: 'skier slope mountain action',
+      surfing: 'surfer wave ocean action',
+      volleyball: 'volleyball player spike action',
+      rowing: 'rowing boat race water',
+      archery: 'archer bow target competition',
+    };
+    // Check action part against scene map
+    for (const [k, v] of Object.entries(_sceneMap)) {
+      if (action.includes(k)) return v;
+    }
+    // Generic fallback: "{action} athlete competition photo"
+    return `${action} athlete competition photo`;
+  };
 
   if (domainIsAnimal && !domainIsFood && !domainIsTransport) {
     enrichedQuery = `${enrichedQuery} animal wildlife`;
@@ -3101,11 +3179,28 @@ async function resolveVisual(keyword, context = [], questionText = '', opts = {}
       ? keyword + ' photo'
       : keyword;
 
-  // ── Real photo sources (Pixabay → Unsplash → Wikimedia) ──────────────────────────
+  // ── Real photo sources (Wikipedia → Pixabay → Unsplash → Wikimedia) ──────
   // Skip photo sources if forceAI is set (Math questions always use AI SVG)
   if (!isPreciseDiagram && !opts.forceAI) {
     const src = quizSettings.imageSources || { pixabay: true, unsplash: false, wikimedia: true, ai: true };
-    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+    // ── Wikipedia pageimages — FIRST for all named entities ───────────────
+    // Wikipedia has authoritative infobox images for virtually every notable
+    // person, place, and landmark. Try this before any stock photo API.
+    if (_isProperNoun && !isFlag && !hasChinese) {
+      try {
+        const wikiPageUrl = await fetchWikipediaPageImage(keyword);
+        if (wikiPageUrl) {
+          console.log(`[img] Wikipedia pageimages hit for "${keyword}":`, wikiPageUrl);
+          const res = { url: wikiPageUrl, svg: null, source: 'wikipedia' };
+          quizResolvedVisuals.set(keyword, res);
+          return res;
+        }
+        console.log(`[img] Wikipedia pageimages miss for "${keyword}" — trying stock photo APIs`);
+      } catch (e) {
+        console.warn('[img] Wikipedia pageimages error:', e.message);
+      }
+    }
 
     // ── Pixabay ────────────────────────────────────────────────────────────
     if (src.pixabay) {
@@ -3127,13 +3222,26 @@ async function resolveVisual(keyword, context = [], questionText = '', opts = {}
       };
 
       try {
-        const photoUrl = await _pixabaySearch(pixabayQuery);
+        // For person+action keywords, try the scene query first (more likely to
+        // return a relevant photo than searching the person's name on Pixabay)
+        const primaryQuery = _isPersonAction ? _buildSceneQuery() : pixabayQuery;
+        const photoUrl = await _pixabaySearch(primaryQuery);
         if (photoUrl) {
+          console.log(`[img] Pixabay hit for "${primaryQuery}" (keyword: "${keyword}")`);
           const res = { url: photoUrl, svg: null, source: 'pixabay' };
           quizResolvedVisuals.set(keyword, res);
           return res;
         }
-        console.warn('[img] Pixabay returned no usable hits for:', pixabayQuery);
+        // If scene query failed and it differs from original, try original query too
+        if (_isPersonAction && primaryQuery !== pixabayQuery) {
+          const fallbackUrl = await _pixabaySearch(pixabayQuery);
+          if (fallbackUrl) {
+            const res = { url: fallbackUrl, svg: null, source: 'pixabay' };
+            quizResolvedVisuals.set(keyword, res);
+            return res;
+          }
+        }
+        console.warn('[img] Pixabay returned no usable hits for:', primaryQuery);
       } catch (e) {
         console.error('[img] Pixabay fetch error for "' + pixabayQuery + '":', e.message);
       }
@@ -3520,6 +3628,15 @@ ${imageOnly
 - KEYWORD QUALITY: imageKeyword MUST be a short English noun phrase (2-5 words max). NEVER put a sentence or description in imageKeyword.
   - Good: "analog clock face", "Singapore flag", "labrador retriever", "upward arrow", "red apple".
   - Bad: "a picture of a downward arrow", "图片", "figure", "math problem", "photo of clock".
+  - CHINESE CULTURAL KEYWORDS: When a question involves Chinese festivals, traditions, or cultural events, you MUST use the English name as the imageKeyword, NOT Chinese characters. The image search engine requires English terms.
+    Chinese festival → English keyword examples:
+    春节 → "Chinese New Year lanterns celebrations"
+    端午节 → "Dragon Boat Festival race"
+    中秋节 → "Mid-Autumn Festival mooncake lantern"
+    国庆节 → "China National Day Tiananmen celebration"
+    元宵节 → "Lantern Festival lanterns glowing"
+    清明节 → "Qingming Festival tomb sweeping"
+    七夕节 → "Qixi Festival Chinese Valentine night"
   - For Step 3 answers: the 'imageKeyword' field is MANDATORY on every answer object. If you cannot find a suitable imageKeyword, choose a different question type.
   - NEVER describe the image in the 'text' field — 'text' is the ANSWER LABEL only (e.g. "Australia", "是", "True"). The 'imageKeyword' is the search term.
 
@@ -3793,6 +3910,58 @@ Return exactly this JSON (replace [text], [answer], [kw] with real values — fo
   preLoadBatchVisuals(batch);
 
   return batch;
+}
+
+// ── Wikipedia pageimages — best source for named persons/places ──────────────
+// Uses Wikipedia's prop=pageimages to fetch the authoritative infobox image.
+// Free, no API key, CORS-enabled. Returns the article's main thumbnail.
+const _wikiPageImageCache = {};
+async function fetchWikipediaPageImage(name, thumbSize = 600) {
+  if (!name) return null;
+  const cacheKey = name.toLowerCase().trim();
+  if (_wikiPageImageCache[cacheKey] !== undefined) return _wikiPageImageCache[cacheKey];
+
+  // Helper: call Wikipedia pageimages API for a specific title
+  const _tryTitle = async (title) => {
+    try {
+      const apiUrl = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(title)}&prop=pageimages&format=json&pithumbsize=${thumbSize}&origin=*`;
+      const resp = await fetch(apiUrl);
+      if (!resp.ok) return null;
+      const data = await resp.json();
+      const pages = data?.query?.pages;
+      if (!pages) return null;
+      const page = Object.values(pages)[0];
+      // -1 = disambiguation / not found, missing = page not found
+      if (!page || page.missing !== undefined || page.ns !== 0) return null;
+      const src = page?.thumbnail?.source;
+      if (!src) return null;
+      // Upscale thumbnail: replace /NNNpx- with /{thumbSize}px-
+      const bigSrc = src.replace(/\/\d+px-/, `/${thumbSize}px-`);
+      return bigSrc;
+    } catch { return null; }
+  };
+
+  // Try 1: exact name ("Michael Phelps")
+  let result = await _tryTitle(name);
+
+  // Try 2: first two words only — handles "Michael Phelps swimming" → "Michael Phelps"
+  if (!result) {
+    const firstTwo = name.trim().split(/\s+/).slice(0, 2).join(' ');
+    if (firstTwo !== name && firstTwo.length > 3) {
+      result = await _tryTitle(firstTwo);
+    }
+  }
+
+  // Try 3: first word only (single-name entities like "Ronaldo", "Pelé")
+  if (!result) {
+    const firstName = name.trim().split(/\s+/)[0];
+    if (firstName !== name && firstName.length > 3) {
+      result = await _tryTitle(firstName);
+    }
+  }
+
+  _wikiPageImageCache[cacheKey] = result || null;
+  return _wikiPageImageCache[cacheKey];
 }
 
 // ── Wikimedia Commons image search helper ─────────────────────────────────
@@ -4428,12 +4597,12 @@ function renderQuizBoard() {
     });
     qImg.alt = q.questionImageKeyword;
 
-    // Badge helper — shows P (Pixabay), W (Wikimedia), A (AI SVG)
+    // Badge helper — shows P (Pixabay), Wc (Wikimedia Commons), Wp (Wikipedia), U (Unsplash), A (AI SVG)
     const _showQBadge = (src) => {
       const old = qImgWrap.querySelector('.img-src-badge');
       if (old) old.remove();
-      const lbl = src === 'ai' ? 'A' : src === 'wikimedia' ? 'W' : src === 'unsplash' ? 'U' : 'P';
-      const col = src === 'ai' ? 'rgba(139,92,246,0.92)' : src === 'wikimedia' ? 'rgba(59,130,246,0.92)' : src === 'unsplash' ? 'rgba(245,158,11,0.92)' : 'rgba(16,185,129,0.92)';
+      const lbl = src === 'ai' ? 'A' : src === 'wikipedia' ? 'Wp' : src === 'wikimedia' ? 'Wc' : src === 'unsplash' ? 'U' : 'P';
+      const col = src === 'ai' ? 'rgba(139,92,246,0.92)' : src === 'wikipedia' ? 'rgba(239,68,68,0.92)' : src === 'wikimedia' ? 'rgba(59,130,246,0.92)' : src === 'unsplash' ? 'rgba(245,158,11,0.92)' : 'rgba(16,185,129,0.92)';
       const b = document.createElement('span');
       b.className = 'img-src-badge';
       b.textContent = lbl;
@@ -4800,8 +4969,8 @@ function renderQuizBoard() {
       const _showAnsBadge = (src) => {
         const old = imgWrapper.querySelector('.img-src-badge');
         if (old) old.remove();
-        const lbl = src === 'ai' ? 'A' : src === 'wikimedia' ? 'W' : src === 'unsplash' ? 'U' : 'P';
-        const col = src === 'ai' ? 'rgba(139,92,246,0.92)' : src === 'wikimedia' ? 'rgba(59,130,246,0.92)' : src === 'unsplash' ? 'rgba(245,158,11,0.92)' : 'rgba(16,185,129,0.92)';
+        const lbl = src === 'ai' ? 'A' : src === 'wikipedia' ? 'Wp' : src === 'wikimedia' ? 'Wc' : src === 'unsplash' ? 'U' : 'P';
+        const col = src === 'ai' ? 'rgba(139,92,246,0.92)' : src === 'wikipedia' ? 'rgba(239,68,68,0.92)' : src === 'wikimedia' ? 'rgba(59,130,246,0.92)' : src === 'unsplash' ? 'rgba(245,158,11,0.92)' : 'rgba(16,185,129,0.92)';
         const b = document.createElement('span');
         b.className = 'img-src-badge';
         b.textContent = lbl;
@@ -6412,6 +6581,587 @@ function _doStartQuiz() {
 
 // Holds a pre-fetch promise started during the theme intro
 let _introPrefetchPromise = null;
+
+// ══════════════════════════════════════════════════════════════════════════
+// Quiz Settings: Quiz / Comprehension mode toggle
+// ══════════════════════════════════════════════════════════════════════════
+
+let _qsCurrentMode = 'quiz'; // 'quiz' | 'comp'
+
+// ── URL History (localStorage) ───────────────────────────────────────────
+const _COMP_HISTORY_KEY = 'comp_url_history';
+const _COMP_HISTORY_MAX = 10;
+
+function _qsHistoryLoad() {
+  try { return JSON.parse(localStorage.getItem(_COMP_HISTORY_KEY) || '[]'); }
+  catch { return []; }
+}
+
+function _qsHistorySave(url) {
+  if (!url || !url.trim()) return;
+  const list = _qsHistoryLoad().filter(u => u !== url); // deduplicate
+  list.unshift(url);                                      // newest first
+  if (list.length > _COMP_HISTORY_MAX) list.length = _COMP_HISTORY_MAX;
+  try { localStorage.setItem(_COMP_HISTORY_KEY, JSON.stringify(list)); } catch {}
+}
+
+function _qsHistoryRender() {
+  const dropdown = document.getElementById('qs-comp-history-dropdown');
+  if (!dropdown) return;
+  const list = _qsHistoryLoad();
+  if (!list.length) {
+    dropdown.innerHTML =
+      '<div style="padding:12px 14px;font-size:0.75rem;color:#475569;font-weight:600;">No history yet</div>';
+    return;
+  }
+  dropdown.innerHTML = list.map((url, i) => {
+    const parsed = _parseQsUrl(url);
+    const icon   = parsed?.type === 'youtube' ? '▶' : '🖼';
+    const label  = parsed?.type === 'youtube'
+      ? `YouTube — ID: ${parsed.videoId}`
+      : url.length > 52 ? url.slice(0, 50) + '…' : url;
+    const shortUrl = url.length > 60 ? url.slice(0, 58) + '…' : url;
+    return (
+      `<div class="_qs-hist-row" data-idx="${i}"
+        style="display:flex;align-items:flex-start;gap:8px;padding:9px 13px;
+               border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;
+               transition:background 0.15s;"
+        onmouseenter="this.style.background='rgba(139,92,246,0.12)'"
+        onmouseleave="this.style.background=''"
+        onclick="window._qsHistorySelect(${i})">
+        <span style="flex-shrink:0;font-size:0.9rem;margin-top:1px;">${icon}</span>
+        <div style="min-width:0;">
+          <div style="font-size:0.75rem;font-weight:700;color:#c4b5fd;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${label}</div>
+          <div style="font-size:0.65rem;color:#475569;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;">${shortUrl}</div>
+        </div>
+        <button onclick="event.stopPropagation();window._qsHistoryRemove(${i})"
+          style="flex-shrink:0;margin-left:auto;background:none;border:none;color:#475569;
+                 cursor:pointer;font-size:1rem;line-height:1;padding:0 2px;
+                 transition:color 0.15s;"
+          onmouseenter="this.style.color='#f87171'"
+          onmouseleave="this.style.color='#475569'"
+          title="Remove">&times;</button>
+      </div>`
+    );
+  }).join('');
+}
+
+window._qsHistoryShow = () => {
+  const dropdown = document.getElementById('qs-comp-history-dropdown');
+  const list = _qsHistoryLoad();
+  if (!dropdown || !list.length) return; // don't open empty dropdown on focus
+  _qsHistoryRender();
+  dropdown.style.display = 'block';
+  // Close when clicking outside
+  setTimeout(() => {
+    document.addEventListener('click', _qsHistoryClose, { once: true });
+  }, 10);
+};
+
+window._qsHistoryToggle = () => {
+  const dropdown = document.getElementById('qs-comp-history-dropdown');
+  if (!dropdown) return;
+  if (dropdown.style.display === 'none' || !dropdown.style.display) {
+    _qsHistoryRender();
+    dropdown.style.display = 'block';
+    setTimeout(() => {
+      document.addEventListener('click', _qsHistoryClose, { once: true });
+    }, 10);
+  } else {
+    dropdown.style.display = 'none';
+  }
+};
+
+function _qsHistoryClose(e) {
+  // Don't close if click was inside the dropdown or history button
+  const dropdown = document.getElementById('qs-comp-history-dropdown');
+  const btn = document.getElementById('qs-comp-history-btn');
+  if (dropdown && (dropdown.contains(e.target) || (btn && btn.contains(e.target)))) {
+    // Re-attach listener so it closes next outside click
+    setTimeout(() => {
+      document.addEventListener('click', _qsHistoryClose, { once: true });
+    }, 10);
+    return;
+  }
+  if (dropdown) dropdown.style.display = 'none';
+}
+
+window._qsHistorySelect = (idx) => {
+  const list = _qsHistoryLoad();
+  const url = list[idx];
+  if (!url) return;
+  const input = document.getElementById('qs-comp-url');
+  if (input) { input.value = url; window._qsCompUrlCheck(url); }
+  const dropdown = document.getElementById('qs-comp-history-dropdown');
+  if (dropdown) dropdown.style.display = 'none';
+};
+
+window._qsHistoryRemove = (idx) => {
+  const list = _qsHistoryLoad();
+  list.splice(idx, 1);
+  try { localStorage.setItem(_COMP_HISTORY_KEY, JSON.stringify(list)); } catch {}
+  _qsHistoryRender();
+  if (!list.length) {
+    const dropdown = document.getElementById('qs-comp-history-dropdown');
+    if (dropdown) dropdown.style.display = 'none';
+  }
+};
+
+// Helper: detect YouTube URL and extract videoId
+function _parseQsUrl(url) {
+  if (!url || !url.trim()) return null;
+  const s = url.trim();
+  // YouTube patterns
+  const ytMatch = s.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([A-Za-z0-9_-]{11})/);
+  if (ytMatch) return { type: 'youtube', videoId: ytMatch[1], url: s };
+  // Direct image URL (ends with known image extension, or contains image-like path)
+  if (/\.(jpe?g|png|gif|webp|avif|svg|bmp)(\?.*)?$/i.test(s) || /^https?:\/\/.+/i.test(s)) {
+    return { type: 'image', url: s };
+  }
+  return null;
+}
+
+// Toggle visibility of quiz-only sections and update button text
+window._qsModeSwitch = (mode) => {
+  _qsCurrentMode = mode;
+  const quizBtn   = document.getElementById('qs-mode-quiz');
+  const compBtn   = document.getElementById('qs-mode-comp');
+  const quizSects = document.getElementById('qs-quiz-only-sections');
+  const compSect  = document.getElementById('qs-comp-section');
+  const startBtn  = document.getElementById('qs-start-btn');
+
+  if (mode === 'quiz') {
+    quizBtn?.classList.add('active');
+    compBtn?.classList.remove('active');
+    if (quizSects) quizSects.style.display = '';
+    compSect?.classList.add('hidden');
+    if (startBtn) startBtn.innerHTML = '🚀 Start Quiz!';
+  } else {
+    compBtn?.classList.add('active');
+    quizBtn?.classList.remove('active');
+    if (quizSects) quizSects.style.display = 'none';
+    compSect?.classList.remove('hidden');
+    if (startBtn) startBtn.innerHTML = '🎬 Begin Adventure';
+    // Re-check URL if already typed
+    const urlInput = document.getElementById('qs-comp-url');
+    if (urlInput) window._qsCompUrlCheck(urlInput.value);
+  }
+};
+
+// Live feedback as user types URL
+window._qsCompUrlCheck = (val) => {
+  const fb = document.getElementById('qs-comp-url-feedback');
+  if (!fb) return;
+  const parsed = _parseQsUrl(val);
+  if (!val || !val.trim()) {
+    fb.className = 'info'; fb.textContent = 'Paste a YouTube video URL or a direct image URL.';
+  } else if (!parsed) {
+    fb.className = 'err'; fb.textContent = '⚠ Could not detect a YouTube video or image URL.';
+  } else if (parsed.type === 'youtube') {
+    fb.className = 'ok'; fb.textContent = `✓ YouTube video detected (ID: ${parsed.videoId})`;
+  } else {
+    fb.className = 'ok'; fb.textContent = '✓ Image URL detected — will show alongside questions.';
+  }
+};
+
+// Unified start button action
+window._qsStartAction = () => {
+  if (_qsCurrentMode === 'quiz') {
+    window.startQuiz();
+  } else {
+    window.startComprehensionFromQuizSettings();
+  }
+};
+
+// ── Main comprehension-from-quiz-settings flow ────────────────────────────
+window.startComprehensionFromQuizSettings = async () => {
+  const urlInput = document.getElementById('qs-comp-url');
+  const rawUrl   = (urlInput?.value || '').trim();
+  const parsed   = _parseQsUrl(rawUrl);
+
+  if (!parsed) {
+    const fb = document.getElementById('qs-comp-url-feedback');
+    if (fb) { fb.className = 'err'; fb.textContent = '⚠ Please paste a valid YouTube or image URL first.'; }
+    return;
+  }
+
+  // Close settings panel
+  const overlay = document.getElementById('quiz-settings-overlay');
+  if (overlay) overlay.classList.remove('show');
+
+  // Save to history immediately (before the async call, so it's recorded even on failure)
+  _qsHistorySave(rawUrl);
+
+  const numQ = quizSettings.correctTarget || 5;
+  const eduLevel = quizSettings.educationLevel || 'P2';
+
+  // Show loading overlay
+  const loadOv = document.createElement('div');
+  loadOv.id = 'comp-quiz-loading-overlay';
+  loadOv.innerHTML = `
+    <div class="cql-spinner"></div>
+    <div class="cql-text">Generating ${numQ} questions<br>based on your ${parsed.type === 'youtube' ? 'video' : 'image'}…</div>
+  `;
+  document.body.appendChild(loadOv);
+
+  // Call the comprehension Cloud Function to generate questions
+  let questions = null;
+  try {
+    const body = {
+      phase: 'questions',
+      medium: parsed.type === 'youtube' ? 'video' : 'image',
+      subject: 'the provided content',
+      educationLevel: eduLevel,
+      numQuestions: numQ,
+      mediaContent: parsed.type === 'youtube'
+        ? { videoId: parsed.videoId }
+        : { imageUrl: parsed.url, title: 'Image Quiz', passage: '' },
+    };
+    const res  = await fetch('/api/comprehension-generate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (data?.questions?.length) {
+      questions = data.questions;
+    } else {
+      throw new Error(data?.error || 'No questions returned');
+    }
+  } catch (err) {
+    console.error('[compFromQuiz] Generation failed:', err);
+    loadOv.remove();
+    if (window.showToast) window.showToast('Failed to generate questions: ' + err.message, 'error');
+    return;
+  }
+
+  loadOv.remove();
+
+  if (parsed.type === 'youtube') {
+    // ── Video-first flow ─────────────────────────────────────────────────
+    // Play the YouTube video with a Skip button, then launch the quiz
+    _compQuizRunVideoThenQuiz(parsed.videoId, questions, eduLevel);
+  } else {
+    // ── Image-quadrant flow ─────────────────────────────────────────────
+    _compQuizRunImageQuiz(parsed.url, questions, eduLevel);
+  }
+};
+
+// ── Video-first: play video then launch comprehension quiz ────────────────
+function _compQuizRunVideoThenQuiz(videoId, questions, eduLevel) {
+  const videoOv = document.createElement('div');
+  videoOv.id = 'comp-quiz-video-overlay';
+  videoOv.innerHTML = `
+    <iframe
+      src="https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1"
+      allow="autoplay; fullscreen"
+      allowfullscreen>
+    </iframe>
+    <button id="comp-quiz-video-skip">⏭ Skip Video</button>
+  `;
+  document.body.appendChild(videoOv);
+
+  const doLaunch = () => {
+    videoOv.remove();
+    _compQuizRunTextQuiz(questions, eduLevel);
+  };
+  videoOv.querySelector('#comp-quiz-video-skip').addEventListener('click', doLaunch);
+}
+
+// ── Text quiz (after video) — standard quiz-style layout ─────────────────
+// Uses the standard #view-quiz with the existing comprehension answer engine
+function _compQuizRunTextQuiz(questions, eduLevel) {
+  // Store questions
+  window._compFromQuizQuestions = questions;
+  window._compFromQuizIdx = 0;
+  window._compFromQuizScore = 0;
+  window._compFromQuizTotal = questions.length;
+
+  // Switch to the comprehension view (NOT quiz mode — avoids the normal quiz
+  // machinery, the answer-read-time hover bar, and image loading pipeline).
+  // Use _compSetModeOnly to skip the settings overlay that setMode('comprehension') shows.
+  window._compSetModeOnly = true;
+  setMode('comprehension');
+  window._compSetModeOnly = false;
+
+  // Manually show view-comprehension (setMode with _compSetModeOnly skips this)
+  const viewComp = document.getElementById('view-comprehension');
+  if (viewComp) {
+    viewComp.classList.remove('hidden');
+    viewComp.style.cssText = 'display:flex;flex-direction:column;width:100%;height:100%;position:relative;min-height:0;flex:1;';
+  }
+  // Hide the comprehension settings overlay (in case it was open)
+  const compOv = document.getElementById('comp-settings-overlay');
+  if (compOv) compOv.style.display = 'none';
+
+  // Show the question stage
+  const stage = document.getElementById('comp-question-stage');
+  if (stage) {
+    stage.style.display = 'flex';
+    stage.style.flexDirection = 'column';
+    stage.style.width = '100%';
+    stage.style.height = '100%';
+  }
+
+  // Initialise score display
+  const counter = document.getElementById('comp-q-counter');
+  const scoreBadge = document.getElementById('comp-score-badge');
+  if (counter) counter.textContent = `Q 1 / ${questions.length}`;
+  if (scoreBadge) scoreBadge.textContent = '⭐ 0';
+
+  _compQuizRenderQuestion();
+}
+
+// ── Image-quadrant quiz ───────────────────────────────────────────────────
+function _compQuizRunImageQuiz(imageUrl, questions, eduLevel) {
+  // Enter quiz mode
+  setQuizMode();
+  document.getElementById('quiz-settings-overlay')?.classList.remove('show');
+  document.body.classList.add('quiz-comp-img');
+
+  // Show the quadrant containers
+  const imgQ = document.getElementById('comp-img-quadrant');
+  const qQ   = document.getElementById('comp-q-quadrant');
+  const imgEl = document.getElementById('comp-img-quadrant-img');
+  if (imgQ) imgQ.style.display = '';
+  if (qQ)  qQ.style.display  = '';
+  if (imgEl) imgEl.src = imageUrl;
+
+  // Store questions
+  window._compFromQuizQuestions = questions;
+  window._compFromQuizIdx = 0;
+  window._compFromQuizScore = 0;
+  window._compFromQuizTotal = questions.length;
+
+  // Move the comprehension answers grid into view-quiz if needed
+  // (It lives in comp-question-stage by default; we need it under #view-quiz
+  //  in quiz-comp-img mode so the CSS grid places it in row 2)
+  const viewQuizEl = document.getElementById('view-quiz');
+  let answersGrid  = document.getElementById('comp-answers-grid');
+  if (answersGrid && viewQuizEl && answersGrid.parentElement !== viewQuizEl) {
+    viewQuizEl.appendChild(answersGrid);
+  }
+
+  _compQuizRenderQuestion();
+}
+
+// ── Shared question renderer for comp-from-quiz flows ────────────────────
+function _compQuizRenderQuestion() {
+  const isImgMode = document.body.classList.contains('quiz-comp-img');
+  const questions = window._compFromQuizQuestions || [];
+  const idx       = window._compFromQuizIdx || 0;
+  const q = questions[idx];
+
+  if (!q) {
+    // All questions done — show win overlay then return to landing
+    const score = window._compFromQuizScore || 0;
+    const total = window._compFromQuizTotal || 0;
+    document.body.classList.remove('quiz-comp-img');
+    const imgQ = document.getElementById('comp-img-quadrant');
+    const qQ   = document.getElementById('comp-q-quadrant');
+    if (imgQ) imgQ.style.display = 'none';
+    if (qQ)  qQ.style.display  = 'none';
+    // Show comprehension win overlay (already in view-comprehension)
+    const winOv    = document.getElementById('comp-win-overlay');
+    const winMsg   = document.getElementById('comp-win-message');
+    const winScore = document.getElementById('comp-win-score');
+    if (winMsg)   winMsg.textContent   = '🎉 Adventure Complete!';
+    if (winScore) winScore.textContent = `You answered ${score} out of ${total} correctly!`;
+    if (winOv)    winOv.style.display  = 'flex';
+    return;
+  }
+
+  // Update comprehension score badge
+  const scoreBadge = document.getElementById('comp-score-badge');
+  if (scoreBadge) scoreBadge.textContent = `⭐ ${window._compFromQuizScore || 0}`;
+  const counter = document.getElementById('comp-q-counter');
+  if (counter) counter.textContent = `Q ${idx + 1} / ${(window._compFromQuizTotal || questions.length)}`;
+
+  // Render question into comp-display-question (the comprehension view's question element)
+  if (!isImgMode) {
+    const qEl = document.getElementById('comp-display-question');
+    if (qEl) qEl.textContent = q.question;
+  } else {
+    // Image-quadrant: render question text into comp-q-quadrant-text
+    const qtEl = document.getElementById('comp-q-quadrant-text');
+    if (qtEl) {
+      qtEl.textContent = q.question;
+      _fitTextToBox(qtEl, document.getElementById('comp-q-quadrant'));
+    }
+  }
+
+  // Render answers into comp-answers-grid (reuses comprehension.js card style)
+  const grid = document.getElementById('comp-answers-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+  delete grid.dataset.answered;
+
+  // Remove any old explanation panel
+  const oldEx = document.getElementById('comp-explanation-panel');
+  if (oldEx) oldEx.remove();
+
+  (q.answers || []).forEach(ans => {
+    const isCorrect = String(ans.id) === String(q.correctId);
+    const card = document.createElement('div');
+    card.className = 'quiz-answer-card';
+    Object.assign(card.style, {
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      height: '100%', width: '100%', padding: '1.2rem', boxSizing: 'border-box',
+      textAlign: 'center', background: '#20293a', border: 'none', borderRadius: '16px',
+      transition: 'transform 0.2s ease, background 0.2s ease',
+      position: 'relative', overflow: 'hidden', cursor: 'pointer', userSelect: 'none',
+    });
+    const span = document.createElement('span');
+    Object.assign(span.style, {
+      color: '#f2f5f9', fontWeight: '800', display: 'block', width: '100%',
+      overflowWrap: 'break-word', pointerEvents: 'none',
+      fontSize: 'clamp(0.85rem, 2.2vh, 1.2rem)', lineHeight: '1.3',
+    });
+    span.textContent = ans.text;
+    card.appendChild(span);
+
+    card.addEventListener('mouseenter', () => {
+      if (!card.dataset.answered && card.dataset.state !== 'wrong') card.style.background = '#364154';
+    });
+    card.addEventListener('mouseleave', () => {
+      if (card.dataset.state === 'wrong') card.style.background = '#7f1d1d';
+      else if (!card.dataset.answered) card.style.background = '#20293a';
+    });
+    card.addEventListener('click', () => _compQuizSelectAnswer(ans, q, q.answers, grid, isCorrect));
+    grid.appendChild(card);
+  });
+}
+
+// Font-fit helper — shrinks font until text fits within container
+function _fitTextToBox(el, container) {
+  if (!el || !container) return;
+  let size = 64; // start large
+  el.style.fontSize = size + 'px';
+  while (size > 12 && (el.scrollHeight > container.clientHeight * 0.9 || el.scrollWidth > container.clientWidth * 0.9)) {
+    size -= 2;
+    el.style.fontSize = size + 'px';
+  }
+}
+
+// Answer selection for comp-from-quiz flows
+function _compQuizSelectAnswer(ans, q, allAnswers, grid, isCorrect) {
+  if (grid.dataset.answered) return;
+
+  if (isCorrect) {
+    grid.dataset.answered = 'true';
+    grid.style.pointerEvents = 'none';
+
+    Array.from(grid.children).forEach((card, i) => {
+      if (String((allAnswers[i] || {}).id) === String(q.correctId)) {
+        card.dataset.answered = 'true';
+        card.style.background = '#10b981';
+        card.style.animation  = 'successBounce 0.75s ease';
+      } else {
+        card.style.opacity = '0.4';
+        card.style.pointerEvents = 'none';
+      }
+    });
+
+    window._compFromQuizScore = (window._compFromQuizScore || 0) + 1;
+    window.quizScore = window._compFromQuizScore;
+    if (window.updateQuizScoreBar) window.updateQuizScoreBar();
+
+    if (window.playQuizCorrectSound) window.playQuizCorrectSound();
+    const greenCard = Array.from(grid.children).find(c => c.dataset.answered);
+    if (window.burstConfetti) window.burstConfetti(greenCard || grid);
+    try {
+      const sounds = ['correct1.mp3','correct2.mp3','correct3.mp3'];
+      const snd = new Audio('/assets/sounds/' + sounds[Math.floor(Math.random() * sounds.length)]);
+      snd.volume = 0.6; snd.play().catch(() => {});
+    } catch (_) {}
+
+    // Theme celebration
+    const theme = (typeof currentQuizTheme !== 'undefined') ? currentQuizTheme : 'normal';
+    if      (theme === 'ben-holly'     && window.triggerBenElfCelebration) window.triggerBenElfCelebration();
+    else if (theme === 'kung-fu-panda' && window.triggerKfpCelebration)    window.triggerKfpCelebration();
+    else if (theme === 'totoro'        && window.triggerTotoroCelebration) window.triggerTotoroCelebration();
+    else if (theme === 'turning-red'   && window.triggerTRCelebration)     window.triggerTRCelebration();
+    else if (theme === 'zootopia'      && window.triggerZooCelebration)    window.triggerZooCelebration();
+
+    setTimeout(() => {
+      window._compFromQuizIdx = (window._compFromQuizIdx || 0) + 1;
+      _compQuizRenderQuestion();
+    }, 1600);
+
+  } else {
+    // Wrong — shake, mark, keep grid interactive, show explanation
+    Array.from(grid.children).forEach(c => {
+      if (c.dataset.state === 'wrong') {
+        c.dataset.state = ''; c.style.background = '#20293a';
+        const old = c.querySelector('.wrong-cross'); if (old) old.remove();
+      }
+    });
+    const wrongCard = Array.from(grid.children)[allAnswers.indexOf(ans)];
+    if (wrongCard) {
+      wrongCard.dataset.state = 'wrong';
+      wrongCard.style.background = 'rgba(239,68,68,0.18)';
+      const cross = document.createElement('div');
+      cross.className = 'wrong-cross'; cross.style.pointerEvents = 'none';
+      wrongCard.appendChild(cross);
+      wrongCard.style.transform = 'translateX(-10px)';
+      setTimeout(() => wrongCard.style.transform = 'translateX(10px)', 50);
+      setTimeout(() => wrongCard.style.transform = 'translateX(0)', 100);
+    }
+    if (window.playWrongSound) window.playWrongSound();
+
+    // Explanation panel
+    const oldPanel = document.getElementById('comp-explanation-panel');
+    if (oldPanel) oldPanel.remove();
+    const explanation = q.explanation || '';
+    const correctAns  = allAnswers.find(a => String(a.id) === String(q.correctId));
+    const correctText = correctAns ? correctAns.text : '';
+    if (explanation || correctText) {
+      const panel = document.createElement('div');
+      panel.id = 'comp-explanation-panel';
+      panel.style.cssText = [
+        'position:absolute','bottom:0','left:0','right:0','z-index:200',
+        'background:linear-gradient(135deg,rgba(15,23,42,0.97),rgba(30,41,59,0.97))',
+        'border-top:2px solid rgba(239,68,68,0.4)',
+        'padding:14px 18px 16px','display:flex','flex-direction:column','gap:6px',
+        'transform:translateY(100%)','transition:transform 0.35s cubic-bezier(0.34,1.56,0.64,1)',
+        'box-shadow:0 -8px 32px rgba(0,0,0,0.5)',
+      ].join(';');
+      const header = document.createElement('div');
+      header.style.cssText = 'display:flex;align-items:center;gap:8px;';
+      const icon = document.createElement('span');
+      icon.textContent = '✗'; icon.style.cssText = 'font-size:1.1rem;color:#f87171;font-weight:900;flex-shrink:0;';
+      const htxt = document.createElement('span');
+      htxt.style.cssText = 'font-size:0.78rem;font-weight:800;color:#f87171;text-transform:uppercase;letter-spacing:0.06em;';
+      htxt.textContent = 'Not quite — try again!';
+      header.appendChild(icon); header.appendChild(htxt);
+      panel.appendChild(header);
+      if (correctText) {
+        const hint = document.createElement('div');
+        hint.style.cssText = 'font-size:0.75rem;color:#34d399;font-weight:700;';
+        hint.textContent = `✓ Correct answer: ${correctText}`;
+        panel.appendChild(hint);
+      }
+      if (explanation) {
+        const body = document.createElement('div');
+        body.style.cssText = 'font-size:0.8rem;color:#cbd5e1;line-height:1.5;';
+        body.textContent = explanation;
+        panel.appendChild(body);
+      }
+      const qStage = document.body.classList.contains('quiz-comp-img')
+        ? document.getElementById('comp-q-quadrant')
+        : document.getElementById('comp-question-stage');
+      if (qStage) {
+        qStage.appendChild(panel);
+        requestAnimationFrame(() => { panel.style.transform = 'translateY(0)'; });
+        setTimeout(() => {
+          panel.style.transition = 'transform 0.3s ease';
+          panel.style.transform  = 'translateY(100%)';
+          setTimeout(() => { if (panel.parentNode) panel.remove(); }, 320);
+        }, 4000);
+      }
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 
 window.startQuiz = () => {
   // Load asked-question history NOW (before the prefetch) so the AI batch
@@ -8100,11 +8850,13 @@ function _renderReportModal(data, docId, isAdminView) {
 
   const score  = _toArr(data.questions).filter(q => { const s = _normSels(q); return s.length > 0 && s[s.length-1].state === 'correct'; }).length;
 
-  // source badge helper
+  // source badge helper — P=Pixabay, U=Unsplash, Wc=Wikimedia Commons, Wp=Wikipedia, A=AI SVG
   const srcBadge = (src) => {
-    const map = { pixabay:'#10b981', unsplash:'#f59e0b', wikimedia:'#3b82f6', ai:'#8b5cf6' };
-    const c = map[src] || '#64748b';
-    return src ? `<span style="font-size:0.65rem;font-weight:700;padding:1px 7px;border-radius:4px;background:${c}22;color:${c};border:1px solid ${c}44;text-transform:uppercase;">${src}</span>` : '';
+    const labelMap = { pixabay:'PIXABAY', unsplash:'UNSPLASH', wikimedia:'Wc', wikipedia:'Wp', ai:'AI' };
+    const colorMap = { pixabay:'#10b981', unsplash:'#f59e0b', wikimedia:'#3b82f6', wikipedia:'#ef4444', ai:'#8b5cf6' };
+    const lbl = labelMap[src] || (src || '').toUpperCase();
+    const c = colorMap[src] || '#64748b';
+    return src ? `<span style="font-size:0.65rem;font-weight:700;padding:1px 7px;border-radius:4px;background:${c}22;color:${c};border:1px solid ${c}44;">${lbl}</span>` : '';
   };
 
   // subject includes custom free-text
