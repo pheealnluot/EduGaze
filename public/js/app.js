@@ -724,7 +724,7 @@ function playWrongSound() {
     osc2.frequency.setValueAtTime(126, ctx.currentTime);
 
     gain.gain.setValueAtTime(0, ctx.currentTime);
-    gain.gain.linearRampToValueAtTime(0.15, ctx.currentTime + 0.02);
+    gain.gain.linearRampToValueAtTime(0.15 * _getSfxVolume(), ctx.currentTime + 0.02);
     gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
 
     osc1.connect(gain);
@@ -743,7 +743,7 @@ function playWrongSound() {
 function playHintSound() {
   try {
     const audio = new Audio('assets/bh/fairy_wow.mp3');
-    audio.volume = 0.4;
+    audio.volume = 0.4 * _getSfxVolume();
     audio.play().catch(() => { });
   } catch (e) { }
 }
@@ -1870,7 +1870,7 @@ let initialSettings = loadQuizSettings() || {
   contentTypes: ['text'],
   customSubject: '',
   correctTarget: 5,
-  musicVolume: 0.2,
+  musicVolume: 1.0,
   musicOn: false,
   dwellTimeMs: 2000,
   qReadEnabled: true,
@@ -2395,13 +2395,8 @@ window.toggleQuizMusic = () => {
 };
 
 function startQuizMusic() {
-  if (!quizSettings.musicOn) return;
-  if (quizAudio) { quizAudio.play().catch(() => { }); return; }
-  // Reuse peppa instrumental theme as background music
-  quizAudio = new Audio('assets/peppa/quiz_music.webm');
-  quizAudio.loop = true;
-  quizAudio.volume = quizSettings.musicVolume;
-  quizAudio.play().catch(e => console.log('Quiz audio deferred', e));
+  // Background music disabled — sound volume slider now controls SFX only.
+  // Keep musicOn state for the SFX mute toggle to work.
 }
 
 function stopQuizMusic() {
@@ -2410,6 +2405,11 @@ function stopQuizMusic() {
     quizAudio.currentTime = 0;
     quizAudio = null;
   }
+}
+
+// Returns the effective SFX volume (0 if muted, else musicVolume)
+function _getSfxVolume() {
+  return quizSettings.musicOn ? (quizSettings.musicVolume ?? 0.2) : 0;
 }
 
 // ── Voice Over (TTS) helper ─────────────────────────────────────────────
@@ -5130,37 +5130,43 @@ function renderQuizBoard() {
         deltaMs: _deltaMs
       });
 
-      if (isCorrect) {
-        // Build tracking record for this question
-        if (window.quizReport) {
-          const qRecord = {
-            question: q.question,
-            subject: q.subject || q._subject || '',
-            correctAnswerIds: q.correctAnswerIds || [q.correctId],
-            userSelections: q._userSelections,
-            hintShown: !!q._hintShown,
-            questionImageKeyword: q.questionImageKeyword || q.qImageKeyword || '',
-            questionImageUrl: (() => {
-              const kw = q.questionImageKeyword || q.qImageKeyword || '';
-              if (kw && quizResolvedVisuals.has(kw)) {
-                const vis = quizResolvedVisuals.get(kw);
-                return { url: vis.url || '', svg: vis.svg || '', source: vis.source || '' };
-              }
-              return null;
-            })(),
-            answers: displayAnswers.map(a => {
-              const rec = { id: a.id, text: a.text, imageKeyword: a.imageKeyword || '' };
-              if (a.imageKeyword && quizResolvedVisuals.has(a.imageKeyword)) {
-                const vis = quizResolvedVisuals.get(a.imageKeyword);
-                rec.url = vis.url || vis.svg || '';
-                rec.source = vis.source || (vis.svg ? 'ai' : '');
-              }
-              return rec;
-            })
-          };
-          window.quizReport.questions.push(qRecord);
-        }
+      // Build tracking record on FIRST selection for this question (covers all outcomes)
+      if (window.quizReport && !q._reportSaved) {
+        q._reportSaved = true;
+        const qRecord = {
+          question: q.question,
+          subject: q.subject || q._subject || '',
+          correctAnswerIds: q.correctAnswerIds || [q.correctId],
+          userSelections: q._userSelections, // live reference — updated by later clicks
+          hintShown: !!q._hintShown,
+          outcome: isCorrect ? 'correct' : 'incomplete',
+          questionImageKeyword: q.questionImageKeyword || q.qImageKeyword || '',
+          questionImageUrl: (() => {
+            const kw = q.questionImageKeyword || q.qImageKeyword || '';
+            if (kw && quizResolvedVisuals.has(kw)) {
+              const vis = quizResolvedVisuals.get(kw);
+              return { url: vis.url || '', svg: vis.svg || '', source: vis.source || '' };
+            }
+            return null;
+          })(),
+          answers: displayAnswers.map(a => {
+            const rec = { id: a.id, text: a.text, imageKeyword: a.imageKeyword || '' };
+            if (a.imageKeyword && quizResolvedVisuals.has(a.imageKeyword)) {
+              const vis = quizResolvedVisuals.get(a.imageKeyword);
+              rec.url = vis.url || vis.svg || '';
+              rec.source = vis.source || (vis.svg ? 'ai' : '');
+            }
+            return rec;
+          })
+        };
+        window.quizReport.questions.push(qRecord);
+      } else if (window.quizReport && isCorrect) {
+        // Update outcome on existing record
+        const rec = [...window.quizReport.questions].reverse().find(r => r.question === q.question);
+        if (rec) rec.outcome = 'correct';
+      }
 
+      if (isCorrect) {
         quizQuestionAnswered = true;
         _voAbortGen++; // cancel any ongoing answer TTS
         quizSpeakCancel();
@@ -5181,7 +5187,7 @@ function renderQuizBoard() {
         // Secondary random celebration sound
         const sounds = ['correct1.mp3', 'correct2.mp3', 'correct3.mp3'];
         const snd = new Audio('/assets/sounds/' + sounds[Math.floor(Math.random() * sounds.length)]);
-        snd.volume = 0.6;
+        snd.volume = 0.6 * _getSfxVolume();
         snd.play().catch(() => { });
 
         let progressionTriggered = false;
@@ -5496,7 +5502,7 @@ function triggerBenElfCelebration() {
   // Pick one celebration sound randomly from the pool of 3
   try {
     const snd = new Audio(_BH_SOUNDS[Math.floor(Math.random() * _BH_SOUNDS.length)]);
-    snd.volume = 0.85;
+    snd.volume = 0.85 * _getSfxVolume();
     snd.play().catch(err => console.error("Celebration sound failed:", err));
   } catch (_) { }
 
@@ -5585,7 +5591,7 @@ function playQuizCorrectSound() {
     if (!ctx) return;
     if (ctx.state === 'suspended') ctx.resume();
     const masterGain = ctx.createGain();
-    masterGain.gain.setValueAtTime(0.28, ctx.currentTime);
+    masterGain.gain.setValueAtTime(0.28 * _getSfxVolume(), ctx.currentTime);
     masterGain.connect(ctx.destination);
 
     // Ascending arpeggio: C5 → E5 → G5 → C6 → E6
@@ -5690,7 +5696,7 @@ function triggerKfpCelebration() {
   // Play a random sfx or vo sound
   try {
     const snd = new Audio(_KFP_SOUNDS[Math.floor(Math.random() * _KFP_SOUNDS.length)]);
-    snd.volume = 0.85;
+    snd.volume = 0.85 * _getSfxVolume();
     snd.play().catch(err => console.error('KFP celebration sound failed:', err));
   } catch (_) { }
 
@@ -6323,7 +6329,7 @@ function triggerTotoroCelebration() {
   // Play a random FX sound
   try {
     const snd = new Audio(_TOTORO_FX_SOUNDS[Math.floor(Math.random() * _TOTORO_FX_SOUNDS.length)]);
-    snd.volume = 0.8;
+    snd.volume = 0.8 * _getSfxVolume();
     snd.play().catch(err => console.error('Totoro FX sound failed:', err));
   } catch (_) { }
 
@@ -6567,6 +6573,7 @@ function _doStartQuiz() {
     userId: user ? user.uid : 'guest',
     startedAt: new Date().toISOString(),
     quizSettings: JSON.parse(JSON.stringify(quizSettings)),
+    sessionType: (quizSettings.contentTypes || []).includes('image') ? 'image-quiz' : 'text-quiz',
     questions: []
   };
 
@@ -6591,6 +6598,22 @@ let _qsCurrentMode = 'quiz'; // 'quiz' | 'comp'
 // ── URL History (localStorage) ───────────────────────────────────────────
 const _COMP_HISTORY_KEY = 'comp_url_history';
 const _COMP_HISTORY_MAX = 10;
+
+// ── Time limit state ─────────────────────────────────────────────────────
+let _qsTimeLimitSec = 0;  // 0 = no limit
+
+window._qsTimeLimitSync = (val) => {
+  _qsTimeLimitSec = +val;
+  const disp = document.getElementById('qs-comp-timelimit-display');
+  if (!disp) return;
+  if (+val === 0) { disp.textContent = 'No limit'; return; }
+  const m = Math.floor(+val / 60);
+  const s = +val % 60;
+  disp.textContent = m > 0
+    ? (s > 0 ? `${m} min ${s} sec` : `${m} min`)
+    : `${s} sec`;
+};
+
 
 function _qsHistoryLoad() {
   try { return JSON.parse(localStorage.getItem(_COMP_HISTORY_KEY) || '[]'); }
@@ -6751,17 +6774,23 @@ window._qsModeSwitch = (mode) => {
 // Live feedback as user types URL
 window._qsCompUrlCheck = (val) => {
   const fb = document.getElementById('qs-comp-url-feedback');
+  const tlRow = document.getElementById('qs-comp-timelimit-row');
+  const tlHint = document.getElementById('qs-comp-timelimit-hint');
   if (!fb) return;
   const parsed = _parseQsUrl(val);
+  const isYt = parsed?.type === 'youtube';
   if (!val || !val.trim()) {
     fb.className = 'info'; fb.textContent = 'Paste a YouTube video URL or a direct image URL.';
   } else if (!parsed) {
     fb.className = 'err'; fb.textContent = '⚠ Could not detect a YouTube video or image URL.';
-  } else if (parsed.type === 'youtube') {
+  } else if (isYt) {
     fb.className = 'ok'; fb.textContent = `✓ YouTube video detected (ID: ${parsed.videoId})`;
   } else {
     fb.className = 'ok'; fb.textContent = '✓ Image URL detected — will show alongside questions.';
   }
+  // Show time limit controls only for YouTube URLs
+  if (tlRow)  tlRow.style.display  = isYt ? 'flex'  : 'none';
+  if (tlHint) tlHint.style.display = isYt ? 'block' : 'none';
 };
 
 // Unified start button action
@@ -6806,6 +6835,7 @@ window.startComprehensionFromQuizSettings = async () => {
       mediaContent: parsed.type === 'youtube'
         ? { videoId: parsed.videoId }
         : { imageUrl: parsed.url, title: 'Image Quiz', passage: '' },
+      videoTimeLimitSec: (parsed.type === 'youtube' && _qsTimeLimitSec > 0) ? _qsTimeLimitSec : null,
     };
     const res  = await fetch('/api/comprehension-generate', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
@@ -6853,9 +6883,10 @@ window.startComprehensionFromQuizSettings = async () => {
     // Show the video overlay immediately
     const videoOv = document.createElement('div');
     videoOv.id = 'comp-quiz-video-overlay';
+    const ytEndParam = (_qsTimeLimitSec > 0) ? `&end=${_qsTimeLimitSec}` : '';
     videoOv.innerHTML = `
       <iframe
-        src="https://www.youtube.com/embed/${parsed.videoId}?autoplay=1&rel=0&modestbranding=1"
+        src="https://www.youtube.com/embed/${parsed.videoId}?autoplay=1&rel=0&modestbranding=1${ytEndParam}"
         allow="autoplay; fullscreen"
         allowfullscreen>
       </iframe>
@@ -6977,15 +7008,20 @@ function _compQuizRunImageQuiz(imageUrl, questions, eduLevel) {
   _compQuizRenderQuestion();
 }
 
-// ── Shared question renderer for comp-from-quiz flows ────────────────────
+// ── Shared question renderer for comp-from-quiz flows (full quiz parity) ──
+let _cqRenderGen = 0;
+let _cqWrongAttempts = 0;
+
 function _compQuizRenderQuestion() {
+  _cqRenderGen++;
+  const gen = _cqRenderGen;
+  _cqWrongAttempts = 0;
   const isImgMode = document.body.classList.contains('quiz-comp-img');
   const questions = window._compFromQuizQuestions || [];
   const idx       = window._compFromQuizIdx || 0;
   const q = questions[idx];
 
   if (!q) {
-    // All questions done — show win overlay then return to landing
     const score = window._compFromQuizScore || 0;
     const total = window._compFromQuizTotal || 0;
     document.body.classList.remove('quiz-comp-img');
@@ -6993,7 +7029,6 @@ function _compQuizRenderQuestion() {
     const qQ   = document.getElementById('comp-q-quadrant');
     if (imgQ) imgQ.style.display = 'none';
     if (qQ)  qQ.style.display  = 'none';
-    // Show comprehension win overlay (already in view-comprehension)
     const winOv    = document.getElementById('comp-win-overlay');
     const winMsg   = document.getElementById('comp-win-message');
     const winScore = document.getElementById('comp-win-score');
@@ -7003,18 +7038,25 @@ function _compQuizRenderQuestion() {
     return;
   }
 
-  // Update comprehension score badge
+  // Resolve theme
+  if (quizSettings.theme === 'mixed') {
+    const pool = ['normal','ben-holly','peppa','kung-fu-panda','totoro','turning-red','zootopia'];
+    currentQuizTheme = pool[Math.floor(Math.random() * pool.length)];
+  } else {
+    currentQuizTheme = quizSettings.theme || 'normal';
+  }
+
+  // Update score badge + counter
   const scoreBadge = document.getElementById('comp-score-badge');
   if (scoreBadge) scoreBadge.textContent = `⭐ ${window._compFromQuizScore || 0}`;
   const counter = document.getElementById('comp-q-counter');
   if (counter) counter.textContent = `Q ${idx + 1} / ${(window._compFromQuizTotal || questions.length)}`;
 
-  // Render question into comp-display-question (the comprehension view's question element)
+  // Question display
   if (!isImgMode) {
     const qEl = document.getElementById('comp-display-question');
-    if (qEl) qEl.textContent = q.question;
+    if (qEl) prepareHighlightableText(qEl, q.question);
   } else {
-    // Image-quadrant: render question text into comp-q-quadrant-text
     const qtEl = document.getElementById('comp-q-quadrant-text');
     if (qtEl) {
       qtEl.textContent = q.question;
@@ -7022,47 +7064,137 @@ function _compQuizRenderQuestion() {
     }
   }
 
-  // Render answers into comp-answers-grid (reuses comprehension.js card style)
+  // Answer grid
   const grid = document.getElementById('comp-answers-grid');
   if (!grid) return;
   grid.innerHTML = '';
   delete grid.dataset.answered;
-
-  // Remove any old explanation panel
   const oldEx = document.getElementById('comp-explanation-panel');
   if (oldEx) oldEx.remove();
+  const oldABar = document.getElementById('comp-aread-bar');
+  if (oldABar) oldABar.remove();
 
-  (q.answers || []).forEach(ans => {
+  const fontSizeClass = `quiz-font-${quizSettings.fontSize || 'medium'}`;
+  const isTwoAns = (q.answers || []).length === 2;
+  grid.style.cssText = `display:grid;grid-template-columns:1fr 1fr;grid-template-rows:${isTwoAns ? '1fr' : '1fr 1fr'};gap:8px;padding:10px;box-sizing:border-box;width:100%;flex:1;min-height:0;overflow:hidden;`;
+
+  // qRead gate
+  let _qReadDone = true, _skipQRead = () => {};
+  const _qReadEnabled = quizSettings.qReadEnabled && (quizSettings.qReadTimeMs || 0) > 0;
+  if (_qReadEnabled) {
+    _qReadDone = false;
+    grid.style.opacity = '0.25'; grid.style.pointerEvents = 'none'; grid.style.transition = 'opacity 0.4s';
+    let _qEl = 0;
+    const _qT = setInterval(() => {
+      if (gen !== _cqRenderGen) { clearInterval(_qT); return; }
+      _qEl += 80;
+      if (_qEl >= quizSettings.qReadTimeMs) { clearInterval(_qT); _qReadDone = true; grid.style.opacity = '1'; grid.style.pointerEvents = ''; }
+    }, 80);
+    _skipQRead = () => { _qEl = quizSettings.qReadTimeMs; };
+  }
+
+  // aRead bar
+  let _aReadDone = true, _skipARead = () => {};
+  const _aReadEnabled = quizSettings.aReadEnabled && (quizSettings.aReadTimeMs || 0) > 0;
+  if (_aReadEnabled) {
+    _aReadDone = false;
+    const aBarOuter = document.createElement('div');
+    aBarOuter.id = 'comp-aread-bar';
+    aBarOuter.style.cssText = 'width:100%;height:3px;flex-shrink:0;border-radius:2px;overflow:hidden;background:rgba(255,255,255,0.07);margin-bottom:4px;';
+    const aBarInner = document.createElement('div');
+    aBarInner.style.cssText = 'height:100%;width:0%;background:linear-gradient(90deg,#10b981,#06b6d4);border-radius:2px;';
+    aBarOuter.appendChild(aBarInner);
+    const qStage = document.getElementById('comp-question-stage');
+    if (qStage) qStage.insertBefore(aBarOuter, grid);
+    let _aEl = 0;
+    const _aT = setInterval(() => {
+      if (gen !== _cqRenderGen) { clearInterval(_aT); return; }
+      _aEl += 80; aBarInner.style.width = Math.min(100, (_aEl / quizSettings.aReadTimeMs) * 100) + '%';
+      if (_aEl >= quizSettings.aReadTimeMs) { clearInterval(_aT); _aReadDone = true; aBarOuter.remove(); }
+    }, 80);
+    _skipARead = () => { _aEl = quizSettings.aReadTimeMs; };
+  }
+
+  // Voice over question
+  if (quizSettings.voiceOver && !_qReadEnabled && 'speechSynthesis' in window) {
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(q.question); u.rate = 0.9;
+    u.onend = () => { if (quizSettings.voiceOver && window.quizSpeakAnswers) window.quizSpeakAnswers(q.answers, gen, {}); };
+    speechSynthesis.speak(u);
+  }
+
+  (q.answers || []).forEach((ans, idx2) => {
     const isCorrect = String(ans.id) === String(q.correctId);
     const card = document.createElement('div');
     card.className = 'quiz-answer-card';
     Object.assign(card.style, {
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      height: '100%', width: '100%', padding: '1.2rem', boxSizing: 'border-box',
-      textAlign: 'center', background: '#20293a', border: 'none', borderRadius: '16px',
-      transition: 'transform 0.2s ease, background 0.2s ease',
-      position: 'relative', overflow: 'hidden', cursor: 'pointer', userSelect: 'none',
+      display:'flex', alignItems:'center', justifyContent:'center',
+      height:'100%', width:'100%', padding:'1.2rem', boxSizing:'border-box',
+      textAlign:'center', background:'#20293a', border:'none', borderRadius:'16px',
+      transition:'transform 0.2s ease, background 0.2s ease',
+      position:'relative', overflow:'hidden', cursor:'pointer', userSelect:'none',
     });
+    applyQuizCardTheme(card, ans, idx2);
+
     const span = document.createElement('span');
-    Object.assign(span.style, {
-      color: '#f2f5f9', fontWeight: '800', display: 'block', width: '100%',
-      overflowWrap: 'break-word', pointerEvents: 'none',
-      fontSize: 'clamp(0.85rem, 2.2vh, 1.2rem)', lineHeight: '1.3',
-    });
-    span.textContent = ans.text;
+    span.className = `quiz-answer-text ${fontSizeClass}`;
+    Object.assign(span.style, { color:'#f2f5f9', fontWeight:'800', display:'block', width:'100%', overflowWrap:'break-word', pointerEvents:'none' });
+    prepareHighlightableText(span, ans.text);
     card.appendChild(span);
 
-    card.addEventListener('mouseenter', () => {
-      if (!card.dataset.answered && card.dataset.state !== 'wrong') card.style.background = '#364154';
-    });
+    // Dwell bar
+    const pb = document.createElement('div');
+    pb.className = 'absolute bottom-0 left-0 h-1.5 bg-violet-500/40 transition-none z-10';
+    pb.style.width = '0%';
+    card.appendChild(pb);
+
+    card.addEventListener('mouseenter', () => { if (!card.dataset.answered && card.dataset.state !== 'wrong') card.style.background = '#364154'; });
     card.addEventListener('mouseleave', () => {
       if (card.dataset.state === 'wrong') card.style.background = '#7f1d1d';
       else if (!card.dataset.answered) card.style.background = '#20293a';
     });
-    card.addEventListener('click', () => _compQuizSelectAnswer(ans, q, q.answers, grid, isCorrect));
+
+    let dt = null, svgOv = null;
+    const removeSvg = () => { if (svgOv && svgOv.parentNode === card) card.removeChild(svgOv); svgOv = null; };
+    const startDwell = () => {
+      if (!quizSettings.dwellTimeMs || !_aReadDone) return;
+      let s = null;
+      const anim = (t) => {
+        if (gen !== _cqRenderGen) return;
+        if (!s) s = t;
+        const pct = Math.min(((t - s) / quizSettings.dwellTimeMs) * 100, 100);
+        pb.style.width = pct + '%';
+        if (pct > 0 && !svgOv) {
+          svgOv = document.createElement('div');
+          svgOv.className = 'absolute inset-0 flex items-center justify-center z-20 pointer-events-none';
+          svgOv.innerHTML = '<svg class="w-28 h-28 transform -rotate-90"><circle cx="56" cy="56" r="44" stroke-width="7" stroke="#334155" fill="transparent"/><circle cx="56" cy="56" r="44" stroke-width="7" stroke-dasharray="276.46" stroke-dashoffset="276.46" stroke-linecap="round" stroke="#8b5cf6" fill="transparent" style="opacity:0.55"/></svg>';
+          card.appendChild(svgOv);
+        }
+        if (svgOv) { const c2 = svgOv.querySelector('circle:last-child'); if (c2) c2.style.strokeDashoffset = 276.46 - (pct / 100) * 276.46; }
+        if (pct >= 100) doSelect(); else dt = requestAnimationFrame(anim);
+      };
+      dt = requestAnimationFrame(anim);
+    };
+    const stopDwell = () => { if (dt) cancelAnimationFrame(dt); pb.style.width = '0%'; removeSvg(); };
+    const doSelect = () => {
+      if (!_qReadDone) { _skipQRead(); requestAnimationFrame(() => requestAnimationFrame(() => doSelect())); return; }
+      if (!_aReadDone) { _skipARead(); requestAnimationFrame(() => requestAnimationFrame(() => doSelect())); return; }
+      _compQuizSelectAnswer(ans, q, q.answers, grid, isCorrect, gen);
+    };
+    card.addEventListener('mouseenter', () => startDwell());
+    card.addEventListener('mouseleave', () => stopDwell());
+    card.addEventListener('click', () => doSelect());
+    card.addEventListener('touchstart', (e) => { e.preventDefault(); startDwell(); }, { passive: false });
+    card.addEventListener('touchend',   (e) => { e.preventDefault(); stopDwell(); doSelect(); }, { passive: false });
+    card.addEventListener('touchcancel',(e) => { e.preventDefault(); stopDwell(); }, { passive: false });
+
+    if (quizSettings.voiceOver && quizSettings.voiceOverHoverRepeat) {
+      card.addEventListener('mouseenter', () => { if ('speechSynthesis' in window) { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(ans.text); u.rate = 0.9; speechSynthesis.speak(u); } });
+    }
     grid.appendChild(card);
   });
 }
+
 
 // Font-fit helper — shrinks font until text fits within container
 function _fitTextToBox(el, container) {
@@ -7075,9 +7207,10 @@ function _fitTextToBox(el, container) {
   }
 }
 
-// Answer selection for comp-from-quiz flows
-function _compQuizSelectAnswer(ans, q, allAnswers, grid, isCorrect) {
+// Answer selection for comp-from-quiz flows (full quiz parity)
+function _compQuizSelectAnswer(ans, q, allAnswers, grid, isCorrect, gen) {
   if (grid.dataset.answered) return;
+  if (gen !== undefined && gen !== _cqRenderGen) return;
 
   if (isCorrect) {
     grid.dataset.answered = 'true';
@@ -7104,7 +7237,7 @@ function _compQuizSelectAnswer(ans, q, allAnswers, grid, isCorrect) {
     try {
       const sounds = ['correct1.mp3','correct2.mp3','correct3.mp3'];
       const snd = new Audio('/assets/sounds/' + sounds[Math.floor(Math.random() * sounds.length)]);
-      snd.volume = 0.6; snd.play().catch(() => {});
+      snd.volume = 0.6 * _getSfxVolume(); snd.play().catch(() => {});
     } catch (_) {}
 
     // Theme celebration
@@ -7122,6 +7255,7 @@ function _compQuizSelectAnswer(ans, q, allAnswers, grid, isCorrect) {
 
   } else {
     // Wrong — shake, mark, keep grid interactive, show explanation
+    _cqWrongAttempts++;
     Array.from(grid.children).forEach(c => {
       if (c.dataset.state === 'wrong') {
         c.dataset.state = ''; c.style.background = '#20293a';
@@ -7140,6 +7274,10 @@ function _compQuizSelectAnswer(ans, q, allAnswers, grid, isCorrect) {
       setTimeout(() => wrongCard.style.transform = 'translateX(0)', 100);
     }
     if (window.playWrongSound) window.playWrongSound();
+    // Hint after X wrong attempts
+    if (quizSettings.hintThreshold > 0 && quizSettings.hintThreshold < 11 && _cqWrongAttempts >= quizSettings.hintThreshold) {
+      showQuizHint(q);
+    }
 
     // Explanation panel
     const oldPanel = document.getElementById('comp-explanation-panel');
@@ -8101,7 +8239,7 @@ function triggerTRCelebration() {
   try {
     const fxFile = Math.random() < 0.5 ? 'assets/turningred/FX1.mp3' : 'assets/turningred/FX2.mp3';
     const snd = new Audio(fxFile);
-    snd.volume = 0.8;
+    snd.volume = 0.8 * _getSfxVolume();
     snd.play().catch(err => console.error('Turning Red FX sound failed:', err));
   } catch (_) { }
 
@@ -8389,7 +8527,7 @@ function triggerZooCelebration() {
   try {
     const fxFile = _ZOO_FX_SOUNDS[Math.floor(Math.random() * _ZOO_FX_SOUNDS.length)];
     const snd = new Audio(fxFile);
-    snd.volume = 0.8;
+    snd.volume = 0.8 * _getSfxVolume();
     snd.play().catch(err => console.error('Zootopia FX sound failed:', err));
   } catch (_) { }
 
@@ -8795,68 +8933,160 @@ window.deleteUserProfile = async (uid) => {
 
 
 
+// ── Shared report-row builder (used by both admin + user tables) ─────────
+function _buildReportRow(d, data, rowIdx, isAdmin) {
+  const docId   = d.id;
+  const qs      = _normArrLocal(data.questions);
+  const _ns     = (q) => _normArrLocal(q.userSelections);
+  const correct = qs.filter(q => { const s = _ns(q); return s.length > 0 && s[s.length-1].state === 'correct'; }).length;
+  const total   = qs.length;
+  const durSec  = Math.round((data.durationMs || 0) / 1000);
+  const durStr  = durSec >= 60 ? `${Math.floor(durSec/60)}m ${durSec%60}s` : `${durSec}s`;
+  const dateStr = new Date(data.startedAt).toLocaleString();
+  const dateShort = new Date(data.startedAt).toLocaleDateString(undefined, { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+
+  // Session type
+  const ct   = data.quizSettings?.contentTypes || [];
+  const sType = data.sessionType || (ct.includes('image') ? 'image-quiz' : 'text-quiz');
+  const hasImages = sType === 'image-quiz';
+  const typeLabel = sType === 'comprehension' ? '🎬 Comp' : hasImages ? '🖼 Image' : '📝 Text';
+  const typeColor = sType === 'comprehension' ? '#0d9488' : hasImages ? '#a78bfa' : '#60a5fa';
+  const typeBg    = sType === 'comprehension' ? 'rgba(13,148,136,0.12)' : hasImages ? 'rgba(167,139,250,0.12)' : 'rgba(96,165,250,0.12)';
+
+  // Subject
+  const subjs = [].concat(data.quizSettings?.subjects || []);
+  if (data.quizSettings?.customSubject) subjs.push(`"${data.quizSettings.customSubject}"`);
+  const subjStr = subjs.join(', ') || '—';
+  const level  = data.quizSettings?.eduLevel || '—';
+
+  // Review & quality (only meaningful for image sessions)
+  const reviewed = data.reviewCompletedAt
+    ? `<span style="color:#34d399;font-size:0.68rem;">✓ ${new Date(data.reviewCompletedAt).toLocaleDateString()}</span>`
+    : `<span style="color:#334155;font-size:0.68rem;">—</span>`;
+  const qualityHtml = hasImages ? _imgQualityBadge(data) : `<span style="color:#1e293b;font-size:0.65rem;">—</span>`;
+
+  // Action buttons
+  const viewFn  = isAdmin ? `openAdminReportModal('${docId}')` : `openUserReportModal('${docId}')`;
+  const viewCls = isAdmin ? 'bg-violet-600/20 hover:bg-violet-600/40 text-violet-300' : 'bg-amber-600/20 hover:bg-amber-600/40 text-amber-300';
+  const delBtn  = `<button onclick="deleteQuizReport('${docId}',${isAdmin})" style="margin-left:5px;padding:3px 9px;border:1px solid rgba(248,113,113,0.3);border-radius:6px;background:rgba(248,113,113,0.07);color:#f87171;font-size:0.67rem;cursor:pointer;">🗑</button>`;
+
+  const tr = document.createElement('tr');
+  tr.id = `report-row-${docId}`;
+  // data attrs for sort
+  tr.dataset.date    = data.startedAt || '';
+  tr.dataset.dur     = durSec;
+  tr.dataset.score   = total > 0 ? (correct / total) : 0;
+  tr.dataset.type    = sType;
+  tr.dataset.subj    = subjStr;
+  tr.dataset.level   = level;
+  tr.dataset.search  = [dateStr, sType, subjStr, level, data.userId||''].join(' ').toLowerCase();
+
+  tr.innerHTML = `
+    <td style="font-size:0.68rem;color:#475569;font-weight:600;text-align:center;">${rowIdx}</td>
+    <td><div style="font-size:0.72rem;color:#cbd5e1;white-space:nowrap;">${dateShort}</div></td>
+    ${isAdmin ? `<td><div style="font-size:0.65rem;color:#475569;font-family:monospace;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${data.userId||''}"> ${(data.userId||'').slice(0,16)}</div></td>` : ''}
+    <td><span style="font-size:0.68rem;font-weight:700;padding:2px 8px;border-radius:5px;background:${typeBg};color:${typeColor};white-space:nowrap;">${typeLabel}</span></td>
+    <td><div style="font-size:0.75rem;color:#fbbf24;font-weight:700;">${correct}/${total}</div></td>
+    <td><div style="font-size:0.72rem;color:#94a3b8;">${durStr}</div></td>
+    <td><div style="font-size:0.65rem;color:#64748b;font-weight:700;">${level}</div></td>
+    <td><div style="font-size:0.68rem;color:#94a3b8;background:rgba(255,255,255,0.04);padding:2px 7px;border-radius:4px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${subjStr}">${subjStr}</div></td>
+    <td id="reviewed-cell-${docId}">${hasImages ? reviewed : '<span style="color:#1e293b;font-size:0.65rem;">—</span>'}</td>
+    <td id="quality-cell-${docId}">${qualityHtml}</td>
+    <td style="white-space:nowrap;">
+      <button onclick="${viewFn}" class="px-2 py-1 ${viewCls} rounded text-xs transition-colors">View</button>
+      ${delBtn}
+    </td>`;
+  return tr;
+}
+
+// ── Sort + filter engine ──────────────────────────────────────────────────
+function _initReportTableSort(tableId, tbodyId) {
+  const table = document.getElementById(tableId);
+  if (!table) return;
+  // Inject search bar above table if not present
+  const wrap = table.closest('.admin-table-wrap') || table.parentElement;
+  if (wrap && !wrap.querySelector('.rpt-search-bar')) {
+    const bar = document.createElement('div');
+    bar.className = 'rpt-search-bar';
+    bar.style.cssText = 'display:flex;align-items:center;gap:10px;margin-bottom:10px;';
+    bar.innerHTML = `<input id="rpt-search-${tbodyId}" type="text" placeholder="🔍  Filter by date, type, subject, level…" style="flex:1;padding:7px 12px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#e2e8f0;font-size:0.78rem;outline:none;"`+
+      ` oninput="_filterReportTable('${tbodyId}', this.value)">` +
+      `<select id="rpt-type-${tbodyId}" onchange="_filterReportTable('${tbodyId}', document.getElementById('rpt-search-${tbodyId}').value)" style="padding:7px 10px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#94a3b8;font-size:0.72rem;outline:none;">` +
+      `<option value="">All types</option><option value="text-quiz">📝 Text Quiz</option><option value="image-quiz">🖼 Image Quiz</option><option value="comprehension">🎬 Comprehension</option></select>`;
+    wrap.insertBefore(bar, table);
+  }
+  // Attach sort to each th
+  table.querySelectorAll('thead th[data-col]').forEach(th => {
+    th.style.cursor = 'pointer';
+    th.style.userSelect = 'none';
+    th.addEventListener('click', () => {
+      const col = th.dataset.col;
+      const asc = th.dataset.sortDir !== 'asc';
+      // Reset all headers
+      table.querySelectorAll('thead th').forEach(h => { h.dataset.sortDir = ''; h.style.color = ''; });
+      th.dataset.sortDir = asc ? 'asc' : 'desc';
+      th.style.color = '#f1f5f9';
+      _sortReportTable(tbodyId, col, asc);
+    });
+  });
+}
+
+window._filterReportTable = (tbodyId, text) => {
+  const tbody = document.getElementById(tbodyId);
+  if (!tbody) return;
+  const typeSelect = document.getElementById('rpt-type-' + tbodyId);
+  const typeVal = typeSelect?.value || '';
+  const q = (text || '').toLowerCase();
+  Array.from(tbody.rows).forEach(tr => {
+    const matchText = !q || (tr.dataset.search || '').includes(q);
+    const matchType = !typeVal || (tr.dataset.type || '') === typeVal;
+    tr.style.display = (matchText && matchType) ? '' : 'none';
+  });
+};
+
+window._sortReportTable = (tbodyId, col, asc) => {
+  const tbody = document.getElementById(tbodyId);
+  if (!tbody) return;
+  const rows = Array.from(tbody.rows);
+  rows.sort((a, b) => {
+    let va = a.dataset[col] || '', vb = b.dataset[col] || '';
+    const na = parseFloat(va), nb = parseFloat(vb);
+    const diff = isNaN(na) || isNaN(nb) ? va.localeCompare(vb) : na - nb;
+    return asc ? diff : -diff;
+  });
+  rows.forEach(r => tbody.appendChild(r));
+};
+
 window.renderAdminReportsPanel = async () => {
   if (!isAdmin || !user) return;
   const loadingEl = document.getElementById('admin-reports-loading');
-  const tableEl = document.getElementById('admin-reports-table');
-  const emptyEl = document.getElementById('admin-reports-empty');
-  const tbody = document.getElementById('admin-reports-tbody');
+  const tableEl   = document.getElementById('admin-reports-table');
+  const emptyEl   = document.getElementById('admin-reports-empty');
+  const tbody     = document.getElementById('admin-reports-tbody');
 
   if (loadingEl) loadingEl.style.display = '';
-  if (tableEl) tableEl.style.display = 'none';
-  if (emptyEl) emptyEl.classList.add('hidden');
+  if (tableEl)   tableEl.style.display = 'none';
+  if (emptyEl)   emptyEl.classList.add('hidden');
 
   try {
     const { collection, getDocs, query, orderBy, limit } = await import('https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore.js');
-    const q = query(collection(db, 'quiz_reports'), orderBy('endedAt', 'desc'), limit(50));
+    const q = query(collection(db, 'quiz_reports'), orderBy('startedAt', 'desc'), limit(200));
     const snap = await getDocs(q);
-    
+
     if (loadingEl) loadingEl.style.display = 'none';
-    if (snap.empty) {
-      if (emptyEl) emptyEl.classList.remove('hidden');
-      return;
-    }
+    if (snap.empty) { if (emptyEl) emptyEl.classList.remove('hidden'); return; }
     if (tableEl) tableEl.style.display = '';
-    
+
     tbody.innerHTML = '';
     window._adminReportsCache = {};
-    
+    let rowIdx = 0;
     snap.forEach(d => {
-      const data = d.data();
+      const data = _normalizeReportData(d.data());
       window._adminReportsCache[d.id] = data;
-      
-      const tr = document.createElement('tr');
-      const dateStr = new Date(data.startedAt).toLocaleString();
-      const durSec = Math.round((data.durationMs || 0) / 1000);
-      const score = data.questions ? data.questions.filter(q => q.userSelections && q.userSelections.length > 0 && q.userSelections[q.userSelections.length - 1].state === 'correct').length : 0;
-      const total = data.questions ? data.questions.length : 0;
-      const ct2 = data.quizSettings?.contentTypes || [];
-      const med2 = ct2.includes('image') && ct2.includes('text') ? 'Text + Image'
-               : ct2.includes('image') ? 'Image only'
-               : ct2.includes('text') ? 'Text only' : '—';
-      const subjs2 = [].concat(data.quizSettings?.subjects || []);
-      if (data.quizSettings?.customSubject) subjs2.push(`"${data.quizSettings.customSubject}"`);
-      const rev2   = data.reviewCompletedAt
-        ? `<span style="color:#34d399;font-size:0.72rem;">✓ ${new Date(data.reviewCompletedAt).toLocaleDateString()}</span>`
-        : `<span style="color:#475569;font-size:0.72rem;">—</span>`;
-
-      tr.id = `report-row-${d.id}`;
-      tr.innerHTML = `
-        <td><div class="text-sm text-slate-300">${dateStr}</div></td>
-        <td><div class="text-xs text-slate-500 font-mono">${data.userId}</div></td>
-        <td><div class="text-sm text-slate-400">${durSec}s</div></td>
-        <td><div class="text-sm text-violet-400 font-bold" title="Questions answered correctly / total recorded">${score}/${total}</div></td>
-        <td><div class="text-xs text-slate-400 bg-slate-800 px-2 py-1 rounded inline-block">${subjs2.join(', ')}</div></td>
-        <td><div style="font-size:0.72rem;color:#64748b;">${med2}</div></td>
-        <td id="reviewed-cell-${d.id}">${rev2}</td>
-        <td id="quality-cell-${d.id}">${_imgQualityBadge(data)}</td>
-        <td style="white-space:nowrap;">
-          <button onclick="openAdminReportModal('${d.id}')" class="px-3 py-1 bg-violet-600/20 hover:bg-violet-600/40 text-violet-300 rounded text-xs transition-colors">View Details</button>
-          <button onclick="deleteQuizReport('${d.id}', true)" style="margin-left:6px;padding:3px 10px;border:1px solid rgba(248,113,113,0.3);border-radius:6px;background:rgba(248,113,113,0.08);color:#f87171;font-size:0.7rem;cursor:pointer;" title="Delete this report">🗑 Delete</button>
-        </td>
-      `;
-      tbody.appendChild(tr);
+      rowIdx++;
+      tbody.appendChild(_buildReportRow(d, data, rowIdx, true));
     });
+    _initReportTableSort('admin-reports-table', 'admin-reports-tbody');
   } catch (err) {
     console.error('[renderAdminReportsPanel]', err);
     if (loadingEl) loadingEl.style.display = 'none';
@@ -9119,8 +9349,10 @@ window.setQuestionImageAccuracy = async (docId, qIdx, value) => {
       if (qcell) qcell.innerHTML = _imgQualityBadge(cache[docId]);
     }
 
-    // Persist to quiz_reports
-    const updates = { [`questions.${qIdx}.questionImageAccuracy`]: value };
+    // Persist to quiz_reports — write the full array to avoid Firestore
+    // converting it to a map (which destroys all question text/answers data)
+    const updates = { [`imageRatings.qImg${qIdx}`]: value };
+    if (cache?.[docId]?.questions) updates.questions = cache[docId].questions;
     if (cache?.[docId]?.reviewCompletedAt) updates.reviewCompletedAt = cache[docId].reviewCompletedAt;
     await updateDoc(doc(db, 'quiz_reports', docId), updates);
 
@@ -9148,6 +9380,58 @@ window.setQuestionImageAccuracy = async (docId, qIdx, value) => {
 
 // shared helper (module-level) for local array normalization
 function _normArrLocal(v) { return Array.isArray(v) ? v : (v && typeof v === 'object' ? Object.values(v) : []); }
+
+// Normalize a raw Firestore report document so that:
+//  1. questions is always a JS Array (not a Map from a past bad write)
+//  2. userSelections inside each question is always an Array
+//  3. answers inside each question is always an Array
+//  4. flat imageRatings (qImg0, q0_a1 …) are merged back into accuracy fields
+// Returns the SAME object, mutated in place for cache consistency.
+function _normalizeReportData(data) {
+  if (!data) return data;
+  // 1. Ensure questions is an Array
+  if (data.questions && !Array.isArray(data.questions)) {
+    data.questions = Object.values(data.questions);
+  }
+  const qs = data.questions || [];
+  qs.forEach(q => {
+    if (!q) return;
+    // 2. Normalize userSelections
+    if (q.userSelections && !Array.isArray(q.userSelections)) {
+      q.userSelections = Object.values(q.userSelections);
+    }
+    // 3. Normalize answers
+    if (q.answers && !Array.isArray(q.answers)) {
+      q.answers = Object.values(q.answers);
+    }
+  });
+  // 4. Hydrate flat imageRatings back into question/answer accuracy fields
+  if (data.imageRatings && typeof data.imageRatings === 'object') {
+    const ir = data.imageRatings;
+    Object.keys(ir).forEach(key => {
+      const qImgMatch = key.match(/^qImg(\d+)$/);
+      const ansMatch  = key.match(/^q(\d+)_a(\d+)$/);
+      if (qImgMatch) {
+        const qi = parseInt(qImgMatch[1], 10);
+        if (qs[qi] && (qs[qi].questionImageAccuracy === undefined || qs[qi].questionImageAccuracy === null)) {
+          qs[qi].questionImageAccuracy = ir[key];
+        }
+      } else if (ansMatch) {
+        const qi = parseInt(ansMatch[1], 10);
+        const ai = parseInt(ansMatch[2], 10);
+        if (qs[qi]) {
+          const ans = _normArrLocal(qs[qi].answers);
+          if (ans[ai] && (ans[ai].accuracy === undefined || ans[ai].accuracy === null)) {
+            ans[ai].accuracy = ir[key];
+          }
+          qs[qi].answers = ans;
+        }
+      }
+    });
+  }
+  data.questions = qs;
+  return data;
+}
 
 // Update rating button styles in-place (avoids reopening modal)
 function _updateRatingBtns(prefix, selected) {
@@ -9300,9 +9584,11 @@ window.setReportAccuracy = async (docId, qIdx, aIdx, value) => {
       if (qcell) qcell.innerHTML = _imgQualityBadge(cache[docId]);
     }
 
-    // ── 2. Persist to quiz_reports
+    // ── 2. Persist to quiz_reports — write the full array to avoid Firestore
+    // converting it to a map (which destroys all question text/answers data)
     const docRef = doc(db, 'quiz_reports', docId);
-    const updates = { [`questions.${qIdx}.answers.${aIdx}.accuracy`]: value };
+    const updates = { [`imageRatings.q${qIdx}_a${aIdx}`]: value };
+    if (cache?.[docId]?.questions) updates.questions = cache[docId].questions;
     if (cache?.[docId]?.reviewCompletedAt) updates.reviewCompletedAt = cache[docId].reviewCompletedAt;
     await updateDoc(docRef, updates);
 
@@ -9503,7 +9789,7 @@ window.renderUserReports = async () => {
 
   try {
     const { collection, getDocs, query, where, orderBy, limit } = await import('https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore.js');
-    const q = query(collection(db, 'quiz_reports'), where('userId', '==', user.uid), orderBy('startedAt', 'desc'), limit(20));
+    const q = query(collection(db, 'quiz_reports'), where('userId', '==', user.uid), orderBy('startedAt', 'desc'), limit(100));
     const snap = await getDocs(q);
 
     if (loadingEl) loadingEl.style.display = 'none';
@@ -9513,55 +9799,19 @@ window.renderUserReports = async () => {
     tbody.innerHTML = '';
     window._userReportsCache = {};
 
-    // Convert to array so we can assign chronological index (oldest = #1)
     const repDocs = [];
     snap.forEach(d => repDocs.push(d));
     const repCount = repDocs.length;
 
     repDocs.forEach((d, i) => {
-      const idx = repCount - i; // oldest = 1, newest = repCount
-      const data = d.data();
-
+      const data = _normalizeReportData(d.data());
       window._userReportsCache[d.id] = data;
-
-      const tr       = document.createElement('tr');
-      tr.id = `report-row-${d.id}`;
-      const dateStr  = new Date(data.startedAt).toLocaleString();
-      const durSec   = Math.round((data.durationMs || 0) / 1000);
-      const qs     = Array.isArray(data.questions) ? data.questions : (data.questions && typeof data.questions === 'object' ? Object.values(data.questions) : []);
-      // Normalize userSelections inside each question (may be stored as Firestore map)
-      const _normSels = (q) => Array.isArray(q.userSelections) ? q.userSelections : (q.userSelections && typeof q.userSelections === 'object' ? Object.values(q.userSelections) : []);
-      const score    = qs.filter(q => { const s = _normSels(q); return s.length > 0 && s[s.length - 1].state === 'correct'; }).length;
-      const total    = qs.length;
-      const subjs    = [].concat(data.quizSettings?.subjects || []);
-      if (data.quizSettings?.customSubject) subjs.push(`"${data.quizSettings.customSubject}"`);
-      const subjStr  = subjs.join(', ') || '—';
-      const ct       = data.quizSettings?.contentTypes || [];
-      const medStr   = ct.includes('image') && ct.includes('text') ? 'Text + Image'
-                     : ct.includes('image') ? 'Image only'
-                     : ct.includes('text') ? 'Text only' : '—';
-      const reviewed = data.reviewCompletedAt
-        ? `<span style="color:#34d399;font-size:0.72rem;">✓ ${new Date(data.reviewCompletedAt).toLocaleDateString()}</span>`
-        : `<span style="color:#334155;font-size:0.72rem;">—</span>`;
-
-      tr.innerHTML = `
-        <td><div style="font-size:0.72rem;color:#475569;font-weight:600;text-align:center;">${idx}</div></td>
-        <td><div style="font-size:0.82rem;color:#cbd5e1;">${dateStr}</div></td>
-        <td><div style="font-size:0.82rem;color:#94a3b8;">${durSec}s</div></td>
-        <td><div style="font-size:0.82rem;color:#fbbf24;font-weight:700;">${score}/${total}</div></td>
-        <td><div style="font-size:0.72rem;color:#94a3b8;background:rgba(255,255,255,0.05);padding:2px 8px;border-radius:4px;display:inline-block;">${subjStr}</div></td>
-        <td><div style="font-size:0.72rem;color:#64748b;">${medStr}</div></td>
-        <td id="reviewed-cell-${d.id}">${reviewed}</td>
-        <td id="quality-cell-${d.id}">${_imgQualityBadge(data)}</td>
-        <td style="white-space:nowrap;">
-          <button onclick="openUserReportModal('${d.id}')" class="px-3 py-1 bg-amber-600/20 hover:bg-amber-600/40 text-amber-300 rounded text-xs transition-colors">View Details</button>
-          <button onclick="deleteQuizReport('${d.id}', false)" style="margin-left:6px;padding:3px 10px;border:1px solid rgba(248,113,113,0.3);border-radius:6px;background:rgba(248,113,113,0.08);color:#f87171;font-size:0.7rem;cursor:pointer;transition:all 0.15s;" title="Delete this report and all its ratings">🗑 Delete</button>
-        </td>
-      `;
-      tbody.appendChild(tr);
+      const rowIdx = repCount - i; // oldest = 1, newest = repCount
+      tbody.appendChild(_buildReportRow(d, data, rowIdx, false));
     });
 
-    // Render image quality trend chart from the loaded session data
+    _initReportTableSort('user-reports-table', 'user-reports-tbody');
+    // Render image quality trend chart
     window.renderUserImageQualityChart(window._userReportsCache);
 
   } catch (err) {
@@ -9586,7 +9836,7 @@ window.openUserReportModal = async (docId) => {
     const { doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore.js');
     const snap = await getDoc(doc(db, 'quiz_reports', docId));
     if (snap.exists()) {
-      const fresh = snap.data();
+      const fresh = _normalizeReportData(snap.data());
       if (!window._userReportsCache) window._userReportsCache = {};
       window._userReportsCache[docId] = fresh;
       _renderReportModal(fresh, docId, false);

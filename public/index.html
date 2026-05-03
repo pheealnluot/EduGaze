@@ -7,7 +7,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="css/base.css">
   <link rel="stylesheet" href="css/peppa-game.css">
-  <link rel="stylesheet" href="css/quiz.css">
+  <link rel="stylesheet" href="css/quiz.css?v=2">
   <link rel="stylesheet" href="css/ben-holly.css">
   <link rel="stylesheet" href="css/kung-fu-panda.css">
   <link rel="stylesheet" href="css/totoro.css">
@@ -247,23 +247,24 @@
       </div>
 
       <div id="admin-view-reports" class="hidden">
-        <div class="admin-table-wrap">
+        <div class="admin-table-wrap" style="max-height:65vh;overflow-y:auto;">
           <div id="admin-reports-loading" class="admin-empty">
             <div class="admin-spinner mx-auto mb-3"></div>
             Loading quiz reports...
           </div>
           <table class="admin-table" id="admin-reports-table" style="display:none">
-            <thead>
+            <thead style="position:sticky;top:0;z-index:2;background:#0f172a;">
               <tr>
-                <th style="width:36px;text-align:center;">#</th>
-                <th>Date</th>
-                <th>User ID</th>
-                <th>Duration</th>
-                <th title="Questions answered correctly / total questions recorded in this session">Correct</th>
-                <th>Subject</th>
-                <th>Medium</th>
+                <th style="width:32px;text-align:center;">#</th>
+                <th data-col="date" title="Sort by date">Date &#x21C5;</th>
+                <th data-col="user" title="Sort by user">User &#x21C5;</th>
+                <th data-col="type" title="Sort by type">Type &#x21C5;</th>
+                <th data-col="score" title="Sort by score">Correct &#x21C5;</th>
+                <th data-col="dur" title="Sort by duration">Duration &#x21C5;</th>
+                <th data-col="level" title="Sort by level">Level &#x21C5;</th>
+                <th data-col="subj" title="Sort by subject">Subject &#x21C5;</th>
                 <th>Reviewed</th>
-                <th title="% of 👍 good ratings out of all rated images">Img Quality</th>
+                <th title="% of &#x1F44D; good ratings">Img Quality</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -340,22 +341,23 @@
         </div>
       </div>
 
-      <div class="admin-table-wrap w-full">
+      <div class="admin-table-wrap w-full" style="max-height:65vh;overflow-y:auto;">
         <div id="user-reports-loading" class="admin-empty">
           <div class="admin-spinner mx-auto mb-3"></div>
           Loading your reports...
         </div>
         <table class="admin-table" id="user-reports-table" style="display:none">
-          <thead>
+          <thead style="position:sticky;top:0;z-index:2;background:#0f172a;">
             <tr>
-              <th style="width:36px;text-align:center;">#</th>
-              <th>Date</th>
-              <th>Duration</th>
-              <th title="Questions answered correctly / total questions recorded in this session">Correct</th>
-              <th>Subject</th>
-              <th>Medium</th>
+              <th style="width:32px;text-align:center;">#</th>
+              <th data-col="date" title="Sort by date">Date &#x21C5;</th>
+              <th data-col="type" title="Sort by type">Type &#x21C5;</th>
+              <th data-col="score" title="Sort by score">Correct &#x21C5;</th>
+              <th data-col="dur" title="Sort by duration">Duration &#x21C5;</th>
+              <th data-col="level" title="Sort by level">Level &#x21C5;</th>
+              <th data-col="subj" title="Sort by subject">Subject &#x21C5;</th>
               <th>Reviewed</th>
-              <th title="% of 👍 good ratings out of all rated images">Img Quality</th>
+              <th title="% of &#x1F44D; good ratings">Img Quality</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -495,7 +497,7 @@
 
       <!-- ── Question Stage (reuses quiz board structure) ─────── -->
       <div id="comp-question-stage"
-        style="display:none;flex-direction:column;width:100%;height:100%;position:relative;">
+        style="display:none;position:relative;">
         <!-- Score bar -->
         <div
           style="display:flex;align-items:center;justify-content:space-between;padding:8px 16px;background:rgba(2,6,23,0.7);flex-shrink:0;">
@@ -515,7 +517,16 @@
         </div>
 
         <!-- Answer grid (reuses quiz grid styles) -->
-        <div id="comp-answers-grid" style="flex:1;padding:12px;box-sizing:border-box;min-height:0;overflow:hidden;">
+        <div id="comp-answers-grid">
+        </div>
+
+        <!-- Image quadrant (top-left in quiz-comp-img mode) -->
+        <div id="comp-img-quadrant" style="display:none;overflow:hidden;background:#000;border-radius:12px;">
+          <img id="comp-img-quadrant-img" src="" alt="Quiz image" style="width:100%;height:100%;object-fit:cover;display:block;">
+        </div>
+        <!-- Question quadrant (top-right in quiz-comp-img mode) -->
+        <div id="comp-q-quadrant" style="display:none;align-items:center;justify-content:center;padding:1.5rem;box-sizing:border-box;background:rgba(15,23,42,0.97);overflow:hidden;border-radius:12px;">
+          <div id="comp-q-quadrant-text"></div>
         </div>
 
         <!-- Win overlay -->
@@ -823,16 +834,7 @@
         <!-- Generated by JS -->
       </div>
 
-      <!-- Image-quadrant layout elements (quiz-comp-img mode only) -->
-      <div id="comp-img-quadrant" style="display:none;">
-        <img id="comp-img-quadrant-img" src="" alt="Quiz image">
-      </div>
-      <div id="comp-q-quadrant" style="display:none;">
-        <div id="comp-q-quadrant-text"></div>
-      </div>
-      <!-- comp-answers-grid is already in the Comprehension Adventure section;
-           in quiz-comp-img mode the JS renders into #comp-answers-grid which
-           is moved into view-quiz by JS on startup. -->
+      <!-- Image-quadrant elements are in #comp-question-stage (comprehension view) -->
     </div>
 
     <!-- Quiz Settings Overlay -->
@@ -889,6 +891,20 @@
               </div>
             </div>
             <div id="qs-comp-url-feedback" class="info">Paste a YouTube video URL or a direct image URL.</div>
+            <!-- Time limit row — shown only for YouTube URLs (JS toggles visibility) -->
+            <div id="qs-comp-timelimit-row"
+              style="display:none;align-items:center;gap:10px;margin-top:2px;">
+              <label style="font-size:0.7rem;font-weight:700;color:#94a3b8;white-space:nowrap;flex-shrink:0;">⏱ Stop after</label>
+              <input type="range" id="qs-comp-timelimit-slider" min="0" max="600" step="5" value="0"
+                style="flex:1;height:4px;accent-color:#f59e0b;"
+                oninput="window._qsTimeLimitSync(this.value)">
+              <span id="qs-comp-timelimit-display"
+                style="font-size:0.75rem;font-weight:900;color:#f59e0b;width:90px;text-align:right;flex-shrink:0;">No limit</span>
+            </div>
+            <p id="qs-comp-timelimit-hint"
+              style="display:none;font-size:0.65rem;color:#475569;margin:0;">
+              Stops the video at this point. The AI will only ask about content up to this time. (0 = no limit)
+            </p>
           </div>
 
           <!-- ── Quiz-only sections (hidden in Comprehension mode) ── -->
@@ -1023,10 +1039,10 @@
             <p class="text-[10px] text-slate-500">Quiz ends automatically after this many correct answers.</p>
           </div>
 
-          <!-- Music On/Off + Volume -->
+          <!-- Sound & Effects On/Off + Volume -->
           <div class="border-t border-slate-800 pt-5 space-y-3">
             <div class="flex items-center justify-between">
-              <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">Music</label>
+              <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">🔊 Sound &amp; Effects</label>
               <button id="quiz-music-toggle" onclick="window.toggleQuizMusic()"
                 class="relative w-14 h-7 rounded-full transition-all duration-300 bg-slate-700">
                 <div id="quiz-music-thumb"
@@ -1038,9 +1054,9 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                   d="M15.536 8.464a5 5 0 010 7.072M12 6v12m0 0l-3-3m3 3l3-3M9.172 14.828A4 4 0 116 12" />
               </svg>
-              <input type="range" id="quiz-volume-slider" min="0" max="100" step="5" value="20"
+              <input type="range" id="quiz-volume-slider" min="0" max="100" step="5" value="100"
                 class="flex-1 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-violet-500">
-              <span id="quiz-volume-display" class="text-violet-400 font-black text-sm w-8 text-right">20%</span>
+              <span id="quiz-volume-display" class="text-violet-400 font-black text-sm w-8 text-right">100%</span>
             </div>
           </div>
 
@@ -1808,6 +1824,17 @@
             <span id="comp-sounds-len-display"
               style="font-size:0.85rem;font-weight:900;color:#0d9488;width:36px;text-align:right;">90s</span>
           </div>
+          <!-- Image display duration (shown when Image medium selected) -->
+          <div id="comp-len-image" style="display:none;align-items:center;gap:10px;">
+            <span style="font-size:0.75rem;color:#94a3b8;width:100px;flex-shrink:0;">🖼️ Show image</span>
+            <input type="number" id="comp-imagedur-input" min="0" max="60" step="1" value="5"
+              style="width:52px;background:rgba(15,23,42,0.8);border:1px solid rgba(13,148,136,0.35);border-radius:8px;
+                     color:#f1f5f9;font-size:0.85rem;font-weight:700;padding:4px 6px;text-align:center;font-family:monospace;">
+            <input type="range" id="comp-imagedur-slider" min="0" max="60" step="1" value="5"
+              style="flex:1;height:4px;accent-color:#0d9488;">
+            <span id="comp-imagedur-display"
+              style="font-size:0.85rem;font-weight:900;color:#0d9488;width:36px;text-align:right;">5s</span>
+          </div>
         </div>
 
         <!-- Number of questions -->
@@ -1824,9 +1851,10 @@
 
         <!-- Shared Quiz Settings -->
         <div style="padding-bottom:4px;">
-          <p
-            style="font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:14px;">
-            — Shared Quiz Settings —</p>
+          <p style="font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:6px;">
+            — Q&A Style from Quiz Settings —</p>
+          <p style="font-size:0.68rem;color:#475569;margin-bottom:14px;line-height:1.5;">
+            Font size, theme, character pop-ins, dwell time, voice over, hints, and answer/question read times are all inherited from the <strong style="color:#64748b;">Quiz Settings</strong> panel. Adjust them there.</p>
 
           <div style="margin-bottom:16px;">
             <label
@@ -1909,8 +1937,8 @@
   </div>
   <!-- ══ END Comprehension Settings Overlay ══ -->
 
-  <script type="module" src="js/app.js?v=15"></script>
-  <script defer src="js/comprehension.js?v=3"></script>
+  <script type="module" src="js/app.js?v=18"></script>
+  <script defer src="js/comprehension.js?v=7"></script>
 </body>
 
 </html>

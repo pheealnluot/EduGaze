@@ -1,4 +1,4 @@
-/* quiz.css — Quiz mode styles: settings, board, themes, answer grid */
+/* quiz.css â€” Quiz mode styles: settings, board, themes, answer grid */
 
 /* Shimmer animation for loading image placeholders */
 @keyframes shimmer {
@@ -80,7 +80,7 @@
   color: #e2e8f0;
 }
 
-/* Education level buttons — compact pill grid */
+/* Education level buttons â€” compact pill grid */
 .edu-level-btn {
   display: flex;
   align-items: center;
@@ -169,12 +169,12 @@
   color: #e2e8f0;
 }
 
-/* Theme-specific card styles — DISABLED for answer boxes per user request.
+/* Theme-specific card styles â€” DISABLED for answer boxes per user request.
        All themes now use the same dark slate boxes with white text.
        Theme classes are still added to cards for potential future use
        (e.g., decorations, emojis) but no background/color overrides. */
 
-/* ── Kung Fu Panda celebration toast ──────────────────────────────────── */
+/* â”€â”€ Kung Fu Panda celebration toast â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 @keyframes kfpPopIn {
   0% {
     opacity: 0;
@@ -259,7 +259,7 @@
   animation: kfpPopOut 0.35s ease-in forwards !important;
 }
 
-/* Ben & Holly celebration toast — characters placed by JS */
+/* Ben & Holly celebration toast â€” characters placed by JS */
 @keyframes bhPopIn {
   0% {
     opacity: 0;
@@ -349,10 +349,10 @@
   display: none;
 }
 
-/* ── Quiz viewport-fill layout ──────────────────────────────────────────
+/* â”€â”€ Quiz viewport-fill layout â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
      Applied to <body> when entering quiz mode so everything sits in one
      screen with no scrolling needed.
-  ─────────────────────────────────────────────────────────────────────── */
+  â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 body.quiz-active {
   height: 100dvh;
   padding: 0.25rem !important;
@@ -366,7 +366,7 @@ body.quiz-active header {
   margin-bottom: 0.25rem;
 }
 
-/* ── Image-sidebar mode: header moves to a narrow left strip ───────────── */
+/* â”€â”€ Image-sidebar mode: header moves to a narrow left strip â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 body.quiz-img-sidebar {
   flex-direction: row !important;
   padding: 0 !important;
@@ -473,7 +473,7 @@ body.quiz-active nav#category-tabs {
   display: none !important;
 }
 
-/* main fills remaining height after header — must be a flex column so children use flex:1 */
+/* main fills remaining height after header â€” must be a flex column so children use flex:1 */
 body.quiz-active main {
   display: flex !important;
   flex-direction: column !important;
@@ -530,12 +530,12 @@ body.quiz-active .quiz-question-img-wrap img {
   width: 100%;
   height: 100%;
   object-fit: contain;
-  /* scale to fit — no cropping */
+  /* scale to fit â€” no cropping */
   border-radius: 10px;
   display: block;
 }
 
-/* Answer card images: capped at 25vh — !important overrides flex grow */
+/* Answer card images: capped at 25vh â€” !important overrides flex grow */
 body.quiz-active #quiz-answers-grid>div .quiz-answer-img {
   flex: 0 0 auto;
   min-height: 0;
@@ -559,7 +559,7 @@ body.quiz-active #quiz-answers-grid {
   width: 100%;
   max-width: none;
   flex: 1 1 0 !important;
-  /* grow to fill remaining height — !important overrides any JS inline height */
+  /* grow to fill remaining height â€” !important overrides any JS inline height */
   min-height: 0;
   /* allow shrinking below content size */
   display: grid;
@@ -681,7 +681,7 @@ body.quiz-active #quiz-display-question span {
   text-decoration: none !important;
 }
 
-/* Highlighted word in question — same specificity fix */
+/* Highlighted word in question â€” same specificity fix */
 body.quiz-active #quiz-display-question span.quiz-word-highlight {
   text-decoration: underline !important;
   text-decoration-color: #06b6d4 !important;
@@ -689,7 +689,7 @@ body.quiz-active #quiz-display-question span.quiz-word-highlight {
   text-underline-offset: 4px !important;
 }
 
-/* ── Education Mode Space Maximization ─────────────────────────────────── */
+/* â”€â”€ Education Mode Space Maximization â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 body.education-active #view-education {
   height: 100%;
   flex: 1;
@@ -940,7 +940,206 @@ body.quiz-active .quiz-score-row {
   transition: all 0.1s ease;
 }
 
-/* ── Comprehension Adventure ─────────────────────────────────────────── */
+/* â”€â”€ Comprehension Q&A â€” full-screen quiz-parity layout â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+   These rules apply directly to the comp-* elements â€” no body class guard
+   needed, since the elements live inside the position:fixed comp view.
+   â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+/* comp-question-stage fills the entire comp view (flex column) */
+#comp-question-stage {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Question section: shrinks to content, max 34% viewport height */
+#comp-question-section {
+  width: 100%;
+  max-width: 100% !important;
+  flex-shrink: 0;
+  flex-grow: 0;
+  max-height: 34vh;
+  overflow: hidden;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 8px 0;
+  box-sizing: border-box;
+  gap: 4px;
+}
+
+/* PROMINENT question text â€” large, bold, centered â€” always */
+#comp-display-question {
+  flex: 1;
+  font-size: clamp(1.4rem, 3.8vw, 3.2rem) !important;
+  font-weight: 800 !important;
+  color: #f1f5f9 !important;
+  text-align: center !important;
+  line-height: 1.2 !important;
+  padding: clamp(6px, 1.5vh, 18px) clamp(8px, 2vw, 28px) !important;
+  overflow-wrap: break-word;
+}
+
+/* Inline spans from prepareHighlightableText */
+#comp-display-question span {
+  display: inline !important;
+  width: auto !important;
+  white-space: normal;
+  text-decoration: none !important;
+}
+#comp-display-question span.quiz-word-highlight {
+  text-decoration: underline !important;
+  text-decoration-color: #06b6d4 !important;
+  text-decoration-thickness: 3px !important;
+  text-underline-offset: 4px !important;
+}
+
+/* Answer grid: fills ALL remaining height after question section */
+#comp-answers-grid {
+  width: 100% !important;
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  grid-template-rows: 1fr 1fr !important;
+  align-content: stretch !important;
+  align-items: stretch !important;
+  gap: 10px !important;
+  padding: 8px 12px 10px !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+}
+
+/* Answer cards fill grid cell â€” same style as quiz mode */
+#comp-answers-grid > div.quiz-answer-card {
+  height: 100% !important;
+  min-height: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 100% !important;
+  padding: 1.4rem !important;
+  box-sizing: border-box !important;
+  text-align: center !important;
+  background: #20293a !important;
+  border: none !important;
+  border-radius: 20px !important;
+  transition: transform 0.2s ease, background 0.2s ease !important;
+  position: relative !important;
+  overflow: hidden !important;
+  cursor: pointer !important;
+  user-select: none !important;
+}
+
+#comp-answers-grid > div.quiz-answer-card:not([data-answered]):hover {
+  background: #364154 !important;
+  transform: scale(1.02) !important;
+}
+
+/* Answer text */
+#comp-answers-grid .quiz-answer-text {
+  display: block !important;
+  width: 100% !important;
+  overflow-wrap: break-word !important;
+  word-wrap: break-word !important;
+  hyphens: auto !important;
+  text-align: center !important;
+  color: #f2f5f9 !important;
+  font-size: clamp(1rem, 3.5vh, 2.5rem) !important;
+  font-weight: 800 !important;
+}
+#comp-answers-grid .quiz-answer-text span {
+  display: inline !important;
+  width: auto !important;
+  white-space: normal !important;
+  text-decoration: none !important;
+}
+#comp-answers-grid .quiz-answer-text span.quiz-word-highlight {
+  text-decoration: underline !important;
+  text-decoration-color: #06b6d4 !important;
+  text-decoration-thickness: 3px !important;
+  text-underline-offset: 4px !important;
+}
+
+/* Font size class overrides */
+#comp-answers-grid .quiz-font-small        { font-size: 0.875rem !important; }
+#comp-answers-grid .quiz-font-medium       { font-size: clamp(1.1rem, 2.8vh, 1.8rem) !important; font-weight: 700 !important; }
+#comp-answers-grid .quiz-font-large        { font-size: clamp(1.5rem, 4.5vh, 2.5rem) !important; font-weight: 800 !important; }
+#comp-answers-grid .quiz-font-extra-large  { font-size: clamp(2rem, 7vh, 3.8rem)     !important; font-weight: 900 !important; }
+
+/* â”€â”€ Image-quadrant layout (body.quiz-comp-img) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+   This class IS reliably added by JS in _renderCompQuestion
+   â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+body.quiz-comp-img #comp-question-stage {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  box-sizing: border-box;
+  overflow: hidden;
+  flex-direction: unset;
+}
+
+/* Hide normal header/question-section in quadrant mode */
+body.quiz-comp-img #comp-question-stage > div:first-child { display: none !important; }
+body.quiz-comp-img #comp-question-section                 { display: none !important; }
+
+/* Image quadrant: top-left */
+body.quiz-comp-img #comp-img-quadrant {
+  display: block !important;
+  grid-column: 1;
+  grid-row: 1;
+  overflow: hidden;
+  background: #000;
+  border-radius: 12px;
+}
+body.quiz-comp-img #comp-img-quadrant img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Question quadrant: top-right */
+body.quiz-comp-img #comp-q-quadrant {
+  display: flex !important;
+  grid-column: 2;
+  grid-row: 1;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  box-sizing: border-box;
+  background: rgba(15,23,42,0.97);
+  overflow: hidden;
+  border-radius: 12px;
+  border-left: 1px solid rgba(255,255,255,0.05);
+}
+#comp-q-quadrant-text {
+  color: #f1f5f9;
+  font-weight: 800;
+  text-align: center;
+  line-height: 1.25;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+/* Answer grid: bottom row */
+body.quiz-comp-img #comp-answers-grid {
+  grid-column: 1 / -1 !important;
+  grid-row: 2 !important;
+  grid-template-rows: 1fr !important;
+  padding: 4px !important;
+  gap: 4px !important;
+}
+
+/* â”€â”€ Comprehension Adventure â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
 .comp-medium-chip {
   display: flex;
   align-items: center;
@@ -1023,7 +1222,7 @@ body.quiz-active .quiz-score-row {
   color: #5eead4;
 }
 
-/* ── Quiz / Comprehension mode toggle (top of settings panel) ─────────── */
+/* â”€â”€ Quiz / Comprehension mode toggle (top of settings panel) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .qs-mode-btn {
   padding: 0.65rem 0.5rem;
   font-size: 0.82rem;
@@ -1075,7 +1274,7 @@ body.quiz-active .quiz-score-row {
 #qs-comp-url-feedback.err  { color: #f87171; }
 #qs-comp-url-feedback.info { color: #94a3b8; }
 
-/* ── Comprehension-from-quiz video-first overlay ─────────────────────── */
+/* â”€â”€ Comprehension-from-quiz video-first overlay â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #comp-quiz-video-overlay {
   position: fixed;
   inset: 0;
@@ -1142,7 +1341,7 @@ body.quiz-active .quiz-score-row {
   line-height: 1.5;
 }
 
-/* ── Image-quadrant quiz layout ─────────────────────────────────────── */
+/* â”€â”€ Image-quadrant quiz layout â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 /* Applied to <body> when quiz runs from an image URL                    */
 body.quiz-comp-img.quiz-active {
   flex-direction: column;
@@ -1183,7 +1382,7 @@ body.quiz-comp-img.quiz-active #view-quiz {
   box-sizing: border-box;
 }
 
-/* Image quadrant — top-left */
+/* Image quadrant â€” top-left */
 #comp-img-quadrant {
   grid-column: 1;
   grid-row: 1;
@@ -1198,7 +1397,7 @@ body.quiz-comp-img.quiz-active #view-quiz {
   display: block;
 }
 
-/* Question quadrant — top-right */
+/* Question quadrant â€” top-right */
 #comp-q-quadrant {
   grid-column: 2;
   grid-row: 1;
@@ -1221,7 +1420,7 @@ body.quiz-comp-img.quiz-active #view-quiz {
   /* JS will dynamically set font-size to fill this box */
 }
 
-/* Answer grid — bottom two cells */
+/* Answer grid â€” bottom two cells */
 body.quiz-comp-img.quiz-active #comp-answers-grid {
   grid-column: 1 / -1;
   grid-row: 2;
@@ -1240,7 +1439,7 @@ body.quiz-comp-img.quiz-active .quiz-question-section { display: none !important
 body.quiz-comp-img.quiz-active #quiz-display-question { display: none !important; }
 body.quiz-comp-img.quiz-active #quiz-answers-grid     { display: none !important; }
 
-/* Score row — absolute top strip in image mode */
+/* Score row â€” absolute top strip in image mode */
 body.quiz-comp-img.quiz-active .quiz-score-row {
   position: absolute;
   top: 6px;

@@ -22,18 +22,14 @@ const _COMP_DEFAULT_SUBJECTS = [
 let _compSettings = {
   mediums: ['video'],
   videoDurationMin: 3,
+  imageDisplaySec: 5,     // seconds to show a sourced/pasted image before Q&A
   passageLength: 'short',
   soundsDurationSec: 90,
   numQuestions: 5,
   subjects: ['Animals'],
   educationLevel: 'P2',
-  dwellTimeMs: 0,
-  voiceOver: false,
-  qReadEnabled: false,
-  qReadTimeMs: 2000,
-  aReadEnabled: false,
-  aReadTimeMs: 2000,
 };
+
 let _compPhase = 'idle';    // 'settings'|'sourcing'|'media'|'questions'|'done'
 let _compMedia = null;      // sourced media object
 let _compQuestions = [];    // array of quiz-format question objects
@@ -151,37 +147,40 @@ function _initCompSettings() {
   }
   if (_$('comp-edu-display')) _$('comp-edu-display').textContent = _compSettings.educationLevel;
 
-  // Dwell
-  if (_$('comp-dwell-input')) _$('comp-dwell-input').value = _compSettings.dwellTimeMs;
-  if (_$('comp-dwell-slider')) _$('comp-dwell-slider').value = _compSettings.dwellTimeMs;
-
-  // Voice over
-  if (_$('comp-vo-enabled')) _$('comp-vo-enabled').checked = _compSettings.voiceOver;
-
-  // qRead
-  if (_$('comp-qread-enabled')) _$('comp-qread-enabled').checked = _compSettings.qReadEnabled;
-  if (_$('comp-qread-input')) _$('comp-qread-input').value = _compSettings.qReadTimeMs;
-  if (_$('comp-qread-slider')) _$('comp-qread-slider').value = _compSettings.qReadTimeMs;
-  _updateCompReadControls('qread', _compSettings.qReadEnabled);
-
-  // aRead
-  if (_$('comp-aread-enabled')) _$('comp-aread-enabled').checked = _compSettings.aReadEnabled;
-  if (_$('comp-aread-input')) _$('comp-aread-input').value = _compSettings.aReadTimeMs;
-  if (_$('comp-aread-slider')) _$('comp-aread-slider').value = _compSettings.aReadTimeMs;
-  _updateCompReadControls('aread', _compSettings.aReadEnabled);
+  // Image display duration
+  if (_$('comp-imagedur-input'))  _$('comp-imagedur-input').value  = _compSettings.imageDisplaySec;
+  if (_$('comp-imagedur-slider')) _$('comp-imagedur-slider').value = _compSettings.imageDisplaySec;
+  const _idurDisp = _$('comp-imagedur-display');
+  if (_idurDisp) _idurDisp.textContent = _compSettings.imageDisplaySec === 0 ? 'Skip' : `${_compSettings.imageDisplaySec}s`;
 
   // Medium chips — mark Video active by default
   document.querySelectorAll('#comp-medium-grid .comp-medium-chip').forEach(chip => {
     const med = chip.dataset.medium;
     chip.classList.toggle('active-medium', _compSettings.mediums.includes(med));
   });
-  // YouTube paste section visibility
+  // YouTube / URL paste section visibility
   _updateYtPasteVisibility();
+  _updateCompLengthRows();
 }
 
 function _updateYtPasteVisibility() {
   const section = _$('comp-yt-paste-section');
-  if (section) section.style.display = _compSettings.mediums.includes('video') ? 'flex' : 'none';
+  // Show paste section for video OR image mediums (both accept URLs)
+  const showPaste = _compSettings.mediums.includes('video') || _compSettings.mediums.includes('image');
+  if (section) section.style.display = showPaste ? 'flex' : 'none';
+}
+
+// ── Image URL parser (detects direct image URLs) ──────────────────────────
+function _parseCompUrl(url) {
+  if (!url || !url.trim()) return null;
+  const s = url.trim();
+  const ytMatch = s.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([A-Za-z0-9_-]{11})/);
+  if (ytMatch) return { type: 'youtube', videoId: ytMatch[1], url: s };
+  if (/\.(jpe?g|png|gif|webp|avif|svg|bmp)(\?.*)?$/i.test(s) ||
+      /^https?:\/\//i.test(s)) {
+    return { type: 'image', url: s };
+  }
+  return null;
 }
 
 // ── YouTube URL parser ────────────────────────────────────────────────────
@@ -191,19 +190,23 @@ function _parseYouTubeId(url) {
   return m ? m[1] : null;
 }
 
-// State: custom video pasted by user
-let _compCustomVideoId = null;
+// State: custom video/image pasted by user
+let _compCustomVideoId    = null;
+let _compCustomImageUrl   = null;  // direct image URL pasted by user
 let _compCustomVideoTitle = null;
 
-window._compClearCustomVideo = function() {
-  _compCustomVideoId = null;
+window._compClearCustomVideo = function(clearInput = true) {
+  _compCustomVideoId  = null;
+  _compCustomImageUrl = null;
   _compCustomVideoTitle = null;
-  const fb = _$('comp-yt-url-feedback');
   const clearBtn = _$('comp-yt-clear-btn');
-  const input = _$('comp-yt-url-input');
-  if (fb) fb.innerHTML = '';
+  const input    = _$('comp-yt-url-input');
   if (clearBtn) clearBtn.style.display = 'none';
-  if (input) { input.style.borderColor = 'rgba(13,148,136,0.3)'; input.value = ''; }
+  if (input) {
+    input.style.borderColor = 'rgba(13,148,136,0.3)';
+    if (clearInput) input.value = '';
+  }
+  _updateYtUrlFeedback('');
 };
 
 function _updateCompReadControls(type, enabled) {
@@ -214,16 +217,37 @@ function _updateCompReadControls(type, enabled) {
   }
 }
 
+// ── URL feedback helper ───────────────────────────────────────────────────
+function _updateYtUrlFeedback(val) {
+  const fb = _$('comp-yt-url-feedback');
+  if (!fb) return;
+  if (!val || !val.trim()) {
+    fb.innerHTML = '<span style="color:#64748b;">Paste a YouTube video URL or a direct image URL</span>';
+    return;
+  }
+  const parsed = _parseCompUrl(val);
+  if (!parsed) {
+    fb.innerHTML = '<span style="color:#f87171;">✗ Not a recognised YouTube or image URL</span>';
+  } else if (parsed.type === 'youtube') {
+    fb.innerHTML = `<span style="color:#34d399;">✓ YouTube video detected (${parsed.videoId})</span>`;
+  } else {
+    fb.innerHTML = '<span style="color:#34d399;">✓ Image URL detected — will show for configured seconds then Q&A</span>';
+  }
+}
+
 function _updateCompLengthRows() {
-  const hasVideo = _compSettings.mediums.includes('video');
-  const hasText = _compSettings.mediums.includes('text');
+  const hasVideo  = _compSettings.mediums.includes('video');
+  const hasText   = _compSettings.mediums.includes('text');
   const hasSounds = _compSettings.mediums.includes('sounds');
-  const videoRow = _$('comp-len-video');
-  const textRow = _$('comp-len-text');
-  const soundsRow = _$('comp-len-sounds');
-  if (videoRow) videoRow.style.display = hasVideo ? 'flex' : 'none';
-  if (textRow) textRow.style.display = hasText ? 'flex' : 'none';
-  if (soundsRow) soundsRow.style.display = hasSounds ? 'flex' : 'none';
+  const hasImage  = _compSettings.mediums.includes('image');
+  const videoRow    = _$('comp-len-video');
+  const textRow     = _$('comp-len-text');
+  const soundsRow   = _$('comp-len-sounds');
+  const imageRow    = _$('comp-len-image');
+  if (videoRow)     videoRow.style.display     = hasVideo  ? 'flex' : 'none';
+  if (textRow)      textRow.style.display      = hasText   ? 'flex' : 'none';
+  if (soundsRow)    soundsRow.style.display    = hasSounds ? 'flex' : 'none';
+  if (imageRow)     imageRow.style.display     = hasImage  ? 'flex' : 'none';
 }
 
 // ── Wire controls ─────────────────────────────────────────────────────────
@@ -249,29 +273,48 @@ function _wireCompControls() {
     };
   });
 
-  // YouTube URL paste input
+  // URL paste input — accepts YouTube AND direct image URLs
   const ytInput = _$('comp-yt-url-input');
-  const ytFeedback = _$('comp-yt-url-feedback');
   const ytClearBtn = _$('comp-yt-clear-btn');
   if (ytInput) {
     ytInput.addEventListener('input', () => {
       const val = ytInput.value.trim();
-      if (!val) { window._compClearCustomVideo(); return; }
-      const id = _parseYouTubeId(val);
-      if (id) {
-        _compCustomVideoId = id;
-        _compCustomVideoTitle = null; // will be shown as URL
+      if (!val) { window._compClearCustomVideo(false); return; }
+      const parsed = _parseCompUrl(val);
+      _updateYtUrlFeedback(val);
+      if (parsed && parsed.type === 'youtube') {
+        _compCustomVideoId = parsed.videoId;
+        _compCustomImageUrl = null;
+        _compCustomVideoTitle = null;
         ytInput.style.borderColor = '#10b981';
-        if (ytFeedback) ytFeedback.innerHTML = `<span style="color:#34d399;">✓ Video ID detected: <code style="background:rgba(16,185,129,0.12);padding:1px 6px;border-radius:4px;">${id}</code> — AI will use this video</span>`;
+        if (ytClearBtn) ytClearBtn.style.display = '';
+      } else if (parsed && parsed.type === 'image') {
+        _compCustomVideoId = null;
+        _compCustomImageUrl = parsed.url;
+        _compCustomVideoTitle = null;
+        ytInput.style.borderColor = '#10b981';
         if (ytClearBtn) ytClearBtn.style.display = '';
       } else {
         _compCustomVideoId = null;
+        _compCustomImageUrl = null;
         ytInput.style.borderColor = '#ef4444';
-        if (ytFeedback) ytFeedback.innerHTML = `<span style="color:#f87171;">✗ Not a recognised YouTube URL — paste the full link</span>`;
         if (ytClearBtn) ytClearBtn.style.display = 'none';
       }
     });
   }
+
+  // Image display duration
+  const idurInput  = _$('comp-imagedur-input');
+  const idurSlider = _$('comp-imagedur-slider');
+  const idurDisp   = _$('comp-imagedur-display');
+  function _syncIdurDisplay(v) {
+    _compSettings.imageDisplaySec = +v;
+    if (idurInput)  idurInput.value  = v;
+    if (idurSlider) idurSlider.value = v;
+    if (idurDisp)   idurDisp.textContent = (+v === 0) ? 'Skip' : `${v}s`;
+  }
+  if (idurInput)  idurInput.addEventListener ('input', () => _syncIdurDisplay(idurInput.value));
+  if (idurSlider) idurSlider.addEventListener('input', () => _syncIdurDisplay(idurSlider.value));
 
   // Video length
   const vSlider = _$('comp-video-len-slider');
@@ -342,6 +385,14 @@ function _showCompStage(stage) {
     if (el) el.style.display = 'none';
   });
 
+  // Drive the full-screen quiz layout via body class (mirrors quiz-active)
+  if (stage === 'questions') {
+    document.body.classList.add('comp-active');
+  } else {
+    document.body.classList.remove('comp-active');
+    document.body.classList.remove('quiz-comp-img');
+  }
+
   if (stage === 'sourcing' && sourcingOv) sourcingOv.style.display = 'flex';
   else if (stage === 'media' && mediaStage)  mediaStage.style.display = 'flex';
   else if (stage === 'questions' && qStage)  qStage.style.display = 'flex';
@@ -387,14 +438,17 @@ window.startComprehensionAdventure = async function () {
     gameView.classList.remove('hidden');
     gameView.style.cssText = 'display:flex;flex-direction:column;position:fixed;inset:0;z-index:500;background:#0a0f1a;';
   }
+  // Reset body classes from any previous session
+  document.body.classList.remove('comp-active', 'quiz-comp-img');
 
   // Stop any active TTS
   if (_compTtsUtterance) { try { speechSynthesis.cancel(); } catch(e) {} _compTtsUtterance = null; }
   clearInterval(_compMediaProgressTimer);
 
   // If user pasted a custom URL, force video medium
-  const customId = _compCustomVideoId;
-  const medium = customId ? 'video'
+  const customId     = _compCustomVideoId;
+  const customImgNow = _compCustomImageUrl;
+  const medium = customImgNow ? 'image' : customId ? 'video'
     : _compSettings.mediums[Math.floor(Math.random() * _compSettings.mediums.length)];
   const subject = _compSettings.subjects[Math.floor(Math.random() * _compSettings.subjects.length)] || 'general knowledge';
 
@@ -405,8 +459,23 @@ window.startComprehensionAdventure = async function () {
 
   try {
     let mediaData;
+    const customImgUrl = _compCustomImageUrl;
 
-    if (customId) {
+    if (customImgUrl) {
+      // ── User pasted a direct image URL — skip sourcing entirely ──────────
+      if (srcLabel) srcLabel.textContent = 'Using your image — generating questions…';
+      if (srcSub)   srcSub.textContent   = 'AI is analysing the image content…';
+      mediaData = {
+        medium: 'image',
+        imageUrl: customImgUrl,
+        imageKeyword: '',
+        title: 'Image Adventure',
+        description: `User-supplied image about ${subject}`,
+        caption: '',
+      };
+      window._compClearCustomVideo(true);
+
+    } else if (customId) {
       // ── User pasted a specific YouTube URL — skip sourcing entirely ──────
       if (srcLabel) srcLabel.textContent = 'Using your video — generating questions…';
       if (srcSub)   srcSub.textContent   = 'AI is analysing the video content…';
@@ -419,7 +488,7 @@ window.startComprehensionAdventure = async function () {
         channel: '',
         durationMin: _compSettings.videoDurationMin,
       };
-      window._compClearCustomVideo(); // reset for next session
+      window._compClearCustomVideo(true);
 
     } else {
       // ── Normal flow: Gemini sources media ────────────────────────────────
@@ -618,10 +687,45 @@ window.onCompMediaComplete = function () {
   _renderCompQuestion();
 };
 
-// ── RENDER QUESTION ───────────────────────────────────────────────────────
+// ── RENDER QUESTION (full quiz-style parity) ─────────────────────────────
+// Reads all rendering settings from window.quizSettings.
+let _compRenderGen = 0;  // incremented each render to cancel stale timers
+let _compWrongAttempts = 0;
+
 function _renderCompQuestion() {
+  _compRenderGen++;
+  const gen = _compRenderGen;
+  _compWrongAttempts = 0;
   const q = _compQuestions[_compQIdx];
   if (!q) { _showCompWin(); return; }
+
+  // ── Guarantee quiz-style layout directly via JS (belt-and-suspenders) ────
+  const _stage = _$('comp-question-stage');
+  if (_stage) {
+    _stage.style.cssText = 'display:flex;flex-direction:column;width:100%;height:100%;position:relative;min-height:0;overflow:hidden;';
+  }
+  const _qSection = _$('comp-question-section');
+  if (_qSection) {
+    _qSection.style.cssText = 'width:100%;flex-shrink:0;flex-grow:0;max-height:34vh;overflow:hidden;display:flex;align-items:center;justify-content:center;padding:8px 8px 0;box-sizing:border-box;gap:4px;';
+  }
+  const _qText = _$('comp-display-question');
+  if (_qText) {
+    _qText.style.cssText = 'flex:1;font-size:clamp(1.4rem,3.8vw,3.2rem);font-weight:800;color:#f1f5f9;text-align:center;line-height:1.2;padding:10px 16px;overflow-wrap:break-word;';
+  }
+  const _grid = _$('comp-answers-grid');
+  if (_grid) {
+    _grid.style.cssText = 'width:100%;flex:1 1 0;min-height:0;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;align-content:stretch;align-items:stretch;gap:10px;padding:8px 12px 10px;box-sizing:border-box;overflow:hidden;';
+  }
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // Resolve theme (mirrors quiz mode mixed handling)
+  const qs = window.quizSettings || {};
+  if (qs.theme === 'mixed') {
+    const pool = ['normal','ben-holly','peppa','kung-fu-panda','totoro','turning-red','zootopia'];
+    window.currentQuizTheme = pool[Math.floor(Math.random() * pool.length)];
+  } else {
+    window.currentQuizTheme = qs.theme || 'normal';
+  }
 
   // Update counter + score
   const counter = _$('comp-q-counter');
@@ -629,89 +733,214 @@ function _renderCompQuestion() {
   if (counter) counter.textContent = `Q ${_compQIdx + 1} / ${_compTotal}`;
   if (scoreBadge) scoreBadge.textContent = `⭐ ${_compScore}`;
 
-  // Question text
-  const qDisplay = _$('comp-display-question');
-  if (qDisplay) qDisplay.textContent = q.question;
 
-  // Answer grid — quiz-style cards
+  // ── Image quadrant layout (when media was a direct image URL) ────────────
+  const hasImageMedia = !!((_compMedia || {}).imageUrl);
+  const imgQEl   = _$('comp-img-quadrant');
+  const qQEl     = _$('comp-q-quadrant');
+  const imgQImg  = _$('comp-img-quadrant-img');
+  const imgQTxt  = _$('comp-q-quadrant-text');
+  if (hasImageMedia) {
+    if (imgQEl)  { imgQEl.style.display  = ''; }
+    if (qQEl)    { qQEl.style.display    = ''; }
+    if (imgQImg) { imgQImg.src = _compMedia.imageUrl; imgQImg.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:12px;display:block;'; }
+    if (imgQTxt) {
+      imgQTxt.textContent = q.question;
+      if (window._fitTextToBox) window._fitTextToBox(imgQTxt, qQEl);
+    }
+    document.body.classList.add('quiz-comp-img');
+  } else {
+    if (imgQEl) imgQEl.style.display = 'none';
+    if (qQEl)  qQEl.style.display  = 'none';
+    document.body.classList.remove('quiz-comp-img');
+    const qDisplay = _$('comp-display-question');
+    if (qDisplay) {
+      if (window.prepareHighlightableText) window.prepareHighlightableText(qDisplay, q.question);
+      else qDisplay.textContent = q.question;
+    }
+  }
+
+  // ── Answer grid ──────────────────────────────────────────────────────────
   const grid = _$('comp-answers-grid');
   if (!grid) return;
   grid.innerHTML = '';
   delete grid.dataset.answered;
-
-  // Remove any lingering explanation panel from last question
   const oldEx = _$('comp-explanation-panel');
   if (oldEx) oldEx.remove();
+  // Remove previous aRead bar
+  const oldABar = document.getElementById('comp-aread-bar');
+  if (oldABar) oldABar.remove();
 
-  // 2×2 grid matching main quiz layout
-  grid.style.cssText = `display:grid;grid-template-columns:1fr 1fr;gap:10px;
-    padding:12px;box-sizing:border-box;flex:1;align-content:stretch;`;
+  const fontSizeClass = `quiz-font-${qs.fontSize || 'medium'}`;
+  const isTwoAns = (q.answers || []).length === 2;
+  grid.style.cssText = `width:100%;flex:1 1 0;min-height:0;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:${isTwoAns ? '1fr' : '1fr 1fr'};align-content:stretch;align-items:stretch;gap:10px;padding:8px 12px 10px;box-sizing:border-box;overflow:hidden;`;
 
+  // ── qRead gate ───────────────────────────────────────────────────────────
+  let _qReadDone = true;
+  let _skipQRead = () => {};
+  const _qReadEnabled = qs.qReadEnabled && (qs.qReadTimeMs || 0) > 0;
+  if (_qReadEnabled) {
+    _qReadDone = false;
+    grid.style.opacity = '0.25';
+    grid.style.pointerEvents = 'none';
+    grid.style.transition = 'opacity 0.4s';
+    let _qElapsed = 0;
+    const _qStep = 80;
+    const _qOnDone = () => {
+      _qReadDone = true;
+      grid.style.opacity = '1';
+      grid.style.pointerEvents = '';
+      if (qs.voiceOver && window.quizSpeakAnswers) window.quizSpeakAnswers(q.answers, gen, {});
+    };
+    const _qTick = setInterval(() => {
+      if (gen !== _compRenderGen) { clearInterval(_qTick); return; }
+      _qElapsed += _qStep;
+      if (_qElapsed >= qs.qReadTimeMs) { clearInterval(_qTick); _qOnDone(); }
+    }, _qStep);
+    _skipQRead = () => { _qElapsed = qs.qReadTimeMs; };
+  }
+
+  // ── aRead gate ───────────────────────────────────────────────────────────
+  let _aReadDone = true;
+  let _skipARead = () => {};
+  const _aReadEnabled = qs.aReadEnabled && (qs.aReadTimeMs || 0) > 0;
+  if (_aReadEnabled) {
+    _aReadDone = false;
+    const aBarOuter = document.createElement('div');
+    aBarOuter.id = 'comp-aread-bar';
+    aBarOuter.style.cssText = 'width:100%;height:3px;position:relative;flex-shrink:0;border-radius:2px;overflow:hidden;background:rgba(255,255,255,0.07);margin-bottom:4px;';
+    const aBarInner = document.createElement('div');
+    aBarInner.style.cssText = 'height:100%;width:0%;background:linear-gradient(90deg,#10b981,#06b6d4);border-radius:2px;';
+    aBarOuter.appendChild(aBarInner);
+    const qStageEl = _$('comp-question-stage');
+    if (qStageEl) qStageEl.insertBefore(aBarOuter, grid);
+    let _aElapsed = 0;
+    const _aOnDone = () => { _aReadDone = true; aBarOuter.remove(); };
+    const _aTick = setInterval(() => {
+      if (gen !== _compRenderGen) { clearInterval(_aTick); return; }
+      _aElapsed += 80;
+      aBarInner.style.width = Math.min(100, (_aElapsed / qs.aReadTimeMs) * 100) + '%';
+      if (_aElapsed >= qs.aReadTimeMs) { clearInterval(_aTick); _aOnDone(); }
+    }, 80);
+    _skipARead = () => { _aElapsed = qs.aReadTimeMs; };
+    grid.addEventListener('mouseenter', () => { if (!_aReadDone) { const _dummy = _aTick; } }, { once: true });
+  }
+
+  // ── Voice over question ───────────────────────────────────────────────────
+  if (qs.voiceOver && !_qReadEnabled && 'speechSynthesis' in window) {
+    speechSynthesis.cancel();
+    const utt = new SpeechSynthesisUtterance(q.question);
+    utt.rate = 0.9;
+    utt.onend = () => { if (qs.voiceOver && window.quizSpeakAnswers) window.quizSpeakAnswers(q.answers, gen, {}); };
+    speechSynthesis.speak(utt);
+  }
+
+  // ── Build answer cards ───────────────────────────────────────────────────
   const answers = q.answers || [];
-  answers.forEach(ans => {
+  answers.forEach((ans, idx) => {
     const isCorrect = String(ans.id) === String(q.correctId);
     const card = document.createElement('div');
-    card.className = 'quiz-answer-card';
+    card.className = `quiz-answer-card${window.applyQuizCardTheme ? '' : ''}`;
     Object.assign(card.style, {
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      height: '100%', minHeight: '0', width: '100%',
-      padding: '1.5rem', boxSizing: 'border-box', textAlign: 'center',
-      background: '#20293a', border: 'none', borderRadius: '20px',
-      transition: 'transform 0.2s ease, background 0.2s ease',
-      position: 'relative', overflow: 'hidden', cursor: 'pointer', userSelect: 'none',
+      display:'flex', alignItems:'center', justifyContent:'center',
+      height:'100%', minHeight:'0', width:'100%',
+      padding:'1.5rem', boxSizing:'border-box', textAlign:'center',
+      background:'#20293a', border:'none', borderRadius:'20px',
+      transition:'transform 0.2s ease, background 0.2s ease',
+      position:'relative', overflow:'hidden', cursor:'pointer', userSelect:'none',
     });
+    if (window.applyQuizCardTheme) window.applyQuizCardTheme(card, ans, idx);
 
     const textSpan = document.createElement('span');
+    textSpan.className = `quiz-answer-text ${fontSizeClass}`;
     Object.assign(textSpan.style, {
-      color: '#f2f5f9', fontWeight: '700', textAlign: 'center', display: 'block',
-      width: '100%', overflowWrap: 'break-word', pointerEvents: 'none',
-      fontSize: 'clamp(0.8rem,2vh,1.1rem)', lineHeight: '1.35',
+      color:'#f2f5f9', fontWeight:'700', display:'block',
+      width:'100%', overflowWrap:'break-word', pointerEvents:'none',
     });
-    textSpan.textContent = ans.text;
+    if (window.prepareHighlightableText) window.prepareHighlightableText(textSpan, ans.text);
+    else textSpan.textContent = ans.text;
     card.appendChild(textSpan);
 
-    card.addEventListener('mouseenter', () => {
-      if (!card.dataset.answered && card.dataset.state !== 'wrong')
-        card.style.background = '#364154';
-    });
+    // Dwell progress bar
+    const progressBar = document.createElement('div');
+    progressBar.className = 'absolute bottom-0 left-0 h-1.5 bg-violet-500/40 transition-none z-10';
+    progressBar.style.width = '0%';
+    card.appendChild(progressBar);
+
+    card.addEventListener('mouseenter', () => { if (!card.dataset.answered && card.dataset.state !== 'wrong') card.style.background = '#364154'; });
     card.addEventListener('mouseleave', () => {
       if (card.dataset.state === 'wrong') card.style.background = '#7f1d1d';
       else if (!card.dataset.answered) card.style.background = '#20293a';
     });
 
-    card.addEventListener('click', () => _compSelectAnswer(ans, q, answers, grid, isCorrect));
+    // Dwell timer
+    let dwellTimer = null;
+    let svgOverlay = null;
+    const removeSvg = () => { if (svgOverlay && svgOverlay.parentNode === card) card.removeChild(svgOverlay); svgOverlay = null; };
+    const startDwell = () => {
+      if (!qs.dwellTimeMs) return;
+      if (!_aReadDone) return;
+      let start = null;
+      const animate = (t) => {
+        if (gen !== _compRenderGen) return;
+        if (!start) start = t;
+        const pct = Math.min(((t - start) / qs.dwellTimeMs) * 100, 100);
+        progressBar.style.width = pct + '%';
+        if (pct > 0 && !svgOverlay) {
+          svgOverlay = document.createElement('div');
+          svgOverlay.className = 'absolute inset-0 flex items-center justify-center z-20 pointer-events-none';
+          svgOverlay.innerHTML = '<svg class="w-28 h-28 transform -rotate-90"><circle cx="56" cy="56" r="44" stroke-width="7" stroke="#334155" fill="transparent"/><circle cx="56" cy="56" r="44" stroke-width="7" stroke-dasharray="276.46" stroke-dashoffset="276.46" stroke-linecap="round" stroke="#8b5cf6" fill="transparent" style="opacity:0.55"/></svg>';
+          card.appendChild(svgOverlay);
+        }
+        if (svgOverlay) {
+          const c = svgOverlay.querySelector('circle:last-child');
+          if (c) c.style.strokeDashoffset = 276.46 - (pct / 100) * 276.46;
+        }
+        if (pct >= 100) doSelect();
+        else dwellTimer = requestAnimationFrame(animate);
+      };
+      dwellTimer = requestAnimationFrame(animate);
+    };
+    const stopDwell = () => { if (dwellTimer) cancelAnimationFrame(dwellTimer); progressBar.style.width = '0%'; removeSvg(); };
+
+    const doSelect = () => {
+      if (!_qReadDone) { _skipQRead(); requestAnimationFrame(() => requestAnimationFrame(() => doSelect())); return; }
+      if (!_aReadDone) { _skipARead(); requestAnimationFrame(() => requestAnimationFrame(() => doSelect())); return; }
+      _compSelectAnswer(ans, q, answers, grid, isCorrect, gen);
+    };
+
+    card.addEventListener('mouseenter', () => startDwell());
+    card.addEventListener('mouseleave', () => stopDwell());
+    card.addEventListener('click', () => doSelect());
+    card.addEventListener('touchstart', (e) => { e.preventDefault(); startDwell(); }, { passive: false });
+    card.addEventListener('touchend',   (e) => { e.preventDefault(); stopDwell(); doSelect(); }, { passive: false });
+    card.addEventListener('touchcancel',(e) => { e.preventDefault(); stopDwell(); }, { passive: false });
+
+    // Voice-over hover repeat
+    if (qs.voiceOver && qs.voiceOverHoverRepeat) {
+      card.addEventListener('mouseenter', () => {
+        if ('speechSynthesis' in window) {
+          speechSynthesis.cancel();
+          const u = new SpeechSynthesisUtterance(ans.text); u.rate = 0.9;
+          speechSynthesis.speak(u);
+        }
+      });
+    }
+
     grid.appendChild(card);
   });
-
-
-  // qRead delay if enabled
-  if (_compSettings.qReadEnabled && _compSettings.qReadTimeMs > 0) {
-    grid.style.pointerEvents = 'none';
-    grid.style.opacity = '0.3';
-    setTimeout(() => {
-      grid.style.pointerEvents = '';
-      grid.style.opacity = '1';
-    }, _compSettings.qReadTimeMs);
-  }
-
-  // Voice over
-  if (_compSettings.voiceOver && 'speechSynthesis' in window) {
-    speechSynthesis.cancel();
-    const utt = new SpeechSynthesisUtterance(q.question);
-    utt.rate = 0.9;
-    speechSynthesis.speak(utt);
-  }
 }
 
+
+
 // ── SELECT ANSWER ──────────────────────────────────────────────────────────
-function _compSelectAnswer(ans, q, allAnswers, grid, isCorrect) {
+function _compSelectAnswer(ans, q, allAnswers, grid, isCorrect, gen) {
   if (grid.dataset.answered) return;
+  if (gen !== undefined && gen !== _compRenderGen) return; // stale render
 
   if (isCorrect) {
-    // ── CORRECT ────────────────────────────────────────────────────────────
     grid.dataset.answered = 'true';
     grid.style.pointerEvents = 'none';
-
     Array.from(grid.children).forEach((card, i) => {
       const cardAns = allAnswers[i];
       if (!cardAns) return;
@@ -720,66 +949,57 @@ function _compSelectAnswer(ans, q, allAnswers, grid, isCorrect) {
         card.style.background = '#10b981';
         card.style.animation = 'successBounce 0.75s ease';
         card.style.transform = 'scale(1.03)';
-      } else {
-        card.style.opacity = '0.4';
-        card.style.pointerEvents = 'none';
-      }
+      } else { card.style.opacity = '0.4'; card.style.pointerEvents = 'none'; }
     });
-
     _compScore++;
     const scoreBadge = _$('comp-score-badge');
     if (scoreBadge) scoreBadge.textContent = `⭐ ${_compScore}`;
-
-    // Sounds
     if (window.playQuizCorrectSound) window.playQuizCorrectSound();
     const greenCard = Array.from(grid.children).find(c => c.dataset.answered);
     if (window.burstConfetti) window.burstConfetti(greenCard || grid);
     try {
       const sounds = ['correct1.mp3','correct2.mp3','correct3.mp3'];
       const snd = new Audio('/assets/sounds/' + sounds[Math.floor(Math.random() * sounds.length)]);
-      snd.volume = 0.6;
-      snd.play().catch(() => {});
+      snd.volume = 0.6; snd.play().catch(() => {});
     } catch (_) {}
-
-    // Theme character celebration
-    const theme = (typeof currentQuizTheme !== 'undefined') ? currentQuizTheme : 'normal';
+    // Theme celebration
+    const theme = window.currentQuizTheme || 'normal';
     if      (theme === 'ben-holly'     && window.triggerBenElfCelebration) window.triggerBenElfCelebration();
     else if (theme === 'kung-fu-panda' && window.triggerKfpCelebration)    window.triggerKfpCelebration();
     else if (theme === 'totoro'        && window.triggerTotoroCelebration) window.triggerTotoroCelebration();
     else if (theme === 'turning-red'   && window.triggerTRCelebration)     window.triggerTRCelebration();
     else if (theme === 'zootopia'      && window.triggerZooCelebration)    window.triggerZooCelebration();
-
     setTimeout(() => {
       _compQIdx++;
       if (_compQIdx >= _compTotal) _showCompWin();
       else _renderCompQuestion();
     }, 1600);
-
   } else {
-    // ── WRONG — grid stays interactive so player can retry ────────────────
+    _compWrongAttempts++;
+    // Reset previous wrong cards
     Array.from(grid.children).forEach(c => {
       if (c.dataset.state === 'wrong') {
-        c.dataset.state = '';
-        c.style.background = '#20293a';
-        const old = c.querySelector('.wrong-cross');
-        if (old) old.remove();
+        c.dataset.state = ''; c.style.background = '#20293a';
+        const old = c.querySelector('.wrong-cross'); if (old) old.remove();
       }
     });
-
     const wrongCard = Array.from(grid.children)[allAnswers.indexOf(ans)];
     if (wrongCard) {
       wrongCard.dataset.state = 'wrong';
       wrongCard.style.background = 'rgba(239,68,68,0.18)';
       const cross = document.createElement('div');
-      cross.className = 'wrong-cross';
-      cross.style.pointerEvents = 'none';
+      cross.className = 'wrong-cross'; cross.style.pointerEvents = 'none';
       wrongCard.appendChild(cross);
       wrongCard.style.transform = 'translateX(-10px)';
       setTimeout(() => wrongCard.style.transform = 'translateX(10px)', 50);
       setTimeout(() => wrongCard.style.transform = 'translateX(0)', 100);
     }
-
     if (window.playWrongSound) window.playWrongSound();
+    // Hint after X wrong attempts
+    const qs = window.quizSettings || {};
+    if (qs.hintThreshold > 0 && qs.hintThreshold < 11 && _compWrongAttempts >= qs.hintThreshold) {
+      if (window.showQuizHint) window.showQuizHint(q);
+    }
 
     // Explanation panel — slides up from the bottom of the question stage
     const oldPanel = _$('comp-explanation-panel');
