@@ -19,7 +19,9 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 
 // Gemini API helper (direct REST, no extra SDK needed)
+const GEMINI_MODEL = 'gemini-1.5-flash';
 const GEMINI_API_KEY = firebaseConfig.apiKey;
+window._cqRenderGen = 0; // Global for state tracking
 async function callGeminiJSON(prompt) {
   const body = {
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
@@ -45,6 +47,26 @@ async function callGeminiJSON(prompt) {
 const googleProvider = new GoogleAuthProvider();
 
 const STORAGE_KEY = 'eduApp_data_v2';
+
+// ── Comp prefs: hoisted declarations (needed early by loadQuizSettings) ────
+let _qsCurrentMode   = 'quiz'; // 'quiz' | 'comp'  — persisted across sessions
+let _qsTimeLimitSec  = 0;      // stop-video-at seconds (0 = no limit)
+const _COMP_HISTORY_KEY = 'comp_url_history';
+const _COMP_HISTORY_MAX = 10;
+function _qsHistoryLoad() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(_COMP_HISTORY_KEY) || '[]');
+    // Normalise: older entries may be plain strings — convert to objects
+    return raw.map(e => {
+      if (typeof e !== 'string') return e;
+      try {
+        const vidId = _parseQsUrl ? (_parseQsUrl(e)?.videoId || null) : null;
+        return { url: e, title: null, videoId: vidId };
+      } catch { return { url: e, title: null, videoId: null }; }
+    });
+  } catch { return []; }
+}
+
 const initData = () => ({
   id: Date.now().toString(),
   question: 'What is the capital of France?',
@@ -518,6 +540,8 @@ async function registerUserInFirestore() {
     } else {
       const data = snap.data();
       isAdmin = data.isAdmin === true;
+      // Hydrate quiz settings from cloud BEFORE UI renders
+      loadQuizPrefsFromFirestore(data);
       await updateDoc(userRef, {
         loginCount: (data.loginCount || 0) + 1,
         lastLogin: now,
@@ -739,6 +763,7 @@ function playWrongSound() {
     console.error("Audio playback error", e);
   }
 }
+window.playWrongSound = playWrongSound;
 
 function playHintSound() {
   try {
@@ -834,23 +859,9 @@ window.setMode = (newMode) => {
     }
   }
   else if (newMode === 'comprehension') {
-    // If called from startComprehensionAdventure just to update mode variable, skip overlay
-    if (window._compSetModeOnly) { mode = 'comprehension'; return; }
-    // Show the fixed settings overlay immediately (DOM is always ready).
-    // comprehension.js may still be loading — retry until it wires controls.
-    const ov = document.getElementById('comp-settings-overlay');
-    if (ov) ov.style.display = 'flex';
-    if (window.setComprehensionMode) {
-      window.setComprehensionMode();
-    } else {
-      // comprehension.js not yet executed — poll until ready (max 3 s)
-      let attempts = 0;
-      const poll = setInterval(() => {
-        attempts++;
-        if (window.setComprehensionMode) { clearInterval(poll); window.setComprehensionMode(); }
-        else if (attempts > 30) clearInterval(poll);
-      }, 100);
-    }
+    // Entry point: Knowledge Explorer → Quiz Settings → 🎬 Comprehension tab
+    // startComprehensionFromQuizSettings() handles all UI transitions.
+    mode = 'comprehension';
   }
 };
 
@@ -893,7 +904,11 @@ function setLandingMode() {
   const viewMyReports = document.getElementById('view-my-reports');
   if (viewMyReports) viewMyReports.classList.add('hidden');
   const viewComp = document.getElementById('view-comprehension');
-  if (viewComp) { viewComp.classList.add('hidden'); viewComp.style.cssText = ''; }
+  if (viewComp) { 
+    viewComp.classList.add('hidden'); 
+    viewComp.style.display = 'none'; // Force hide
+    viewComp.style.cssText = 'display:none;'; 
+  }
   // Also close the fixed comprehension settings overlay if open
   const compSettingsOv = document.getElementById('comp-settings-overlay');
   if (compSettingsOv) compSettingsOv.style.display = 'none';
@@ -1838,9 +1853,90 @@ function saveQuizAsked() {
   try { localStorage.setItem(_quizAskedKey(), JSON.stringify(quizAskedQuestions)); } catch { }
 }
 
+// ── Quiz Prefs: Firestore persistence ─────────────────────────────────────
+let _quizPrefsSaveTimer = null;
+function _saveQuizPrefsToFirestore() {
+  // Skip for guests / unauthenticated
+  if (!user || user.uid === 'guest-local' || user.isAnonymous || user.isGuest) return;
+  if (_quizPrefsSaveTimer) clearTimeout(_quizPrefsSaveTimer);
+  _quizPrefsSaveTimer = setTimeout(async () => {
+    try {
+      const { doc: _doc, updateDoc: _upd } = await import('https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore.js');
+      const prefs = {
+        ...quizSettings,
+        compMode:         _qsCurrentMode || 'quiz',
+        compUrl:          (() => { const el = document.getElementById('qs-comp-url'); return el ? el.value : ''; })(),
+        compUrlHistory:   _qsHistoryLoad(),
+        compTimeLimitSec: _qsTimeLimitSec || 0,
+      };
+      await _upd(_doc(db, 'users', user.uid), { quizPrefs: prefs });
+    } catch (e) { /* non-critical */ }
+  }, 400);
+}
+
+// Called whenever comp-specific state changes (URL, mode, time-limit, history)
+function saveCompPrefs() {
+  // Always mirror to localStorage so guest / offline path is covered
+  try {
+    const existing = JSON.parse(localStorage.getItem('quizSettings_v2') || '{}');
+    existing.compMode         = _qsCurrentMode || 'quiz';
+    existing.compUrl          = (() => { const el = document.getElementById('qs-comp-url'); return el ? el.value : ''; })();
+    existing.compUrlHistory   = _qsHistoryLoad();
+    existing.compTimeLimitSec = _qsTimeLimitSec || 0;
+    localStorage.setItem('quizSettings_v2', JSON.stringify(existing));
+  } catch {}
+  _saveQuizPrefsToFirestore();
+}
+
+// Hydrate quiz settings + comp prefs from a Firestore user doc's quizPrefs field.
+// Called by registerUserInFirestore after the snap is read.
+function loadQuizPrefsFromFirestore(data) {
+  const prefs = data?.quizPrefs;
+  if (!prefs) return;
+  // --- Base quiz settings ---
+  const fieldsToMerge = [
+    'subjects','age','eduLevel','contentTypes','customSubject',
+    'correctTarget','musicVolume','musicOn','dwellTimeMs',
+    'qReadEnabled','qReadTimeMs','aReadEnabled','aReadTimeMs',
+    'theme','questionSource','fontSize','hintThreshold',
+    'voiceOver','voiceOverHoverRepeat','voiceOverVolume','imageSources',
+  ];
+  fieldsToMerge.forEach(k => {
+    if (prefs[k] !== undefined) quizSettings[k] = prefs[k];
+  });
+  // Ensure subjects is an array
+  if (!Array.isArray(quizSettings.subjects)) quizSettings.subjects = ['English'];
+  // --- Comp-specific state ---
+  if (prefs.compMode) _qsCurrentMode = prefs.compMode;
+  if (prefs.compTimeLimitSec !== undefined) _qsTimeLimitSec = prefs.compTimeLimitSec;
+  // Mirror URL history to localStorage so _qsHistoryLoad() picks it up
+  if (Array.isArray(prefs.compUrlHistory) && prefs.compUrlHistory.length) {
+    try { localStorage.setItem(_COMP_HISTORY_KEY, JSON.stringify(prefs.compUrlHistory)); } catch {}
+  }
+  // Store last URL on quizSettings so initQuizSettingsUI can restore it
+  if (prefs.compUrl) quizSettings._compUrl = prefs.compUrl;
+  // Also mirror to localStorage for offline consistency
+  try { localStorage.setItem('quizSettings_v2', JSON.stringify({...quizSettings, compMode: _qsCurrentMode, compUrl: prefs.compUrl || '', compUrlHistory: prefs.compUrlHistory || [], compTimeLimitSec: _qsTimeLimitSec})); } catch {}
+  console.log('[quizPrefs] Loaded from Firestore — mode:', _qsCurrentMode, 'url:', prefs.compUrl || '(none)');
+}
+
 // Persist quiz settings (subjects, age, theme, etc.)
+// Always merges comp-specific fields so they are never wiped by a bare quizSettings save.
 function saveQuizSettings() {
-  try { localStorage.setItem('quizSettings_v2', JSON.stringify(quizSettings)); } catch { }
+  try {
+    const existing = (() => { try { return JSON.parse(localStorage.getItem('quizSettings_v2') || '{}'); } catch { return {}; } })();
+    const payload = {
+      ...existing,
+      ...quizSettings,
+      // Always keep comp fields current; fall back to whatever was already stored
+      compMode:         _qsCurrentMode || existing.compMode || 'quiz',
+      compUrl:          (() => { const el = document.getElementById('qs-comp-url'); return el ? el.value : (existing.compUrl || ''); })(),
+      compUrlHistory:   _qsHistoryLoad().length ? _qsHistoryLoad() : (existing.compUrlHistory || []),
+      compTimeLimitSec: _qsTimeLimitSec != null ? _qsTimeLimitSec : (existing.compTimeLimitSec || 0),
+    };
+    localStorage.setItem('quizSettings_v2', JSON.stringify(payload));
+  } catch { }
+  _saveQuizPrefsToFirestore();
 }
 function loadQuizSettings() {
   try {
@@ -1849,6 +1945,13 @@ function loadQuizSettings() {
     const parsed = JSON.parse(raw);
     // Basic validation: ensure subjects is an array
     if (!Array.isArray(parsed.subjects)) return null;
+    // Restore comp prefs from localStorage too
+    if (parsed.compMode)         _qsCurrentMode   = parsed.compMode;
+    if (parsed.compTimeLimitSec !== undefined) _qsTimeLimitSec = parsed.compTimeLimitSec;
+    if (parsed.compUrl)          parsed._compUrl  = parsed.compUrl;
+    if (Array.isArray(parsed.compUrlHistory) && parsed.compUrlHistory.length) {
+      try { localStorage.setItem(_COMP_HISTORY_KEY, JSON.stringify(parsed.compUrlHistory)); } catch {}
+    }
     return parsed;
   } catch { return null; }
 }
@@ -1883,6 +1986,7 @@ let initialSettings = loadQuizSettings() || {
   hintThreshold: 4,
   voiceOver: false,
   voiceOverHoverRepeat: false,
+  voiceOverVolume: 1.0,
   // Per-source toggles — each can be independently enabled/disabled
   imageSources: { pixabay: true, unsplash: false, wikimedia: true, ai: true },
 };
@@ -1892,6 +1996,7 @@ if (!initialSettings.fontSize) initialSettings.fontSize = 'medium';
 if (initialSettings.hintThreshold === undefined) initialSettings.hintThreshold = 4;
 if (initialSettings.voiceOver === undefined) initialSettings.voiceOver = false;
 if (initialSettings.voiceOverHoverRepeat === undefined) initialSettings.voiceOverHoverRepeat = false;
+if (initialSettings.voiceOverVolume === undefined) initialSettings.voiceOverVolume = 1.0;
 if (!initialSettings.eduLevel) initialSettings.eduLevel = 'P2';
 if (!initialSettings.contentTypes) initialSettings.contentTypes = ['text'];
 if (initialSettings.customSubject === undefined) initialSettings.customSubject = '';
@@ -1938,70 +2043,43 @@ let quizHistoryIdx = -1;
 function enterQuizHeaderMode() {
   const hasImage = (quizSettings.contentTypes || []).includes('image');
 
-  if (hasImage) {
-    // Image mode: collapse header into a vertical left sidebar
-    document.body.classList.add('quiz-img-sidebar');
+  // Always use left sidebar for ALL quiz modes (text-only and image)
+  document.body.classList.add('quiz-img-sidebar');
 
-    // Build sidebar if not already present
-    let sidebar = document.getElementById('quiz-sidebar-controls');
-    if (!sidebar) {
-      sidebar = document.createElement('div');
-      sidebar.id = 'quiz-sidebar-controls';
-      document.querySelector('header').appendChild(sidebar);
-    }
-
-    // Get user initial for avatar
-    const userEl = document.getElementById('display-user');
-    const userInitial = (userEl?.textContent?.trim() || 'G')[0].toUpperCase();
-
-
-    sidebar.innerHTML = `
-          <div style="display:flex;flex-direction:column;align-items:center;gap:10px;">
-            <span class="quiz-sidebar-logo" id="sb-btn-home" title="Double-click or long-press: back to home">EduGaze</span>
-            <div class="quiz-sidebar-user" title="${userEl?.textContent?.trim() || 'Guest'}">${userInitial}</div>
-          </div>
-          <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
-            <button class="quiz-sidebar-btn" id="sb-btn-reload" title="Double-click or long-press: Reload Images" style="color:#60a5fa;">
-              <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-            </button>
-            <button class="quiz-sidebar-btn" id="sb-btn-settings" title="Double-click or long-press: Settings">
-              <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-            </button>
-            <button class="quiz-sidebar-btn" id="sb-btn-exit" title="Double-click or long-press: Exit Quiz" style="color:#f87171;">
-              <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-            </button>
-          </div>`;
-
-    // Wire long-press / dblclick on sidebar buttons (after innerHTML injection)
-    addDoubleTapOrDblClick(document.getElementById('sb-btn-home'), () => setMode('landing'));
-    addDoubleTapOrDblClick(document.getElementById('sb-btn-reload'), () => window.forceReloadQuizImages());
-    addDoubleTapOrDblClick(document.getElementById('sb-btn-settings'), () => window.openQuizSettings());
-    addDoubleTapOrDblClick(document.getElementById('sb-btn-exit'), () => setMode('landing'));
-
-  } else {
-    // Normal mode: standard header buttons
-    document.body.classList.remove('quiz-img-sidebar');
-    // Replace btn-education with "Settings" (double-click)
-    btnEducation.textContent = '';
-    btnEducation.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg> Settings`;
-    btnEducation.className = 'flex items-center gap-2 px-4 py-2 rounded-lg transition-all bg-violet-900/60 text-violet-300 hover:bg-violet-800/80 border border-violet-700/40';
-    btnEducation.onclick = null;
-    btnEducation.ondblclick = null;
-    addDoubleTapOrDblClick(btnEducation, () => window.openQuizSettings());
-    btnEducation.title = 'Double-click or long-press to open settings';
-
-    // Replace btn-edit with "Exit" (double-click / long-press)
-    btnEdit.textContent = 'Exit';
-    btnEdit.className = 'flex items-center gap-2 px-4 py-2 rounded-lg transition-all bg-slate-800 text-slate-400 hover:bg-slate-700 border border-slate-700';
-    btnEdit.onclick = null;
-    btnEdit.ondblclick = null;
-    addDoubleTapOrDblClick(btnEdit, () => setMode('landing'));
-    btnEdit.title = 'Double-click or long-press to exit Quiz';
-
-    // Update hint text
-    const hint = document.getElementById('header-mode-hint');
-    if (hint) hint.textContent = 'Double-click (or long-press) buttons to use them';
+  // Build sidebar if not already present
+  let sidebar = document.getElementById('quiz-sidebar-controls');
+  if (!sidebar) {
+    sidebar = document.createElement('div');
+    sidebar.id = 'quiz-sidebar-controls';
+    document.querySelector('header').appendChild(sidebar);
   }
+
+  // Get user initial for avatar
+  const userEl = document.getElementById('display-user');
+  const userInitial = (userEl?.textContent?.trim() || 'G')[0].toUpperCase();
+
+  sidebar.innerHTML = `
+        <div style="display:flex;flex-direction:column;align-items:center;gap:10px;">
+          <span class="quiz-sidebar-logo" id="sb-btn-home" title="Double-click or long-press: back to home">EduGaze</span>
+          <div class="quiz-sidebar-user" title="${userEl?.textContent?.trim() || 'Guest'}">${userInitial}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
+          ${hasImage ? `<button class="quiz-sidebar-btn" id="sb-btn-reload" title="Double-click or long-press: Reload Images" style="color:#60a5fa;">
+            <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          </button>` : ''}
+          <button class="quiz-sidebar-btn" id="sb-btn-settings" title="Double-click or long-press: Settings">
+            <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          </button>
+          <button class="quiz-sidebar-btn" id="sb-btn-exit" title="Double-click or long-press: Exit Quiz" style="color:#f87171;">
+            <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>`;
+
+  // Wire long-press / dblclick on sidebar buttons
+  addDoubleTapOrDblClick(document.getElementById('sb-btn-home'), () => setMode('landing'));
+  if (hasImage) addDoubleTapOrDblClick(document.getElementById('sb-btn-reload'), () => window.forceReloadQuizImages());
+  addDoubleTapOrDblClick(document.getElementById('sb-btn-settings'), () => window.openQuizSettings());
+  addDoubleTapOrDblClick(document.getElementById('sb-btn-exit'), () => setMode('landing'));
 }
 
 async function saveQuizReportNow() {
@@ -2065,6 +2143,29 @@ window.forceReloadQuizImages = () => {
 };
 
 function initQuizSettingsUI() {
+  // ── Restore comp UI from persisted state ──────────────────────────────
+  // Restore last URL into the input field
+  const _savedUrl = quizSettings._compUrl || '';
+  const _urlInput = document.getElementById('qs-comp-url');
+  if (_urlInput && _savedUrl && !_urlInput.value) {
+    _urlInput.value = _savedUrl;
+    window._qsCompUrlCheck(_savedUrl);
+  }
+  // Restore time-limit slider
+  const _tlSlider = document.getElementById('qs-comp-timelimit-slider');
+  if (_tlSlider && _qsTimeLimitSec) {
+    _tlSlider.value = _qsTimeLimitSec;
+    window._qsTimeLimitSync(_qsTimeLimitSec);
+  }
+  // Restore URL input oninput → persist on change
+  if (_urlInput && !_urlInput._compPersistBound) {
+    _urlInput._compPersistBound = true;
+    _urlInput.addEventListener('input', () => {
+      quizSettings._compUrl = _urlInput.value;
+      saveCompPrefs();
+    });
+  }
+
   // Subjects chips
   document.querySelectorAll('.quiz-subject-chip').forEach(chip => {
     const subj = chip.dataset.subject;
@@ -2344,19 +2445,24 @@ function initQuizSettingsUI() {
   });
   updateImgSourceUI();
 
-  // Voice Over toggle + Repeat when hover sub-setting
-  const voChk = document.getElementById('quiz-voiceover-enabled');
-  const voHoverRow = document.getElementById('quiz-vo-hover-row');
-  const voHoverChk = document.getElementById('quiz-vo-hover-repeat');
-  const _syncVoHoverRow = () => {
-    if (voHoverRow) voHoverRow.style.display = quizSettings.voiceOver ? 'flex' : 'none';
+  // Voice Over toggle + sub-settings (volume, repeat-on-hover)
+  const voChk       = document.getElementById('quiz-voiceover-enabled');
+  const voHoverRow  = document.getElementById('quiz-vo-hover-row');
+  const voHoverChk  = document.getElementById('quiz-vo-hover-repeat');
+  const voVolRow    = document.getElementById('quiz-vo-volume-row');
+  const voVolSlider = document.getElementById('quiz-vo-volume-slider');
+  const voVolDisplay= document.getElementById('quiz-vo-volume-display');
+  const _syncVoSubRows = () => {
+    const on = quizSettings.voiceOver;
+    if (voHoverRow) voHoverRow.style.display = on ? 'flex' : 'none';
+    if (voVolRow)   voVolRow.style.display   = on ? 'flex' : 'none';
   };
   if (voChk) {
     voChk.checked = quizSettings.voiceOver;
     voChk.onchange = e => {
       quizSettings.voiceOver = e.target.checked;
       saveQuizSettings();
-      _syncVoHoverRow();
+      _syncVoSubRows();
     };
   }
   if (voHoverChk) {
@@ -2366,7 +2472,18 @@ function initQuizSettingsUI() {
       saveQuizSettings();
     };
   }
-  _syncVoHoverRow(); // set initial visibility
+  if (voVolSlider) {
+    const pct = Math.round((quizSettings.voiceOverVolume ?? 1.0) * 100);
+    voVolSlider.value = pct;
+    if (voVolDisplay) voVolDisplay.textContent = `${pct}%`;
+    voVolSlider.oninput = e => {
+      const v = parseInt(e.target.value) / 100;
+      quizSettings.voiceOverVolume = v;
+      if (voVolDisplay) voVolDisplay.textContent = `${e.target.value}%`;
+      saveQuizSettings();
+    };
+  }
+  _syncVoSubRows(); // set initial visibility
 }
 
 function updateQuizMusicToggleUI() {
@@ -2409,7 +2526,9 @@ function stopQuizMusic() {
 
 // Returns the effective SFX volume (0 if muted, else musicVolume)
 function _getSfxVolume() {
-  return quizSettings.musicOn ? (quizSettings.musicVolume ?? 0.2) : 0;
+  // SFX volume is independent of the music toggle — always audible.
+  // Uses musicVolume as a relative scale, defaulting to 0.5 if not set.
+  return quizSettings.musicVolume ?? 0.5;
 }
 
 // ── Voice Over (TTS) helper ─────────────────────────────────────────────
@@ -2495,19 +2614,20 @@ function _pickEnglishVoice() {
   if (!voices.length) return null;
   // Gemini uses Google's US English neural voice — match closest available
   const preferred = [
-    'Google US English',           // Closest to Gemini default
-    'Google UK English Female',    // Google neural, UK female
-    'Microsoft Aria Online (Natural) - English (United States)', // MS neural
     'Microsoft Jenny Online (Natural) - English (United States)',
+    'Microsoft Aria Online (Natural) - English (United States)',
+    'Google US English',
+    'Google UK English Female',
     'Microsoft Aria - English (United States)',
     'Microsoft Zira Desktop - English (United States)',
-    'Microsoft Hazel Desktop - English (Great Britain)',
     'Samantha', 'Karen', 'Victoria', 'Moira', // macOS
   ];
-  for (const name of preferred) {
-    const v = voices.find(v => v.name === name);
-    if (v) { _voiceEnglish = v; return v; }
-  }
+  // Filter out known robotic male voices if we have alternatives
+  const vList = preferred.map(name => voices.find(v => v.name === name)).filter(v => !!v);
+  if (vList.length) { _voiceEnglish = vList[0]; return vList[0]; }
+  
+  const femaleVoice = voices.find(v => (v.name.toLowerCase().includes('female') || v.name.includes('Aria') || v.name.includes('Jenny') || v.name.includes('Zira') || v.name.includes('Samantha')) && v.lang?.startsWith('en'));
+  if (femaleVoice) { _voiceEnglish = femaleVoice; return femaleVoice; }
   const byKeyword = voices.find(v => v.name.toLowerCase().includes('female') && v.lang?.startsWith('en'));
   if (byKeyword) { _voiceEnglish = byKeyword; return byKeyword; }
   const enUS = voices.find(v => v.lang === 'en-US');
@@ -2522,11 +2642,11 @@ function _pickChineseVoice() {
   const voices = window.speechSynthesis?.getVoices() || [];
   if (!voices.length) return null;
   const preferred = [
-    'Google \u666e\u901a\u8bdd\uff08\u4e2d\u56fd\u5927\u9646\uff09', // Google 普通话（中国大陆）
+    'Microsoft Xiaoxiao Online (Natural) - Chinese (Mainland)',
+    'Google \u666e\u901a\u8bdd\uff08\u4e2d\u56fd\u5927\u9646\uff09',
     'Microsoft Yaoyao Desktop - Chinese (Simplified, PRC)',
     'Microsoft Huihui Desktop - Chinese (Simplified, PRC)',
-    'Ting-Ting',  // macOS
-    'Sin-Ji',     // macOS Cantonese fallback
+    'Ting-Ting',
   ];
   for (const name of preferred) {
     const v = voices.find(v => v.name === name);
@@ -2603,6 +2723,7 @@ function quizSpeak(text, { rate = 0.95, pitch = 1.0, delay = 0, onEnd = null, ta
       // so that event.charIndex still lines up with our span dataset.start/end values).
       const spokenText = seg.text.replace(/[\(\)\[\]\{\}？！，。：；、\?\!\.\,]/g, ' ');
       const utt = new SpeechSynthesisUtterance(spokenText);
+      utt.volume = quizSettings.voiceOverVolume ?? 1.0;
 
       if (seg.lang === 'zh') {
         const v = _pickChineseVoice();
@@ -2636,80 +2757,39 @@ function quizSpeak(text, { rate = 0.95, pitch = 1.0, delay = 0, onEnd = null, ta
         fallbackTimers = [];
       };
 
-      // Schedule timer-based highlights for spans that belong to THIS segment.
-      // Average natural speech = ~150 words/min at rate=1.0 → ~400ms/word.
-      // We use a slightly faster estimate so the highlight leads the audio.
+      // ── Segment-level highlighting (Underline the whole sentence/chunk) ─────
+      let segSpans = [];
       if (tokenSpans.length) {
         const segStart = globalCharOffset;
         const segEnd = globalCharOffset + seg.text.length;
-        const segSpans = tokenSpans.filter(s => {
+        segSpans = tokenSpans.filter(s => {
           const st = parseInt(s.dataset.start);
           return st >= segStart && st < segEnd;
         });
-
-        if (segSpans.length) {
-          // Per-word timing based on character count so longer words stay highlighted
-          // longer before the next word fires — tracks actual voice tempo better.
-          // Base formula: (chars * 55ms + 80ms) / effective_rate, minimum 120ms.
-          const effectiveRate = seg.lang === 'zh' ? (rate * 0.95) : rate;
-
-          // Build cumulative start-time offsets for each span
-          const delays = [];
-          let cumMs = 0;
-          segSpans.forEach(span => {
-            delays.push(cumMs);
-            const wordLen = (span.textContent || '').trim().length || 1;
-            cumMs += Math.max(120, Math.round((wordLen * 55 + 80) / effectiveRate));
-          });
-
-          segSpans.forEach((span, i) => {
-            const t = setTimeout(() => {
-              if (!boundaryFired) {
-                // Fallback is active — apply highlight
-                tokenSpans.forEach(s => s.classList.remove('quiz-word-highlight'));
-                span.classList.add('quiz-word-highlight');
-              }
-            }, delays[i]);
-            fallbackTimers.push(t);
-            _activeFallbackTimers.push(t);
-          });
-        }
       }
 
-      utt.onboundary = (event) => {
-        if (!tokenSpans.length) return;
-        // First real boundary event — cancel timer fallback
-        if (!boundaryFired) {
-          boundaryFired = true;
-          clearFallback();
-        }
-
-        const charIdx = globalCharOffset + event.charIndex;
-
-        // Primary: exact range match
-        let target = tokenSpans.find(s => {
-          const sStart = parseInt(s.dataset.start);
-          const sEnd = parseInt(s.dataset.end);
-          return charIdx >= sStart && charIdx < sEnd;
-        });
-
-        // Fallback: nearest token whose start is just ahead of charIdx
-        // (handles browsers that fire boundary at the space before a word)
-        if (!target) {
-          target = tokenSpans.find(s => parseInt(s.dataset.start) === charIdx + 1) ||
-            tokenSpans.find(s => parseInt(s.dataset.start) === charIdx + 2);
-        }
-
-        if (target) {
-          tokenSpans.forEach(s => s.classList.remove('quiz-word-highlight'));
-          target.classList.add('quiz-word-highlight');
-        }
+      const highlightOn = () => {
+        segSpans.forEach(span => span.classList.add('quiz-word-highlight'));
+      };
+      const highlightOff = () => {
+        segSpans.forEach(span => span.classList.remove('quiz-word-highlight'));
       };
 
+      utt.onstart = highlightOn;
+      utt.onboundary = (e) => {
+        if (e.name === 'sentence' || e.name === 'word') highlightOn();
+      };
       utt.onend = () => {
         clearFallback();
-        tokenSpans.forEach(s => s.classList.remove('quiz-word-highlight'));
-        globalCharOffset += seg.text.length; // advance by ORIGINAL length (same as spoken length)
+        highlightOff();
+        globalCharOffset += seg.text.length;
+        currentIdx++;
+        speakNext();
+      };
+      utt.onerror = () => {
+        clearFallback();
+        highlightOff();
+        globalCharOffset += seg.text.length;
         currentIdx++;
         speakNext();
       };
@@ -2724,28 +2804,26 @@ function quizSpeak(text, { rate = 0.95, pitch = 1.0, delay = 0, onEnd = null, ta
 }
 
 // Read answers once the grid is visible — each answer spoken separately with a pause.
-function _speakAnswers(q, gen) {
+function _speakAnswers(q, gen, gridId = 'quiz-answers-grid') {
   if (!quizSettings.voiceOver) return;
-  if (gen !== quizRenderGen) return;
-  const grid = document.getElementById('quiz-answers-grid');
+  const grid = document.getElementById(gridId);
   if (!grid) return;
   // Chain each answer as a separate utterance with a 600ms pause between.
-  const answers = q.answers.map(a => a.text);
+  const answers = (q.answers || []).map(a => a.text);
   const abortGen = _voAbortGen;
   let idx = 0;
   const speakNext = () => {
-    if (idx >= answers.length || gen !== quizRenderGen || abortGen !== _voAbortGen) return;
+    if (idx >= answers.length || abortGen !== _voAbortGen) return;
     const isLast = idx === answers.length - 1;
     const answerText = answers[idx];
     const card = grid.children[idx];
-    // Use .quiz-answer-text span specifically — avoids targeting img-src-badge or other spans
     const targetEl = card ? card.querySelector('.quiz-answer-text') : null;
     idx++;
     quizSpeak(answerText, {
       rate: 0.88,
       targetElement: targetEl,
       onEnd: () => {
-        if (isLast || abortGen !== _voAbortGen || gen !== quizRenderGen) return;
+        if (isLast || abortGen !== _voAbortGen) return;
         setTimeout(speakNext, 600);
       }
     });
@@ -2784,7 +2862,12 @@ function quizSpeakCancel() {
 
 window.openQuizSettings = () => {
   initQuizSettingsUI();
-  document.getElementById('quiz-settings-overlay').classList.add('show');
+  const _settingsOv = document.getElementById('quiz-settings-overlay');
+  // Clear any inline display:none set by startComprehensionFromQuizSettings so the CSS .show class wins
+  if (_settingsOv) { _settingsOv.style.display = ''; }
+  _settingsOv.classList.add('show');
+  // Restore last active mode tab (quiz vs comprehension)
+  setTimeout(() => window._qsModeSwitch(_qsCurrentMode || 'quiz'), 20);
 };
 window.closeQuizSettings = () => {
   document.getElementById('quiz-settings-overlay').classList.remove('show');
@@ -4326,6 +4409,8 @@ function renderQuizBoard() {
     currentQuizTheme = quizSettings.theme;
   }
 
+  const fontSizeClass = `quiz-font-${quizSettings.fontSize || 'medium'}`;
+  questionEl.className = `quiz-question-text ${fontSizeClass}`;
   prepareHighlightableText(questionEl, q.question);
   questionEl.dataset.prepared = 'true';
 
@@ -4740,6 +4825,9 @@ function renderQuizBoard() {
       grid.style.pointerEvents = 'auto';
       bar.style.background = 'linear-gradient(90deg,#10b981,#06b6d4)';
       setTimeout(() => { if (bar.parentNode) bar.style.opacity = '0'; }, 600);
+      quizSpeakCancel();
+      document.removeEventListener('keydown', _onQRKey, true);
+      document.removeEventListener('click',   _onQRClickGlobal, true);
       questionContainer.removeEventListener('mouseenter', onEnter);
       questionContainer.removeEventListener('mouseleave', onLeave);
       questionContainer.removeEventListener('click', onClick);
@@ -4753,13 +4841,9 @@ function renderQuizBoard() {
       requestAnimationFrame(() => _sizeAnswerGrid());
       // Sequencing rule: read answers ONLY AFTER question TTS finishes.
       // If question is still being spoken, mark as pending — quizSpeak's onEnd will trigger it.
-      if (quizSettings.voiceOver && _capturedGen === quizRenderGen) {
-        if (window.speechSynthesis?.speaking) {
-          // Question TTS still running — defer answers until it ends naturally
-          window._quizQReadAnswerPending = _capturedGen;
-        } else {
-          _speakAnswers(q, _capturedGen);
-        }
+      if (window.speechSynthesis?.speaking) {
+        // Question TTS still running — defer answers until it ends naturally
+        window._quizQReadAnswerPending = _capturedGen;
       }
       _attachVoOverHoverBar(questionContainer, q, currentGen);
     };
@@ -4775,21 +4859,27 @@ function renderQuizBoard() {
       quizQReadTimerId = requestAnimationFrame(animate);
     };
 
+    let _answersSpoken = false;
     const onEnter = () => {
       hovering = true;
-      if (!_questionSpoken && quizSettings.voiceOver && _capturedGen === quizRenderGen) {
+      if (!quizSettings.voiceOver || _capturedGen !== quizRenderGen) return;
+      if (!_questionSpoken) {
         _questionSpoken = true;
         quizSpeak(q.question, {
           rate: 0.88,
           targetElement: questionEl,
           onEnd: () => {
-            // If bar completed while we were reading, speak answers now
             if (window._quizQReadAnswerPending === _capturedGen) {
               window._quizQReadAnswerPending = null;
+              _answersSpoken = true;
               _speakAnswers(q, _capturedGen);
             }
           }
         });
+      } else if (!_answersSpoken && _qReadDone) {
+        // Second hover or question finished — read answers sequentially
+        _answersSpoken = true;
+        _speakAnswers(q, _capturedGen);
       }
     };
     const onLeave = () => { hovering = false; lastT = null; };
@@ -4809,10 +4899,20 @@ function renderQuizBoard() {
         });
       }
       elapsed = quizSettings.qReadTimeMs;
+      _onBarComplete();
     };
     // _skipQRead: assigns elapsed = max to trigger _onBarComplete on next rAF.
     // Called by doSelect when user clicks an answer before bar completes.
     _skipQRead = () => { elapsed = quizSettings.qReadTimeMs; };
+    const _onQRKey = (e) => {
+      if (['Space','Enter','ArrowRight'].includes(e.code)) {
+        e.preventDefault(); onClick();
+      }
+    };
+    const _onQRClickGlobal = () => onClick();
+    document.addEventListener('keydown', _onQRKey, true);
+    document.addEventListener('click',   _onQRClickGlobal, true);
+
     quizQReadOnEnter = onEnter;
     quizQReadOnLeave = onLeave;
     quizQReadOnClick = onClick;
@@ -5095,7 +5195,7 @@ function renderQuizBoard() {
       if (!svgOverlay) {
         svgOverlay = document.createElement('div');
         svgOverlay.className = 'absolute inset-0 flex items-center justify-center z-20 pointer-events-none';
-        svgOverlay.innerHTML = `<svg class="w-28 h-28 transform -rotate-90"><circle cx="56" cy="56" r="44" class="text-slate-700/80" stroke-width="7" stroke="currentColor" fill="transparent" /><circle cx="56" cy="56" r="44" class="text-violet-400" style="opacity:0.55" stroke-width="7" stroke-dasharray="276.46" stroke-dashoffset="276.46" stroke-linecap="round" stroke="currentColor" fill="transparent" /></svg>`;
+        svgOverlay.innerHTML = `<svg viewBox="0 0 112 112" class="w-20 h-20 transform -rotate-90"><circle cx="56" cy="56" r="44" stroke-width="6" stroke="#334155" fill="transparent" style="opacity:0.15"/><circle cx="56" cy="56" r="44" stroke-width="6" stroke-dasharray="276.46" stroke-dashoffset="276.46" stroke-linecap="round" stroke="#8b5cf6" fill="transparent" style="opacity:0.7"/></svg>`;
         card.appendChild(svgOverlay);
       }
     };
@@ -5168,6 +5268,7 @@ function renderQuizBoard() {
 
       if (isCorrect) {
         quizQuestionAnswered = true;
+        quizSpeakCancel();
         _voAbortGen++; // cancel any ongoing answer TTS
         quizSpeakCancel();
         card.dataset.answered = 'true';
@@ -5289,7 +5390,6 @@ function renderQuizBoard() {
       removeOverlay();
     };
 
-    let _selectionMethod = 'click'; // default; overridden to 'hover' when dwell fires
     card.addEventListener('mouseenter', () => { _selectionMethod = 'hover'; startDwell(); });
     card.addEventListener('mouseleave', () => { _selectionMethod = 'click'; stopDwell(); });
     card.addEventListener('click', () => { _selectionMethod = 'click'; doSelect(); });
@@ -5390,9 +5490,21 @@ function renderQuizBoard() {
     // Cards must NOT have pointer-events:none (they'd miss mouse events).
     // Instead we listen on the grid wrapper itself — mouse entering ANY part
     // of the grid area (including cards) triggers grid's mouseenter.
-    const _onGridEnter = () => { aHovering = true; aBarHint.style.opacity = '0'; };
+    function onGridEnter() { 
+      aHovering = true; aBarHint.style.opacity = '0'; 
+      if (quizSettings.voiceOver && !_aReadVoTriggered) {
+        _aReadVoTriggered = true;
+        // Read question THEN chain answers
+        _questionSpoken = true;
+        quizSpeak(q.question, {
+          rate: 0.88,
+          targetElement: questionEl,
+          onEnd: () => _speakAnswers(q, currentGen)
+        });
+      }
+    }
     const _onGridLeave = () => { aHovering = false; aLastT = null; };
-    grid.addEventListener('mouseenter', _onGridEnter);
+    grid.addEventListener('mouseenter', onGridEnter);
     grid.addEventListener('mouseleave', _onGridLeave);
 
     // Click on grid → skip bar instantly
@@ -5498,6 +5610,15 @@ const _BH_CHARS = [
 const _BH_SOUNDS = ['assets/bh/fairy_wow.mp3', 'assets/bh/recorder.mp3', 'assets/bh/08_elf_horn_hit.mp3'];
 
 let _bhToastT = null;
+// Expose celebration functions to window for theme consistency
+window.triggerBenElfCelebration = triggerBenElfCelebration;
+window.triggerKfpCelebration    = triggerKfpCelebration;
+window.triggerTotoroCelebration = triggerTotoroCelebration;
+window.triggerTRCelebration     = triggerTRCelebration;
+window.triggerZooCelebration    = triggerZooCelebration;
+window.burstConfetti = burstConfetti;
+window.playQuizCorrectSound = playQuizCorrectSound;
+
 function triggerBenElfCelebration() {
   // Pick one celebration sound randomly from the pool of 3
   try {
@@ -6281,7 +6402,7 @@ function playBenHollyOutro(onDone) {
     window.addEventListener('click', finish, { once: true });
   }, 500);
 
-  if (outroAudio) outroAudio.addEventListener('ended', finish);
+  if (outroAudio) outroAudio.addEventListener('ended', finish, { once: true });
   setTimeout(() => finish(), 28000);
 }
 
@@ -6589,43 +6710,53 @@ function _doStartQuiz() {
 // Holds a pre-fetch promise started during the theme intro
 let _introPrefetchPromise = null;
 
+
 // ══════════════════════════════════════════════════════════════════════════
 // Quiz Settings: Quiz / Comprehension mode toggle
 // ══════════════════════════════════════════════════════════════════════════
-
-let _qsCurrentMode = 'quiz'; // 'quiz' | 'comp'
-
-// ── URL History (localStorage) ───────────────────────────────────────────
-const _COMP_HISTORY_KEY = 'comp_url_history';
-const _COMP_HISTORY_MAX = 10;
-
-// ── Time limit state ─────────────────────────────────────────────────────
-let _qsTimeLimitSec = 0;  // 0 = no limit
+// (_qsCurrentMode, _qsTimeLimitSec, _COMP_HISTORY_KEY, _COMP_HISTORY_MAX,
+//  and _qsHistoryLoad are declared at the top of the file for early access.)
 
 window._qsTimeLimitSync = (val) => {
   _qsTimeLimitSec = +val;
   const disp = document.getElementById('qs-comp-timelimit-display');
-  if (!disp) return;
-  if (+val === 0) { disp.textContent = 'No limit'; return; }
-  const m = Math.floor(+val / 60);
-  const s = +val % 60;
-  disp.textContent = m > 0
-    ? (s > 0 ? `${m} min ${s} sec` : `${m} min`)
-    : `${s} sec`;
+  if (disp) {
+    if (+val === 0) { disp.textContent = 'No limit'; }
+    else {
+      const m = Math.floor(+val / 60);
+      const s = +val % 60;
+      disp.textContent = m > 0
+        ? (s > 0 ? `${m} min ${s} sec` : `${m} min`)
+        : `${s} sec`;
+    }
+  }
+  saveCompPrefs();
 };
 
 
-function _qsHistoryLoad() {
-  try { return JSON.parse(localStorage.getItem(_COMP_HISTORY_KEY) || '[]'); }
-  catch { return []; }
-}
 
 function _qsHistorySave(url) {
   if (!url || !url.trim()) return;
-  const list = _qsHistoryLoad().filter(u => u !== url); // deduplicate
-  list.unshift(url);                                      // newest first
-  if (list.length > _COMP_HISTORY_MAX) list.length = _COMP_HISTORY_MAX;
-  try { localStorage.setItem(_COMP_HISTORY_KEY, JSON.stringify(list)); } catch {}
+  const parsed = _parseQsUrl(url);
+  const existing = _qsHistoryLoad().filter(e => (e.url || e) !== url);
+  const entry = { url: url.trim(), title: null, videoId: parsed?.videoId || null, savedAt: Date.now() };
+  existing.unshift(entry);
+  if (existing.length > _COMP_HISTORY_MAX) existing.length = _COMP_HISTORY_MAX;
+  try { localStorage.setItem(_COMP_HISTORY_KEY, JSON.stringify(existing)); } catch {}
+  saveCompPrefs();
+  // Fetch title in background for YouTube videos and update stored entry
+  if (parsed?.type === 'youtube') {
+    const oEmbedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent('https://www.youtube.com/watch?v=' + parsed.videoId)}&format=json`;
+    fetch(oEmbedUrl).then(r => r.ok ? r.json() : null).then(data => {
+      if (!data?.title) return;
+      const list = _qsHistoryLoad();
+      const found = list.find(e => e.url === url.trim());
+      if (found) { found.title = data.title; found.author = data.author_name || ''; }
+      try { localStorage.setItem(_COMP_HISTORY_KEY, JSON.stringify(list)); } catch {}
+      saveCompPrefs();
+      _qsHistoryRender();
+    }).catch(() => {});
+  }
 }
 
 function _qsHistoryRender() {
@@ -6633,34 +6764,38 @@ function _qsHistoryRender() {
   if (!dropdown) return;
   const list = _qsHistoryLoad();
   if (!list.length) {
-    dropdown.innerHTML =
-      '<div style="padding:12px 14px;font-size:0.75rem;color:#475569;font-weight:600;">No history yet</div>';
+    dropdown.innerHTML = '<div style="padding:12px 14px;font-size:0.75rem;color:#475569;font-weight:600;">No history yet</div>';
     return;
   }
-  dropdown.innerHTML = list.map((url, i) => {
+  dropdown.innerHTML = list.map((entry, i) => {
+    const url = entry.url || entry;
     const parsed = _parseQsUrl(url);
-    const icon   = parsed?.type === 'youtube' ? '▶' : '🖼';
-    const label  = parsed?.type === 'youtube'
-      ? `YouTube — ID: ${parsed.videoId}`
-      : url.length > 52 ? url.slice(0, 50) + '…' : url;
-    const shortUrl = url.length > 60 ? url.slice(0, 58) + '…' : url;
+    const isYt = parsed?.type === 'youtube';
+    const isImg = parsed?.type === 'image';
+    const vidId = entry.videoId || parsed?.videoId;
+    const thumbUrl = (isYt && vidId) ? `https://img.youtube.com/vi/${vidId}/mqdefault.jpg` : (isImg ? url : null);
+    const title = entry.title || (isYt ? `YouTube — ${vidId}` : (url.length > 45 ? url.slice(0, 43) + '…' : url));
+    const author = entry.author ? `▶ ${entry.author}` : (isYt ? 'YouTube' : url.length > 50 ? url.slice(0, 48) + '…' : url);
     return (
       `<div class="_qs-hist-row" data-idx="${i}"
-        style="display:flex;align-items:flex-start;gap:8px;padding:9px 13px;
-               border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;
-               transition:background 0.15s;"
+        style="display:flex;align-items:stretch;gap:0;cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.04);transition:background 0.15s;position:relative;"
         onmouseenter="this.style.background='rgba(139,92,246,0.12)'"
         onmouseleave="this.style.background=''"
         onclick="window._qsHistorySelect(${i})">
-        <span style="flex-shrink:0;font-size:0.9rem;margin-top:1px;">${icon}</span>
-        <div style="min-width:0;">
-          <div style="font-size:0.75rem;font-weight:700;color:#c4b5fd;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${label}</div>
-          <div style="font-size:0.65rem;color:#475569;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;">${shortUrl}</div>
+        ${thumbUrl ? `<div style="flex-shrink:0;width:80px;min-height:48px;background:#0f172a;overflow:hidden;position:relative;display:flex;align-items:center;justify-content:center;">
+          <img src="${thumbUrl}" style="width:100%;height:100%;object-fit:cover;display:block;" onerror="this.parentElement.innerHTML='<span style=\'font-size:1.2rem;\'>${isImg ? '🖼' : '▶'}</span>'">
+          ${isYt ? `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;">
+            <div style="background:rgba(239,68,68,0.8);border-radius:50%;width:18px;height:18px;display:flex;align-items:center;justify-content:center;">
+              <svg width='8' height='8' viewBox='0 0 24 24' fill='white'><polygon points='5,3 19,12 5,21'/></svg>
+            </div>
+          </div>` : ''}
+        </div>` : `<div style="flex-shrink:0;width:80px;display:flex;align-items:center;justify-content:center;font-size:1.1rem;background:#0f172a;">🖼</div>`}
+        <div style="flex:1;padding:8px 10px;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:2px;">
+          <div style="font-size:0.73rem;font-weight:700;color:#e2e8f0;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.3;">${title}</div>
+          <div style="font-size:0.62rem;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600;">${author}</div>
         </div>
         <button onclick="event.stopPropagation();window._qsHistoryRemove(${i})"
-          style="flex-shrink:0;margin-left:auto;background:none;border:none;color:#475569;
-                 cursor:pointer;font-size:1rem;line-height:1;padding:0 2px;
-                 transition:color 0.15s;"
+          style="flex-shrink:0;width:28px;display:flex;align-items:center;justify-content:center;background:none;border:none;color:#475569;cursor:pointer;font-size:1rem;line-height:1;transition:color 0.15s;"
           onmouseenter="this.style.color='#f87171'"
           onmouseleave="this.style.color='#475569'"
           title="Remove">&times;</button>
@@ -6696,11 +6831,9 @@ window._qsHistoryToggle = () => {
 };
 
 function _qsHistoryClose(e) {
-  // Don't close if click was inside the dropdown or history button
   const dropdown = document.getElementById('qs-comp-history-dropdown');
   const btn = document.getElementById('qs-comp-history-btn');
   if (dropdown && (dropdown.contains(e.target) || (btn && btn.contains(e.target)))) {
-    // Re-attach listener so it closes next outside click
     setTimeout(() => {
       document.addEventListener('click', _qsHistoryClose, { once: true });
     }, 10);
@@ -6711,8 +6844,9 @@ function _qsHistoryClose(e) {
 
 window._qsHistorySelect = (idx) => {
   const list = _qsHistoryLoad();
-  const url = list[idx];
-  if (!url) return;
+  const entry = list[idx];
+  if (!entry) return;
+  const url = entry.url || entry;
   const input = document.getElementById('qs-comp-url');
   if (input) { input.value = url; window._qsCompUrlCheck(url); }
   const dropdown = document.getElementById('qs-comp-history-dropdown');
@@ -6724,10 +6858,17 @@ window._qsHistoryRemove = (idx) => {
   list.splice(idx, 1);
   try { localStorage.setItem(_COMP_HISTORY_KEY, JSON.stringify(list)); } catch {}
   _qsHistoryRender();
+  saveCompPrefs();
   if (!list.length) {
     const dropdown = document.getElementById('qs-comp-history-dropdown');
     if (dropdown) dropdown.style.display = 'none';
   }
+};
+
+// Clear the URL input and reset the preview
+window._qsCompUrlClear = () => {
+  const input = document.getElementById('qs-comp-url');
+  if (input) { input.value = ''; window._qsCompUrlCheck(''); input.focus(); }
 };
 
 // Helper: detect YouTube URL and extract videoId
@@ -6769,16 +6910,27 @@ window._qsModeSwitch = (mode) => {
     const urlInput = document.getElementById('qs-comp-url');
     if (urlInput) window._qsCompUrlCheck(urlInput.value);
   }
+  // Persist mode tab selection
+  saveCompPrefs();
 };
 
-// Live feedback as user types URL
+// Live feedback + media preview as user types URL
+let _qsPreviewAbort = 0; // bump to cancel stale fetch calls
 window._qsCompUrlCheck = (val) => {
-  const fb = document.getElementById('qs-comp-url-feedback');
-  const tlRow = document.getElementById('qs-comp-timelimit-row');
-  const tlHint = document.getElementById('qs-comp-timelimit-hint');
+  const fb      = document.getElementById('qs-comp-url-feedback');
+  const tlRow   = document.getElementById('qs-comp-timelimit-row');
+  const tlHint  = document.getElementById('qs-comp-timelimit-hint');
+  const preview = document.getElementById('qs-comp-preview');
+  const pThumb  = document.getElementById('qs-comp-preview-thumb');
+  const pTitle  = document.getElementById('qs-comp-preview-title');
+  const pMeta   = document.getElementById('qs-comp-preview-meta');
   if (!fb) return;
+
   const parsed = _parseQsUrl(val);
-  const isYt = parsed?.type === 'youtube';
+  const isYt   = parsed?.type === 'youtube';
+  const isImg  = parsed?.type === 'image';
+
+  // ── Feedback text ──────────────────────────────────────────────────────
   if (!val || !val.trim()) {
     fb.className = 'info'; fb.textContent = 'Paste a YouTube video URL or a direct image URL.';
   } else if (!parsed) {
@@ -6788,9 +6940,74 @@ window._qsCompUrlCheck = (val) => {
   } else {
     fb.className = 'ok'; fb.textContent = '✓ Image URL detected — will show alongside questions.';
   }
+
   // Show time limit controls only for YouTube URLs
   if (tlRow)  tlRow.style.display  = isYt ? 'flex'  : 'none';
   if (tlHint) tlHint.style.display = isYt ? 'block' : 'none';
+
+  // ── Media preview ──────────────────────────────────────────────────────
+  if (!preview) return;
+  const abortId = ++_qsPreviewAbort;
+
+  if (!parsed) {
+    preview.style.display = 'none';
+    return;
+  }
+
+  if (isYt) {
+    // Always rebuild the YouTube card structure so stale image HTML is cleared
+    const thumbUrl = `https://img.youtube.com/vi/${parsed.videoId}/mqdefault.jpg`;
+    preview.style.flexDirection = 'row';
+    preview.innerHTML = `
+      <div id="qs-comp-preview-thumb" style="flex-shrink:0;width:120px;min-height:68px;background:#0f172a;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;">
+        <img src="${thumbUrl}" alt="Thumbnail"
+          style="width:100%;height:100%;object-fit:cover;display:block;"
+          onerror="this.style.display='none'">
+        <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+          background:rgba(239,68,68,0.85);border-radius:50%;width:28px;height:28px;
+          display:flex;align-items:center;justify-content:center;pointer-events:none;">
+          <svg width='12' height='12' viewBox='0 0 24 24' fill='white'><polygon points='5,3 19,12 5,21'/></svg>
+        </div>
+      </div>
+      <div style="flex:1;padding:10px 12px;display:flex;flex-direction:column;justify-content:center;gap:4px;min-width:0;">
+        <div id="qs-comp-preview-title" style="font-size:0.78rem;font-weight:700;color:#e2e8f0;line-height:1.3;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">Loading title…</div>
+        <div id="qs-comp-preview-meta" style="font-size:0.65rem;color:#64748b;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">youtube.com/watch?v=${parsed.videoId}</div>
+      </div>`;
+    preview.style.display = 'flex';
+
+    // Re-query after rebuild
+    const newTitle = document.getElementById('qs-comp-preview-title');
+    const newMeta  = document.getElementById('qs-comp-preview-meta');
+
+    // Fetch title via oEmbed (no API key needed)
+    const oEmbedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent('https://www.youtube.com/watch?v=' + parsed.videoId)}&format=json`;
+    fetch(oEmbedUrl)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (abortId !== _qsPreviewAbort) return; // stale
+        if (newTitle) newTitle.textContent = data?.title || `Video ID: ${parsed.videoId}`;
+        if (newMeta && data?.author_name) newMeta.textContent = `▶ ${data.author_name}`;
+      })
+      .catch(() => {
+        if (abortId !== _qsPreviewAbort) return;
+        if (newTitle) newTitle.textContent = `YouTube — ID: ${parsed.videoId}`;
+      });
+
+  } else {
+    // Image URL — render the image as its own full-width preview
+    preview.style.flexDirection = 'column';
+    preview.style.display = 'flex';
+    preview.innerHTML = `
+      <img src="${val.trim()}" alt="Image preview"
+        style="width:100%;max-height:160px;object-fit:contain;display:block;border-radius:10px 10px 0 0;background:#0f172a;"
+        onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+      <div style="display:none;padding:10px 14px;font-size:0.72rem;color:#f87171;font-weight:600;align-items:center;gap:6px;">
+        ⚠ Could not load image — check the URL
+      </div>
+      <div style="padding:8px 14px;font-size:0.68rem;color:#64748b;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+        ${val.length > 60 ? val.slice(0, 57) + '…' : val}
+      </div>`;
+  }
 };
 
 // Unified start button action
@@ -6802,13 +7019,267 @@ window._qsStartAction = () => {
   }
 };
 
+// ── Remove video overlay helper ────────────────────────────────────────────
+function _removeCompVideoOverlay() {
+  const ov = document.getElementById('comp-quiz-video-overlay');
+  if (ov) {
+    const iframe = ov.querySelector('iframe');
+    if (iframe) { iframe.src = ''; }  // stop audio
+    ov.remove();
+  }
+}
+
+// ── Transition slide (shown between video end and quiz) ───────────────────
+function _compRunTransitionSlide(callback) {
+  // Hide all other views
+  ['view-landing','view-education','view-edit','view-math-game',
+   'view-peppa-game','view-quiz','view-admin','view-my-reports'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.add('hidden');
+  });
+  // Hide global header for full-screen immersion
+  const hdr = document.getElementById('global-header');
+  if (hdr) hdr.style.setProperty('display','none','important');
+
+  const viewComp = document.getElementById('view-comprehension');
+  if (viewComp) {
+    viewComp.classList.remove('hidden');
+    viewComp.style.cssText = 'display:flex;flex-direction:column;position:fixed;inset:0;z-index:500;background:#0a0f1a;';
+  }
+  const qStage = document.getElementById('comp-question-stage');
+  if (qStage) qStage.style.display = 'none';
+
+  const trans = document.getElementById('comp-transition-stage');
+  const transVideo = document.getElementById('comp-trans-video');
+  const transStatic = document.getElementById('comp-trans-static-content');
+
+  let _transDone = false;
+  let _autoTimer = null;
+  const _finishTrans = () => {
+    if (_transDone) return;
+    _transDone = true;
+    clearTimeout(_autoTimer);
+    if (transVideo) { transVideo.pause(); transVideo.src = ""; }
+    document.removeEventListener('keydown', _onTransKey,   true);
+    document.removeEventListener('click',   _onTransClick, true);
+    if (typeof quizSpeak === 'function' && window.speechSynthesis) speechSynthesis.cancel();
+    if (trans) trans.style.display = 'none';
+    callback();
+  };
+  const _onTransKey   = () => _finishTrans();
+  const _onTransClick = () => _finishTrans();
+
+  if (trans) {
+    trans.style.display = 'flex';
+    
+    if (transVideo) {
+      const vids = ['transition_peppa.mp4', 'transition_panda.mp4', 'transition_nannyplum.mp4'];
+      const picked = vids[Math.floor(Math.random() * vids.length)];
+      transVideo.src = `assets/comprehension/${picked}`;
+      transVideo.style.display = 'block';
+      if (transStatic) transStatic.style.display = 'none';
+      transVideo.onended = () => _finishTrans();
+      transVideo.onerror = () => {
+        transVideo.style.display = 'none';
+        if (transStatic) transStatic.style.display = 'flex';
+        _runFallbackTransition();
+      };
+      transVideo.play().catch(() => {
+        transVideo.style.display = 'none';
+        if (transStatic) transStatic.style.display = 'flex';
+        _runFallbackTransition();
+      });
+    } else {
+      _runFallbackTransition();
+    }
+  }
+
+  function _runFallbackTransition() {
+    // Theme character
+    const charBox = document.getElementById('comp-trans-character-box');
+    if (charBox) {
+      charBox.innerHTML = '';
+      const theme = quizSettings.theme || 'normal';
+      const charMap = {
+        'peppa':         'assets/celebrations/peppa_win.png',
+        'ben-holly':     'assets/celebrations/ben_win.png',
+        'kung-fu-panda': 'assets/celebrations/po_win.png',
+        'totoro':        'assets/celebrations/totoro_win.png',
+        'turning-red':   'assets/celebrations/tr_win.png',
+        'zootopia':      'assets/celebrations/zoo_win.png',
+      };
+      const charUrl = charMap[theme];
+      if (charUrl) {
+        const img = document.createElement('img');
+        img.src = charUrl;
+        img.style.cssText = 'width:150px;height:150px;object-fit:contain;filter:drop-shadow(0 0 20px rgba(13,148,136,0.4));animation:successBounce 2s infinite;';
+        img.onerror = () => { charBox.innerHTML = '<span style="font-size:5rem;">🎬</span>'; };
+        charBox.appendChild(img);
+      } else {
+        charBox.innerHTML = '<span style="font-size:5rem;">🎬</span>';
+      }
+    }
+    const titleEl = document.getElementById('comp-trans-title');
+    const msgEl   = document.getElementById('comp-trans-msg');
+    const isImg = window._compMedia?.type === 'image';
+    if (titleEl) titleEl.textContent = isImg ? 'Awesome looking!' : 'Great watching!';
+    if (msgEl)   msgEl.textContent   = "Now, let's answer the questions!";
+
+    // Voice over removed as per user request
+
+    _autoTimer = setTimeout(_finishTrans, 3500);
+  }
+
+  // Allow skip after 500 ms
+  setTimeout(() => {
+    if (!_transDone) {
+      document.addEventListener('keydown', _onTransKey,   { once: true, capture: true });
+      document.addEventListener('click',   _onTransClick, { once: true, capture: true });
+    }
+  }, 500);
+}
+
+
 // ── Main comprehension-from-quiz-settings flow ────────────────────────────
-window.startComprehensionFromQuizSettings = async () => {
+window.startComprehensionFromQuizSettings = () => {
   const urlInput = document.getElementById('qs-comp-url');
   const rawUrl   = (urlInput?.value || '').trim();
   const parsed   = _parseQsUrl(rawUrl);
 
+  window._compMedia = parsed;
+
+  // Guard: nothing entered or URL not recognised
   if (!parsed) {
+    const fb = document.getElementById('qs-comp-url-feedback');
+    if (fb) { fb.className = 'err'; fb.textContent = '⚠ Please paste a valid YouTube or image URL first.'; }
+    return;
+  }
+
+  // ── Image URL path — show large image in loading overlay, then generate questions ──
+  if (parsed.type === 'image') {
+    const overlay = document.getElementById('quiz-settings-overlay');
+    if (overlay) { overlay.classList.remove('show'); overlay.style.display = 'none'; }
+    _qsHistorySave(rawUrl);
+
+    const numQ     = quizSettings.correctTarget || 5;
+    const eduLevel = quizSettings.eduLevel || 'P2';
+
+    // Show loading overlay with image at 90% of screen so student observes it
+    const oldLo = document.getElementById('comp-img-loading-overlay');
+    if (oldLo) oldLo.remove();
+    const loadOv = document.createElement('div');
+    loadOv.id = 'comp-img-loading-overlay';
+    loadOv.style.cssText = 'position:fixed;inset:0;z-index:9000;background:rgba(2,6,23,0.97);display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:12px 0 0;font-family:inherit;';
+    loadOv.innerHTML = `
+      <div style="font-size:0.6rem;font-weight:700;color:#0d9488;text-transform:uppercase;letter-spacing:0.15em;flex-shrink:0;">Comprehension Adventure — Observe the Image</div>
+      <img src="${parsed.url}" alt="" style="flex:1;min-height:0;max-width:96vw;max-height:calc(100vh - 80px);width:auto;height:auto;object-fit:contain;border-radius:16px;border:2px solid rgba(139,92,246,0.35);box-shadow:0 0 48px rgba(139,92,246,0.2);margin:8px 0;">
+      <div style="flex-shrink:0;display:flex;align-items:center;gap:16px;padding:8px 16px;width:100%;box-sizing:border-box;background:rgba(2,6,23,0.6);">
+        <div style="font-size:0.75rem;color:#94a3b8;flex:1;">Analysing image and generating questions…</div>
+        <div style="width:120px;height:3px;background:rgba(255,255,255,0.08);border-radius:4px;overflow:hidden;flex-shrink:0;">
+          <div style="height:100%;background:linear-gradient(90deg,#0d9488,#0284c7);animation:compLoadPulse 1.5s ease-in-out infinite;width:60%;border-radius:4px;"></div>
+        </div>
+        <button id="comp-img-cancel-btn"
+          style="flex-shrink:0;padding:5px 14px;border:1px solid rgba(248,113,113,0.4);border-radius:8px;background:rgba(248,113,113,0.08);color:#f87171;font-size:0.75rem;font-weight:700;cursor:pointer;">
+          Cancel
+        </button>
+      </div>`;
+    document.body.appendChild(loadOv);
+    document.getElementById('comp-img-cancel-btn').addEventListener('click', () => { loadOv.remove(); });
+
+    fetch('/api/comprehension-generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        phase: 'questions',
+        medium: 'image',
+        subject: 'the image content',
+        educationLevel: eduLevel,
+        numQuestions: numQ,
+        mediaContent: { imageUrl: parsed.url },
+      }),
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (!document.getElementById('comp-img-loading-overlay')) return;
+      loadOv.remove();
+      if (!data?.questions?.length) throw new Error(data?.error || 'No questions returned');
+      _compRunTransitionSlide(() => _compQuizRunTextQuiz(data.questions));
+    })
+    .catch(err => {
+      console.error('[compFromQuiz] Image generation failed:', err);
+      const lo = document.getElementById('comp-img-loading-overlay');
+      if (!lo) return;
+
+      // Determine the most likely cause and give tailored guidance
+      const msg = err?.message || '';
+      const isUnreachable = err?.reason === 'IMAGE_UNREACHABLE' || /fetch|HTTP [45]\d\d|non-image|timeout/i.test(msg);
+      const isInvalidId   = err?.reason === 'INVALID_CORRECT_ID' || /correctId/i.test(msg);
+
+      let causeHtml, tipsHtml;
+      if (isUnreachable) {
+        causeHtml = `Our server could not download this image URL. This usually means the URL is private, behind a login, or blocked by the host site.`;
+        tipsHtml  = `
+          <li>Use a <strong>direct image URL</strong> ending in <code>.jpg</code>, <code>.png</code>, <code>.gif</code>, or <code>.webp</code></li>
+          <li>Try right-clicking an image on Google Images → <em>"Copy image address"</em></li>
+          <li>Use image hosting sites like <strong>imgur.com</strong>, <strong>i.imgur.com</strong>, or <strong>upload.wikimedia.org</strong></li>
+          <li>Avoid links to Google Drive, Dropbox, iCloud, or social media — these block server access</li>
+          <li>Test the URL by opening it in a new browser tab — if it asks you to log in, it won't work</li>`;
+      } else if (isInvalidId) {
+        causeHtml = `Gemini analysed the image but returned questions where the marked correct answer doesn't match any of the options — this means the AI response was malformed. Try submitting the same URL again.`;
+        tipsHtml  = `
+          <li>Click <strong>Change Image</strong> below and press Start again — this often resolves itself</li>
+          <li>If the problem persists with the same image, try a different image URL</li>`;
+      } else {
+        causeHtml = `An unexpected error occurred while generating questions: <em>${msg}</em>`;
+        tipsHtml  = `
+          <li>Make sure the URL points directly to an image file (ends in <code>.jpg</code>, <code>.png</code>, etc.)</li>
+          <li>Check your internet connection and try again</li>
+          <li>Try a different image — some image hosts block automated access</li>`;
+      }
+
+      lo.style.cssText = 'position:fixed;inset:0;z-index:9000;background:rgba(2,6,23,0.97);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;font-family:inherit;padding:24px;box-sizing:border-box;';
+      lo.innerHTML = `
+        <div style="max-width:540px;width:100%;background:rgba(15,23,42,0.9);border:1px solid rgba(239,68,68,0.3);border-radius:20px;padding:28px 32px;display:flex;flex-direction:column;gap:16px;">
+          <div style="display:flex;align-items:center;gap:12px;">
+            <span style="font-size:2rem;">⚠️</span>
+            <div>
+              <div style="font-size:1rem;font-weight:800;color:#f87171;">Could not generate questions</div>
+              <div style="font-size:0.72rem;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;margin-top:2px;">Comprehension Adventure</div>
+            </div>
+          </div>
+          <div style="font-size:0.85rem;color:#cbd5e1;line-height:1.6;">${causeHtml}</div>
+          <div style="background:rgba(255,255,255,0.04);border-radius:12px;padding:14px 18px;">
+            <div style="font-size:0.72rem;font-weight:700;color:#0d9488;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:10px;">💡 How to get a working image URL</div>
+            <ul style="font-size:0.82rem;color:#94a3b8;line-height:1.7;margin:0;padding-left:18px;">${tipsHtml}</ul>
+          </div>
+          <div style="display:flex;gap:10px;margin-top:4px;flex-wrap:wrap;">
+            <button id="comp-err-change-btn"
+              style="flex:1;min-width:140px;padding:10px 20px;border:none;border-radius:10px;background:linear-gradient(135deg,#0d9488,#0284c7);color:#fff;font-size:0.85rem;font-weight:700;cursor:pointer;">
+              🔧 Change Image
+            </button>
+            <button id="comp-err-close-btn"
+              style="padding:10px 20px;border:1px solid rgba(248,113,113,0.35);border-radius:10px;background:rgba(248,113,113,0.06);color:#f87171;font-size:0.85rem;font-weight:700;cursor:pointer;">
+              ✕ Dismiss
+            </button>
+          </div>
+        </div>`;
+
+      // Wire buttons
+      document.getElementById('comp-err-close-btn').onclick = () => lo.remove();
+      document.getElementById('comp-err-change-btn').onclick = () => {
+        lo.remove();
+        // Re-open quiz settings overlay on the Comprehension tab
+        const qsOv = document.getElementById('quiz-settings-overlay');
+        if (qsOv) { qsOv.style.display = 'flex'; qsOv.classList.add('show'); }
+        if (typeof _qsModeSwitch === 'function') _qsModeSwitch('comp');
+        else if (window._qsModeSwitch) window._qsModeSwitch('comp');
+      };
+    });
+    return;
+  }
+
+  // ── YouTube URL path ──────────────────────────────────────────────────────
+  if (parsed.type !== 'youtube') {
     const fb = document.getElementById('qs-comp-url-feedback');
     if (fb) { fb.className = 'err'; fb.textContent = '⚠ Please paste a valid YouTube or image URL first.'; }
     return;
@@ -6816,207 +7287,316 @@ window.startComprehensionFromQuizSettings = async () => {
 
   // Close settings panel
   const overlay = document.getElementById('quiz-settings-overlay');
-  if (overlay) overlay.classList.remove('show');
+  if (overlay) { overlay.classList.remove('show'); overlay.style.display = 'none'; }
 
-  // Save to history
   _qsHistorySave(rawUrl);
 
-  const numQ    = quizSettings.correctTarget || 5;
-  const eduLevel = quizSettings.educationLevel || 'P2';
+  const numQ     = quizSettings.correctTarget || 5;
+  const eduLevel = quizSettings.eduLevel || 'P2';
+  const timeLimitSec = _qsTimeLimitSec || 0;
 
-  // ── Helper: call the Cloud Function ────────────────────────────────────
-  const _fetchQuestions = async () => {
-    const body = {
-      phase: 'questions',
-      medium: parsed.type === 'youtube' ? 'video' : 'image',
-      subject: 'the provided content',
-      educationLevel: eduLevel,
-      numQuestions: numQ,
-      mediaContent: parsed.type === 'youtube'
-        ? { videoId: parsed.videoId }
-        : { imageUrl: parsed.url, title: 'Image Quiz', passage: '' },
-      videoTimeLimitSec: (parsed.type === 'youtube' && _qsTimeLimitSec > 0) ? _qsTimeLimitSec : null,
-    };
-    const res  = await fetch('/api/comprehension-generate', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
-    });
-    const data = await res.json();
-    if (data?.questions?.length) return data.questions;
-    throw new Error(data?.error || 'No questions returned');
+  // State flags
+  let questionsReady   = null;
+  let generationFailed = false;
+  let proceedCalled    = false;
+
+  const _proceedToTransition = () => {
+    if (proceedCalled) return;
+    proceedCalled = true;
+    if (typeof _timeLimitTimer !== 'undefined') clearTimeout(_timeLimitTimer);
+    window.removeEventListener('message', _ytMsgHandler);
+    _removeCompVideoOverlay();
+    if (questionsReady) {
+      _compRunTransitionSlide(() => _compQuizRunTextQuiz(questionsReady));
+    }
+    // else: questionsPromise.then will call _proceedToTransition again once ready
   };
 
-  if (parsed.type === 'youtube') {
-    // ── PARALLEL FLOW: start video immediately + generate in background ──
-    // 1. Show video overlay right away (no wait)
-    // 2. Start question generation in background
-    // 3. Skip button waits for questions if still loading, then launches quiz
-
-    let questionsReady = null;  // will be set when API returns
-    let skipPressed    = false; // set when user clicks Skip
-
-    const questionsPromise = _fetchQuestions().then(qs => {
-      questionsReady = qs;
-      // If user already pressed Skip before questions arrived, launch now
-      if (skipPressed) {
-        const videoOv = document.getElementById('comp-quiz-video-overlay');
-        if (videoOv) videoOv.remove();
-        _compQuizRunTextQuiz(qs, eduLevel);
-      } else {
-        // Update skip button to show "ready"
-        const skipBtn = document.getElementById('comp-quiz-video-skip');
-        if (skipBtn) {
-          skipBtn.innerHTML = '⏭ Skip to Quiz';
-          skipBtn.style.borderColor = '#34d399';
-          skipBtn.style.color = '#34d399';
-        }
-      }
-    }).catch(err => {
-      console.error('[compFromQuiz] Generation failed:', err);
-      const skipBtn = document.getElementById('comp-quiz-video-skip');
-      if (skipBtn) {
-        skipBtn.innerHTML = '⚠ Generation failed';
-        skipBtn.style.borderColor = '#f87171';
-        skipBtn.style.color = '#f87171';
-      }
-    });
-
-    // Show the video overlay immediately
-    const videoOv = document.createElement('div');
-    videoOv.id = 'comp-quiz-video-overlay';
-    const ytEndParam = (_qsTimeLimitSec > 0) ? `&end=${_qsTimeLimitSec}` : '';
-    videoOv.innerHTML = `
-      <iframe
-        src="https://www.youtube.com/embed/${parsed.videoId}?autoplay=1&rel=0&modestbranding=1${ytEndParam}"
-        allow="autoplay; fullscreen"
-        allowfullscreen>
-      </iframe>
-      <button id="comp-quiz-video-skip">⏳ Generating questions…</button>
-    `;
-    document.body.appendChild(videoOv);
-
-    videoOv.querySelector('#comp-quiz-video-skip').addEventListener('click', () => {
-      if (questionsReady) {
-        // Questions already ready — launch immediately
-        videoOv.remove();
-        _compQuizRunTextQuiz(questionsReady, eduLevel);
-      } else {
-        // Still generating — show spinner on button, wait
-        skipPressed = true;
-        const skipBtn = document.getElementById('comp-quiz-video-skip');
-        if (skipBtn) {
-          skipBtn.innerHTML = '⏳ Please wait…';
-          skipBtn.disabled = true;
-          skipBtn.style.opacity = '0.7';
-        }
-      }
-    });
-
-  } else {
-    // ── IMAGE FLOW: show spinner while generating (no video to show) ──────
-    const loadOv = document.createElement('div');
-    loadOv.id = 'comp-quiz-loading-overlay';
-    loadOv.innerHTML = `
-      <div class="cql-spinner"></div>
-      <div class="cql-text">Analysing image and generating ${numQ} questions…</div>
-    `;
-    document.body.appendChild(loadOv);
-    try {
-      const questions = await _fetchQuestions();
-      loadOv.remove();
-      _compQuizRunImageQuiz(parsed.url, questions, eduLevel);
-    } catch (err) {
-      loadOv.remove();
-      if (window.showToast) window.showToast('Failed: ' + err.message, 'error');
+  // ── Background question generation ────────────────────────────────────────
+  fetch('/api/comprehension-generate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      phase: 'questions',
+      medium: 'video',
+      subject: 'the video content',
+      educationLevel: eduLevel,
+      numQuestions: numQ,
+      mediaContent: { videoId: parsed.videoId },
+      videoTimeLimitSec: timeLimitSec > 0 ? timeLimitSec : null,
+    }),
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (!data?.questions?.length) throw new Error(data?.error || 'No questions returned');
+    questionsReady = data.questions;
+    // Update skip button UI
+    const skipBtn = document.getElementById('cqv-skip-btn');
+    if (skipBtn) {
+      skipBtn.innerHTML = '⏭ Skip to Quiz';
+      skipBtn.disabled  = false;
+      skipBtn.style.borderColor = 'rgba(52,211,153,0.6)';
+      skipBtn.style.color       = '#34d399';
+      skipBtn.style.cursor      = 'pointer';
     }
+    // If video already ended / skip already pressed before questions arrived
+    if (proceedCalled) { proceedCalled = false; _proceedToTransition(); }
+  })
+  .catch(err => {
+    generationFailed = true;
+    console.error('[compFromQuiz] Generation failed:', err);
+    const skipBtn = document.getElementById('cqv-skip-btn');
+    if (skipBtn) {
+      skipBtn.innerHTML = '⚠ Generation failed — try again';
+      skipBtn.style.borderColor = 'rgba(248,113,113,0.5)';
+      skipBtn.style.color       = '#f87171';
+      skipBtn.disabled          = false;
+      skipBtn.style.cursor      = 'pointer';
+    }
+  });
+
+  // ── YouTube end detection via postMessage ─────────────────────────────────
+  // YT state 0 = ended naturally; state 2 = paused (fired when &end= time is reached).
+  // We treat state=2 as end ONLY when a time limit is configured, to avoid false triggers
+  // from the user manually pausing.
+  let _videoEndedByLimit = false; // guard against double-trigger for the timer path
+  const _ytMsgHandler = (e) => {
+    try {
+      const d = JSON.parse(e.data);
+      if (d.event === 'onStateChange') {
+        const isEnded = d.info === 0; // natural end
+        const isPaused = d.info === 2; // paused — happens when &end= param is hit
+        const triggerOnPause = isPaused && timeLimitSec > 0;
+        if (isEnded || triggerOnPause) {
+          if (questionsReady) {
+            _videoEndedByLimit = true;
+            _proceedToTransition();
+          } else if (!generationFailed) {
+            // Mark as "waiting for questions"
+            proceedCalled = true;
+            const skipBtn = document.getElementById('cqv-skip-btn');
+            if (skipBtn) { skipBtn.innerHTML = '⏳ Finalising questions…'; skipBtn.disabled = true; }
+          }
+        }
+      }
+    } catch { /* non-JSON postMessage — ignore */ }
+  };
+  window.addEventListener('message', _ytMsgHandler);
+
+  // ── JS timer fallback: auto-transition at timeLimitSec ─────────────────────
+  // YouTube's postMessage for state changes can be unreliable across browsers/embeds.
+  // This setTimeout fires 1 second after the stop time as a guaranteed fallback.
+  let _timeLimitTimer = null;
+  if (timeLimitSec > 0) {
+    _timeLimitTimer = setTimeout(() => {
+      if (proceedCalled || _videoEndedByLimit) return; // already triggered
+      if (questionsReady) {
+        _videoEndedByLimit = true;
+        _proceedToTransition();
+      } else if (!generationFailed) {
+        proceedCalled = true;
+        const skipBtn = document.getElementById('cqv-skip-btn');
+        if (skipBtn) { skipBtn.innerHTML = '⏳ Finalising questions…'; skipBtn.disabled = true; }
+      }
+    }, (timeLimitSec + 1) * 1000);
   }
+
+  // ── Build and show video overlay ──────────────────────────────────────────
+  const oldOv = document.getElementById('comp-quiz-video-overlay');
+  if (oldOv) oldOv.remove();
+
+  const endParam = timeLimitSec > 0 ? `&end=${timeLimitSec}` : '';
+  const ytSrc = `https://www.youtube.com/embed/${parsed.videoId}?autoplay=1&rel=0&modestbranding=1&enablejsapi=1${endParam}`;
+
+  const videoOv = document.createElement('div');
+  videoOv.id = 'comp-quiz-video-overlay';
+  videoOv.style.cssText = 'position:fixed;inset:0;z-index:9000;background:#000;display:flex;flex-direction:column;font-family:inherit;';
+  videoOv.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 18px;background:rgba(2,6,23,0.92);flex-shrink:0;gap:12px;">
+      <div>
+        <div style="font-size:0.6rem;font-weight:700;color:#0d9488;text-transform:uppercase;letter-spacing:0.12em;">Comprehension Adventure</div>
+        <div style="font-size:0.82rem;font-weight:700;color:#f1f5f9;margin-top:2px;">Watch the video, then answer questions!</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-shrink:0;">
+        <button id="cqv-cancel-btn" style="padding:7px 16px;border:1px solid rgba(248,113,113,0.4);border-radius:8px;background:rgba(248,113,113,0.08);color:#f87171;font-size:0.8rem;font-weight:700;cursor:pointer;transition:all 0.2s;">Cancel</button>
+        <button id="cqv-skip-btn" disabled style="padding:7px 16px;border:1px solid rgba(100,116,139,0.35);border-radius:8px;background:rgba(100,116,139,0.08);color:#64748b;font-size:0.8rem;font-weight:700;cursor:not-allowed;transition:all 0.3s;">⏳ Generating questions…</button>
+      </div>
+    </div>
+    <iframe src="${ytSrc}" allow="autoplay; fullscreen; encrypted-media" allowfullscreen style="flex:1;border:none;"></iframe>
+  `;
+  document.body.appendChild(videoOv);
+
+  // Wire Cancel
+  document.getElementById('cqv-cancel-btn').addEventListener('click', () => {
+    window.removeEventListener('message', _ytMsgHandler);
+    _removeCompVideoOverlay();
+    window.openQuizSettings();
+    setTimeout(() => window._qsModeSwitch('comp'), 50);
+  });
+
+  // Wire Skip
+  document.getElementById('cqv-skip-btn').addEventListener('click', () => {
+    if (generationFailed || document.getElementById('cqv-skip-btn').disabled) return;
+    if (questionsReady) {
+      _proceedToTransition();
+    } else {
+      // Mark pending; overlay will be cleaned up when questions arrive
+      proceedCalled = true;
+      const skipBtn = document.getElementById('cqv-skip-btn');
+      if (skipBtn) { skipBtn.innerHTML = '⏳ Please wait…'; skipBtn.disabled = true; skipBtn.style.cursor = 'not-allowed'; }
+    }
+  });
 };
 
-// ── Shared helper: hide all views, show view-comprehension + comp-question-stage ──
+// ── Shared helper: hide all views, show view-comprehension + question stage ─
 function _compShowCompView(questions) {
-  // Store questions
   window._compFromQuizQuestions = questions;
-  window._compFromQuizIdx = 0;
+  window._compFromQuizIdx   = 0;
   window._compFromQuizScore = 0;
   window._compFromQuizTotal = questions.length;
 
-  // Hide every other view explicitly (mirrors setMyReportsMode pattern)
-  document.body.classList.remove('quiz-active', 'quiz-comp-img', 'education-active');
-  const toHide = ['view-landing', 'view-education', 'view-edit', 'view-math-game',
-                  'view-peppa-game', 'view-quiz', 'view-admin', 'view-my-reports'];
-  toHide.forEach(id => {
+  // Reset render generation so all animation loops from the previous game are invalidated
+  window._cqRenderGen = (window._cqRenderGen || 0) + 1000;
+  _cqWrongAttempts = 0;
+
+  // Always hide the win overlay — it persists in the DOM across games
+  const prevWin = document.getElementById('comp-win-overlay');
+  if (prevWin) prevWin.style.display = 'none';
+
+  const isImg = window._compMedia?.type === 'image';
+  document.body.classList.remove('quiz-active','quiz-comp-img','education-active','quiz-img-sidebar');
+  if (isImg) document.body.classList.add('quiz-comp-img');
+  ['view-landing','view-education','view-edit','view-math-game',
+   'view-peppa-game','view-quiz','view-admin','view-my-reports'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.classList.add('hidden');
   });
 
-  // Close any overlays
-  const quizOv = document.getElementById('quiz-settings-overlay');
-  if (quizOv) quizOv.classList.remove('show');
-  const compOv = document.getElementById('comp-settings-overlay');
-  if (compOv) compOv.style.display = 'none';
+  const globalSidebar = document.getElementById('quiz-sidebar-controls');
+  if (globalSidebar) globalSidebar.remove();
 
-  // Show view-comprehension
+  const quizOv = document.getElementById('quiz-settings-overlay');
+  if (quizOv) { quizOv.classList.remove('show'); quizOv.style.display = 'none'; }
+
+  // Hide global header
+  const hdr = document.getElementById('global-header');
+  if (hdr) hdr.style.setProperty('display','none','important');
+
   const viewComp = document.getElementById('view-comprehension');
   if (viewComp) {
     viewComp.classList.remove('hidden');
-    viewComp.style.cssText = 'display:flex;flex-direction:column;width:100%;height:100%;position:relative;min-height:0;flex:1;';
+    viewComp.style.cssText = 'display:flex;flex-direction:column;position:fixed;inset:0;z-index:500;background:#0a0f1a;';
   }
 
-  // Show question stage
   const stage = document.getElementById('comp-question-stage');
   if (stage) {
-    stage.style.display = 'flex';
-    stage.style.flexDirection = 'column';
-    stage.style.width = '100%';
-    stage.style.height = '100%';
+    // flex-row: sidebar on left, content on right
+    stage.style.cssText = 'display:flex;flex-direction:row;width:100%;height:100%;position:relative;flex:1;min-height:0;overflow:hidden;';
   }
 
-  // Reset score display
+  // Update sidebar user initial
+  const userEl = document.getElementById('display-user');
+  const initial = (userEl?.textContent?.trim() || 'G')[0].toUpperCase();
+  const sbUser = document.getElementById('comp-sidebar-user');
+  if (sbUser) { sbUser.textContent = initial; sbUser.title = userEl?.textContent?.trim() || 'Guest'; }
+
+  // Wire sidebar buttons
+  const _dblTap = (el, cb) => {
+    if (!el) return;
+    let lastTap = 0;
+    el.addEventListener('dblclick', (e) => { e.preventDefault(); cb(); });
+    el.addEventListener('touchend', (e) => {
+      const now = Date.now();
+      if (now - lastTap < 300) { e.preventDefault(); cb(); }
+      lastTap = now;
+    });
+  };
+  const sbHome    = document.getElementById('comp-sb-home');
+  const btnReplay = document.getElementById('comp-btn-replay');
+  const btnSett   = document.getElementById('comp-btn-settings');
+  const btnExit   = document.getElementById('comp-btn-exit');
+  _dblTap(sbHome, () => window.compExitAdventure());
+  _dblTap(btnReplay, () => {
+    // Replay: re-launch the video or image with the same URL (stored in window._compMedia)
+    const media = window._compMedia;
+    if (!media || (media.type !== 'youtube' && media.type !== 'image')) {
+      // No stored media — fall back to opening settings on comp tab
+      window.compExitAdventure();
+      setTimeout(() => {
+        if (window.openQuizSettings) window.openQuizSettings();
+        setTimeout(() => { if (window._qsModeSwitch) window._qsModeSwitch('comp'); }, 60);
+      }, 80);
+      return;
+    }
+    // Restore the URL into the input so startComprehensionFromQuizSettings can read it
+    const urlInput = document.getElementById('qs-comp-url');
+    if (urlInput && media.url) { urlInput.value = media.url; }
+    // Hide the question/transition stage while video/image overlay plays
+    const qStageEl = document.getElementById('comp-question-stage');
+    if (qStageEl) qStageEl.style.display = 'none';
+    const transStageEl = document.getElementById('comp-transition-stage');
+    if (transStageEl) transStageEl.style.display = 'none';
+    // Re-launch the full media → question flow
+    if (window.startComprehensionFromQuizSettings) window.startComprehensionFromQuizSettings();
+  });
+  _dblTap(btnSett, () => {
+    if (window.openQuizSettings) window.openQuizSettings();
+  });
+  if (btnExit) btnExit.onclick = () => window.compExitAdventure();
+
+  // Navigation Arrows logic
+  const navPrev = document.getElementById('comp-nav-prev');
+  const navNext = document.getElementById('comp-nav-next');
+  _dblTap(navPrev, () => {
+    if ((window._compFromQuizIdx || 0) > 0) {
+      window._compFromQuizIdx--;
+      _compQuizRenderQuestion();
+    }
+  });
+  _dblTap(navNext, () => {
+    if ((window._compFromQuizIdx || 0) < (questions.length - 1)) {
+      window._compFromQuizIdx++;
+      _compQuizRenderQuestion();
+    }
+  });
+  if (navPrev) navPrev.onmouseenter = () => { navPrev.style.color = 'rgba(255,255,255,0.8)'; navPrev.style.transform = 'translateY(-50%) scale(1.1)'; };
+  if (navPrev) navPrev.onmouseleave = () => { navPrev.style.color = 'rgba(255,255,255,0.25)'; navPrev.style.transform = 'translateY(-50%) scale(1)'; };
+  if (navNext) navNext.onmouseenter = () => { navNext.style.color = 'rgba(255,255,255,0.8)'; navNext.style.transform = 'translateY(-50%) scale(1.1)'; };
+  if (navNext) navNext.onmouseleave = () => { navNext.style.color = 'rgba(255,255,255,0.25)'; navNext.style.transform = 'translateY(-50%) scale(1)'; };
+
+  // Expose these to window so they are accessible globally as needed
+  window._compQuizRenderQuestion = _compQuizRenderQuestion;
+  window._compQuizSelectAnswer = _compQuizSelectAnswer;
+
   const counter    = document.getElementById('comp-q-counter');
   const scoreBadge = document.getElementById('comp-score-badge');
   if (counter)    counter.textContent    = `Q 1 / ${questions.length}`;
   if (scoreBadge) scoreBadge.textContent = '⭐ 0';
 
-  // Set comp-answers-grid to 2×2 quiz-style grid
   const grid = document.getElementById('comp-answers-grid');
   if (grid) {
-    grid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;' +
-      'gap:8px;padding:10px;box-sizing:border-box;width:100%;flex:1;min-height:0;overflow:hidden;';
+    grid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:8px;padding:10px;box-sizing:border-box;width:100%;flex:1;min-height:0;overflow:hidden;';
   }
 
   mode = 'comprehension';
 }
 
-// ── Text quiz (after video) ───────────────────────────────────────────────
-function _compQuizRunTextQuiz(questions, eduLevel) {
+// ── Text quiz (called after transition slide) ─────────────────────────────
+function _compQuizRunTextQuiz(questions) {
   _compShowCompView(questions);
   _compQuizRenderQuestion();
 }
 
-// ── Image-quadrant quiz ───────────────────────────────────────────────────
-function _compQuizRunImageQuiz(imageUrl, questions, eduLevel) {
-  _compShowCompView(questions);
-  document.body.classList.add('quiz-comp-img');
 
-  // Show image quadrant containers
-  const imgQ  = document.getElementById('comp-img-quadrant');
-  const qQ    = document.getElementById('comp-q-quadrant');
-  const imgEl = document.getElementById('comp-img-quadrant-img');
-  if (imgQ)  imgQ.style.display  = '';
-  if (qQ)    qQ.style.display    = '';
-  if (imgEl) imgEl.src           = imageUrl;
-
-  _compQuizRenderQuestion();
-}
 
 // ── Shared question renderer for comp-from-quiz flows (full quiz parity) ──
-let _cqRenderGen = 0;
 let _cqWrongAttempts = 0;
 
 function _compQuizRenderQuestion() {
-  _cqRenderGen++;
-  const gen = _cqRenderGen;
+  window._cqRenderGen++;
+  const gen = window._cqRenderGen;
   _cqWrongAttempts = 0;
-  const isImgMode = document.body.classList.contains('quiz-comp-img');
+  let isImgMode = document.body.classList.contains('quiz-comp-img');
   const questions = window._compFromQuizQuestions || [];
   const idx       = window._compFromQuizIdx || 0;
   const q = questions[idx];
@@ -7024,17 +7604,49 @@ function _compQuizRenderQuestion() {
   if (!q) {
     const score = window._compFromQuizScore || 0;
     const total = window._compFromQuizTotal || 0;
-    document.body.classList.remove('quiz-comp-img');
-    const imgQ = document.getElementById('comp-img-quadrant');
-    const qQ   = document.getElementById('comp-q-quadrant');
-    if (imgQ) imgQ.style.display = 'none';
-    if (qQ)  qQ.style.display  = 'none';
+
+    // Show win overlay
     const winOv    = document.getElementById('comp-win-overlay');
     const winMsg   = document.getElementById('comp-win-message');
     const winScore = document.getElementById('comp-win-score');
     if (winMsg)   winMsg.textContent   = '🎉 Adventure Complete!';
     if (winScore) winScore.textContent = `You answered ${score} out of ${total} correctly!`;
-    if (winOv)    winOv.style.display  = 'flex';
+
+    // Theme character on win screen
+    const winChar = document.getElementById('comp-win-char-box');
+    if (winChar) {
+      winChar.innerHTML = '';
+      const theme = quizSettings.theme || 'normal';
+      const charMap = {
+        'peppa':         'assets/celebrations/peppa_win.png',
+        'ben-holly':     'assets/celebrations/ben_win.png',
+        'kung-fu-panda': 'assets/celebrations/po_win.png',
+        'totoro':        'assets/celebrations/totoro_win.png',
+        'turning-red':   'assets/celebrations/tr_win.png',
+        'zootopia':      'assets/celebrations/zoo_win.png',
+      };
+      const cUrl = charMap[theme];
+      if (cUrl) {
+        const img = document.createElement('img');
+        img.src = cUrl;
+        img.style.cssText = 'width:130px;height:130px;object-fit:contain;animation:successBounce 1.2s infinite;filter:drop-shadow(0 0 16px rgba(16,185,129,0.5));';
+        img.onerror = () => { winChar.innerHTML = '<span style="font-size:4rem">🎉</span>'; };
+        winChar.appendChild(img);
+      }
+    }
+
+    // Play win jingle
+    try { const ctx = _getAudioCtx ? _getAudioCtx() : null; if (ctx && ctx.state === 'suspended') ctx.resume(); } catch (_) {}
+    if (typeof playJoySound === 'function') playJoySound();
+
+    // Play theme outro — call module-scoped functions directly
+    if      (quizSettings.theme === 'ben-holly'     && typeof playBenHollyOutro     === 'function') playBenHollyOutro();
+    else if (quizSettings.theme === 'kung-fu-panda' && typeof playKungFuPandaOutro  === 'function') playKungFuPandaOutro();
+    else if (quizSettings.theme === 'totoro'        && typeof playTotoroOutro       === 'function') playTotoroOutro();
+    else if (quizSettings.theme === 'turning-red'   && typeof playTROutro           === 'function') playTROutro();
+    else if (quizSettings.theme === 'zootopia'      && typeof playZooOutro          === 'function') playZooOutro();
+
+    if (winOv) winOv.style.display = 'flex';
     return;
   }
 
@@ -7045,6 +7657,24 @@ function _compQuizRenderQuestion() {
   } else {
     currentQuizTheme = quizSettings.theme || 'normal';
   }
+  
+  isImgMode = window._compMedia?.type === 'image';
+
+
+
+  const imgQuad   = document.getElementById('comp-img-quadrant');
+  const textQuad  = document.getElementById('comp-q-quadrant');
+  const standardQ = document.getElementById('comp-question-section');
+  
+  if (isImgMode) {
+    if (imgQuad) imgQuad.style.display = 'block';
+    if (textQuad) textQuad.style.display = 'block';
+    if (standardQ) standardQ.style.display = 'none';
+  } else {
+    if (imgQuad) imgQuad.style.display = 'none';
+    if (textQuad) textQuad.style.display = 'none';
+    if (standardQ) standardQ.style.display = 'flex';
+  }
 
   // Update score badge + counter
   const scoreBadge = document.getElementById('comp-score-badge');
@@ -7052,15 +7682,23 @@ function _compQuizRenderQuestion() {
   const counter = document.getElementById('comp-q-counter');
   if (counter) counter.textContent = `Q ${idx + 1} / ${(window._compFromQuizTotal || questions.length)}`;
 
-  // Question display
-  if (!isImgMode) {
-    const qEl = document.getElementById('comp-display-question');
-    if (qEl) prepareHighlightableText(qEl, q.question);
-  } else {
-    const qtEl = document.getElementById('comp-q-quadrant-text');
-    if (qtEl) {
-      qtEl.textContent = q.question;
-      _fitTextToBox(qtEl, document.getElementById('comp-q-quadrant'));
+  const fontSizeClass = `quiz-font-${quizSettings.fontSize || 'medium'}`;
+  
+  // Question text display
+  const qEl = isImgMode ? document.getElementById('comp-q-quadrant-text') : document.getElementById('comp-display-question');
+  if (qEl) {
+    qEl.className = `cq-q-text ${fontSizeClass} text-white font-black leading-tight`;
+    prepareHighlightableText(qEl, q.question);
+  }
+
+  // Media quadrant display
+  if (imgQuad) {
+    imgQuad.innerHTML = ''; // Clear previous
+    if (isImgMode && window._compMedia?.url) {
+      const img = document.createElement('img');
+      img.src = window._compMedia.url;
+      img.style.cssText = 'max-width:100%;max-height:100%;object-fit:contain;';
+      imgQuad.appendChild(img);
     }
   }
 
@@ -7074,55 +7712,155 @@ function _compQuizRenderQuestion() {
   const oldABar = document.getElementById('comp-aread-bar');
   if (oldABar) oldABar.remove();
 
-  const fontSizeClass = `quiz-font-${quizSettings.fontSize || 'medium'}`;
   const isTwoAns = (q.answers || []).length === 2;
   grid.style.cssText = `display:grid;grid-template-columns:1fr 1fr;grid-template-rows:${isTwoAns ? '1fr' : '1fr 1fr'};gap:8px;padding:10px;box-sizing:border-box;width:100%;flex:1;min-height:0;overflow:hidden;`;
 
-  // qRead gate
-  let _qReadDone = true, _skipQRead = () => {};
-  const _qReadEnabled = quizSettings.qReadEnabled && (quizSettings.qReadTimeMs || 0) > 0;
-  if (_qReadEnabled) {
-    _qReadDone = false;
-    grid.style.opacity = '0.25'; grid.style.pointerEvents = 'none'; grid.style.transition = 'opacity 0.4s';
-    let _qEl = 0;
-    const _qT = setInterval(() => {
-      if (gen !== _cqRenderGen) { clearInterval(_qT); return; }
-      _qEl += 80;
-      if (_qEl >= quizSettings.qReadTimeMs) { clearInterval(_qT); _qReadDone = true; grid.style.opacity = '1'; grid.style.pointerEvents = ''; }
-    }, 80);
-    _skipQRead = () => { _qEl = quizSettings.qReadTimeMs; };
+  // qRead gate — hover fills the bar (both modes); click on question or Space skips it.
+  let _qReadDone = false, _skipQRead = () => {};
+  const _qReadTime = (quizSettings.qReadTimeMs && quizSettings.qReadTimeMs > 0)
+    ? quizSettings.qReadTimeMs : 2000;
+  grid.style.opacity = '0';
+  grid.style.pointerEvents = 'none';
+  grid.style.transition = 'opacity 0.4s';
+  {
+    const qSect = isImgMode ? document.getElementById('comp-q-quadrant') : document.getElementById('comp-question-section');
+    if (qSect) {
+      const oldBar = qSect.querySelector('.cq-qread-bar');
+      if (oldBar) oldBar.remove();
+      const qBar = document.createElement('div');
+      qBar.className = 'cq-qread-bar';
+      qBar.style.cssText = 'position:absolute;bottom:0;left:0;height:3px;background:linear-gradient(90deg,#0d9488,#0284c7);width:0%;z-index:10;border-radius:0 0 4px 4px;transition:background 0.4s;';
+      qSect.style.position = 'relative';
+      qSect.appendChild(qBar);
+      let elapsed = 0, hovering = false, lastT = null, qrDone = false;
+      const onQRDone = () => {
+        if (qrDone) return; qrDone = true; _qReadDone = true;
+        // Do NOT cancel voiceover here — let the question finish being read
+        document.removeEventListener('keydown', _onQRKey, true);
+        document.removeEventListener('click',   _onQRClickGlobal, true);
+        grid.style.opacity = '1'; grid.style.pointerEvents = '';
+        qBar.style.background = '#10b981';
+        setTimeout(() => { if (qBar.parentNode) qBar.remove(); }, 600);
+      };
+      const animQR = (t) => {
+        if (gen !== window._cqRenderGen || qrDone) return;
+        if (!lastT) lastT = t;
+        // Hover-only in both modes — pause when mouse is not over the question
+        elapsed += (t - lastT) * (hovering ? 1 : 0);
+        lastT = t;
+        qBar.style.width = Math.min((elapsed / _qReadTime) * 100, 100) + '%';
+        if (elapsed >= _qReadTime) { onQRDone(); return; }
+        requestAnimationFrame(animQR);
+      };
+      requestAnimationFrame(animQR);
+      let _qrSpoken = false;
+      const _startVoiceOver = () => {
+        if (!quizSettings.voiceOver || typeof quizSpeak !== 'function' || gen !== window._cqRenderGen) return;
+        if (!_qrSpoken) {
+          _qrSpoken = true;
+          quizSpeakCancel();
+          // When voiceover finishes reading the question, auto-complete the gate
+          quizSpeak(q.question, { rate: 0.9, targetElement: qEl || undefined, onEnd: () => {
+            if (gen === window._cqRenderGen) { elapsed = _qReadTime; onQRDone(); }
+          }});
+        }
+      };
+      qSect.onmouseenter = () => { hovering = true; _startVoiceOver(); };
+      qSect.onmouseleave = () => { hovering = false; lastT = null; };
+      // Click on question instantly completes the bar
+      qSect.onclick = (e) => { e.stopPropagation(); _startVoiceOver(); elapsed = _qReadTime; onQRDone(); };
+      const _onQRKey = (e) => {
+        if (['Space','Enter','ArrowRight'].includes(e.code)) {
+          e.preventDefault();
+          _startVoiceOver();
+          elapsed = _qReadTime;
+          onQRDone();
+        }
+      };
+      const _onQRClickGlobal = () => { _startVoiceOver(); elapsed = _qReadTime; onQRDone(); };
+      document.addEventListener('keydown', _onQRKey, { capture: true, once: false });
+      document.addEventListener('click',   _onQRClickGlobal, true);
+      _skipQRead = () => {
+        document.removeEventListener('keydown', _onQRKey, true);
+        document.removeEventListener('click',   _onQRClickGlobal, true);
+        elapsed = _qReadTime;
+        onQRDone();
+      };
+    } else {
+      // Fallback: no question section found, reveal immediately
+      _qReadDone = true;
+      grid.style.opacity = '1'; grid.style.pointerEvents = '';
+    }
   }
 
-  // aRead bar
-  let _aReadDone = true, _skipARead = () => {};
-  const _aReadEnabled = quizSettings.aReadEnabled && (quizSettings.aReadTimeMs || 0) > 0;
-  if (_aReadEnabled) {
-    _aReadDone = false;
-    const aBarOuter = document.createElement('div');
-    aBarOuter.id = 'comp-aread-bar';
-    aBarOuter.style.cssText = 'width:100%;height:3px;flex-shrink:0;border-radius:2px;overflow:hidden;background:rgba(255,255,255,0.07);margin-bottom:4px;';
-    const aBarInner = document.createElement('div');
-    aBarInner.style.cssText = 'height:100%;width:0%;background:linear-gradient(90deg,#10b981,#06b6d4);border-radius:2px;';
-    aBarOuter.appendChild(aBarInner);
-    const qStage = document.getElementById('comp-question-stage');
-    if (qStage) qStage.insertBefore(aBarOuter, grid);
-    let _aEl = 0;
-    const _aT = setInterval(() => {
-      if (gen !== _cqRenderGen) { clearInterval(_aT); return; }
-      _aEl += 80; aBarInner.style.width = Math.min(100, (_aEl / quizSettings.aReadTimeMs) * 100) + '%';
-      if (_aEl >= quizSettings.aReadTimeMs) { clearInterval(_aT); _aReadDone = true; aBarOuter.remove(); }
-    }, 80);
-    _skipARead = () => { _aEl = quizSettings.aReadTimeMs; };
+  // ── Answer gate — BOTH modes ───────────────────────────────────────────
+  // Full-width bar between question and answer grid.
+  // Progresses while hovering any answer card; TTS reads each answer with underline.
+  let _aReadDone = false;
+  let _skipARead = () => {};
+  {
+    const _aReadTime = Math.max(quizSettings.qReadTimeMs || 2000, 1000);
+
+    const aGateWrap = document.createElement('div');
+    aGateWrap.id = 'comp-agate-wrap';
+    aGateWrap.style.cssText = 'width:100%;flex-shrink:0;padding:4px 0 6px;box-sizing:border-box;';
+    const aBar = document.createElement('div');
+    aBar.id = 'comp-answer-gate-bar';
+    aBar.style.cssText = 'height:4px;background:linear-gradient(90deg,#8b5cf6,#6366f1);width:0%;border-radius:4px;transition:background 0.4s;';
+    aGateWrap.appendChild(aBar);
+    grid.parentNode.insertBefore(aGateWrap, grid);
+
+    let aElapsed = 0, aHovering = false, aLastT = null, aGateDone = false;
+    let _answerVoiceStarted = false;
+
+    const onAGateDone = () => {
+      if (aGateDone) return; aGateDone = true; _aReadDone = true;
+      aBar.style.background = '#10b981';
+      setTimeout(() => { if (aGateWrap.parentNode) aGateWrap.remove(); }, 600);
+    };
+
+    // Read each answer aloud with underline when gate starts
+    const _startAnswerVO = () => {
+      if (_answerVoiceStarted || !quizSettings.voiceOver || typeof quizSpeak !== 'function') return;
+      _answerVoiceStarted = true;
+      quizSpeakCancel();
+      const cards = Array.from(grid.children);
+      let ai = 0;
+      const readNext = () => {
+        if (ai >= q.answers.length || gen !== window._cqRenderGen) return;
+        const ansItem = q.answers[ai];
+        const card = cards[ai];
+        const spanEl = card?.querySelector('span');
+        if (card) card.style.outline = '2px solid rgba(139,92,246,0.7)';
+        ai++;
+        quizSpeak(ansItem.text, { rate: 0.9, targetElement: spanEl || undefined, onEnd: () => {
+          if (card) card.style.outline = '';
+          readNext();
+          if (ai >= q.answers.length && gen === window._cqRenderGen) {
+            aElapsed = _aReadTime; onAGateDone();
+          }
+        }});
+      };
+      readNext();
+    };
+
+    const animAG = (t) => {
+      if (gen !== window._cqRenderGen || aGateDone) return;
+      if (!aLastT) aLastT = t;
+      aElapsed += (t - aLastT) * (aHovering ? 1 : 0);
+      aLastT = t;
+      aBar.style.width = Math.min((aElapsed / _aReadTime) * 100, 100) + '%';
+      if (aElapsed >= _aReadTime) { onAGateDone(); return; }
+      requestAnimationFrame(animAG);
+    };
+    requestAnimationFrame(animAG);
+
+    grid.addEventListener('mouseenter', () => { aHovering = true; _startAnswerVO(); });
+    grid.addEventListener('mouseleave', () => { aHovering = false; aLastT = null; });
+    _skipARead = () => { aElapsed = _aReadTime; onAGateDone(); };
   }
 
-  // Voice over question
-  if (quizSettings.voiceOver && !_qReadEnabled && 'speechSynthesis' in window) {
-    speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(q.question); u.rate = 0.9;
-    u.onend = () => { if (quizSettings.voiceOver && window.quizSpeakAnswers) window.quizSpeakAnswers(q.answers, gen, {}); };
-    speechSynthesis.speak(u);
-  }
-
+  // Answer grid card loop
   (q.answers || []).forEach((ans, idx2) => {
     const isCorrect = String(ans.id) === String(q.correctId);
     const card = document.createElement('div');
@@ -7135,6 +7873,7 @@ function _compQuizRenderQuestion() {
       position:'relative', overflow:'hidden', cursor:'pointer', userSelect:'none',
     });
     applyQuizCardTheme(card, ans, idx2);
+    if (isCorrect) window._currentCorrectCard = card; // needed by triggerQuizHint
 
     const span = document.createElement('span');
     span.className = `quiz-answer-text ${fontSizeClass}`;
@@ -7142,7 +7881,6 @@ function _compQuizRenderQuestion() {
     prepareHighlightableText(span, ans.text);
     card.appendChild(span);
 
-    // Dwell bar
     const pb = document.createElement('div');
     pb.className = 'absolute bottom-0 left-0 h-1.5 bg-violet-500/40 transition-none z-10';
     pb.style.width = '0%';
@@ -7157,17 +7895,17 @@ function _compQuizRenderQuestion() {
     let dt = null, svgOv = null;
     const removeSvg = () => { if (svgOv && svgOv.parentNode === card) card.removeChild(svgOv); svgOv = null; };
     const startDwell = () => {
-      if (!quizSettings.dwellTimeMs || !_aReadDone) return;
+      if (!quizSettings.dwellTimeMs || !_qReadDone || !_aReadDone) return;
       let s = null;
       const anim = (t) => {
-        if (gen !== _cqRenderGen) return;
+        if (gen !== window._cqRenderGen) return;
         if (!s) s = t;
         const pct = Math.min(((t - s) / quizSettings.dwellTimeMs) * 100, 100);
         pb.style.width = pct + '%';
         if (pct > 0 && !svgOv) {
           svgOv = document.createElement('div');
           svgOv.className = 'absolute inset-0 flex items-center justify-center z-20 pointer-events-none';
-          svgOv.innerHTML = '<svg class="w-28 h-28 transform -rotate-90"><circle cx="56" cy="56" r="44" stroke-width="7" stroke="#334155" fill="transparent"/><circle cx="56" cy="56" r="44" stroke-width="7" stroke-dasharray="276.46" stroke-dashoffset="276.46" stroke-linecap="round" stroke="#8b5cf6" fill="transparent" style="opacity:0.55"/></svg>';
+          svgOv.innerHTML = '<svg viewBox="0 0 112 112" class="w-20 h-20 transform -rotate-90"><circle cx="56" cy="56" r="44" stroke-width="6" stroke="#334155" fill="transparent" style="opacity:0.15"/><circle cx="56" cy="56" r="44" stroke-width="6" stroke-dasharray="276.46" stroke-dashoffset="276.46" stroke-linecap="round" stroke="#8b5cf6" fill="transparent" style="opacity:0.7"/></svg>';
           card.appendChild(svgOv);
         }
         if (svgOv) { const c2 = svgOv.querySelector('circle:last-child'); if (c2) c2.style.strokeDashoffset = 276.46 - (pct / 100) * 276.46; }
@@ -7176,25 +7914,101 @@ function _compQuizRenderQuestion() {
       dt = requestAnimationFrame(anim);
     };
     const stopDwell = () => { if (dt) cancelAnimationFrame(dt); pb.style.width = '0%'; removeSvg(); };
+    // Click or dwell both work in all modes.
+    // Click skips all pending gates instantly before selecting.
     const doSelect = () => {
-      if (!_qReadDone) { _skipQRead(); requestAnimationFrame(() => requestAnimationFrame(() => doSelect())); return; }
-      if (!_aReadDone) { _skipARead(); requestAnimationFrame(() => requestAnimationFrame(() => doSelect())); return; }
       _compQuizSelectAnswer(ans, q, q.answers, grid, isCorrect, gen);
+    };
+    const doSelectWithBypass = () => {
+      if (!_qReadDone) _skipQRead();
+      if (!_aReadDone) _skipARead();
+      // Give gates one frame to complete before selecting
+      requestAnimationFrame(() => _compQuizSelectAnswer(ans, q, q.answers, grid, isCorrect, gen));
     };
     card.addEventListener('mouseenter', () => startDwell());
     card.addEventListener('mouseleave', () => stopDwell());
-    card.addEventListener('click', () => doSelect());
+    card.addEventListener('click', () => doSelectWithBypass());
     card.addEventListener('touchstart', (e) => { e.preventDefault(); startDwell(); }, { passive: false });
-    card.addEventListener('touchend',   (e) => { e.preventDefault(); stopDwell(); doSelect(); }, { passive: false });
+    card.addEventListener('touchend',   (e) => { e.preventDefault(); stopDwell(); doSelectWithBypass(); }, { passive: false });
     card.addEventListener('touchcancel',(e) => { e.preventDefault(); stopDwell(); }, { passive: false });
 
-    if (quizSettings.voiceOver && quizSettings.voiceOverHoverRepeat) {
-      card.addEventListener('mouseenter', () => { if ('speechSynthesis' in window) { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(ans.text); u.rate = 0.9; speechSynthesis.speak(u); } });
-    }
     grid.appendChild(card);
   });
 }
 
+
+// ── Comprehension-specific sound effects ─────────────────────────────────────
+// Distinct from the standard quiz sounds — more musical / child-friendly.
+function _playCompCorrectSound() {
+  try {
+    const ctx = _getAudioCtx();
+    if (!ctx) return;
+    if (ctx.state === 'suspended') ctx.resume();
+    const vol = _getSfxVolume();
+    const mg = ctx.createGain();
+    mg.gain.setValueAtTime(0.3 * vol, ctx.currentTime);
+    mg.connect(ctx.destination);
+    // Bright "ding-ding-ding" major chord arpeggio (E5, G#5, B5, E6)
+    [[659.25, 0], [830.61, 0.13], [987.77, 0.26], [1318.51, 0.39], [1661.22, 0.52]].forEach(([freq, delay]) => {
+      const osc = ctx.createOscillator();
+      const g   = ctx.createGain();
+      const t   = ctx.currentTime + delay;
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, t);
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.7, t + 0.03);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+      osc.connect(g); g.connect(mg);
+      osc.start(t); osc.stop(t + 0.46);
+    });
+    // Warm bell overtone layer
+    [[2637, 0.05], [3136, 0.18]].forEach(([freq, delay]) => {
+      const osc = ctx.createOscillator();
+      const g   = ctx.createGain();
+      const t   = ctx.currentTime + delay;
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, t);
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.12, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+      osc.connect(g); g.connect(mg);
+      osc.start(t); osc.stop(t + 0.41);
+    });
+  } catch (e) {}
+}
+
+function _playCompWrongSound() {
+  try {
+    const ctx = _getAudioCtx();
+    if (!ctx) return;
+    if (ctx.state === 'suspended') ctx.resume();
+    const vol = _getSfxVolume();
+    // Low descending "dunk" — two detuned square waves slide downward
+    [[220, 180, 0], [210, 170, 0.06]].forEach(([startF, endF, delay]) => {
+      const osc = ctx.createOscillator();
+      const g   = ctx.createGain();
+      const t   = ctx.currentTime + delay;
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(startF, t);
+      osc.frequency.exponentialRampToValueAtTime(endF, t + 0.25);
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.18 * vol, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+      osc.connect(g); g.connect(ctx.destination);
+      osc.start(t); osc.stop(t + 0.36);
+    });
+    // Short thump sub-bass
+    const sub = ctx.createOscillator();
+    const subG = ctx.createGain();
+    sub.type = 'sine';
+    sub.frequency.setValueAtTime(80, ctx.currentTime);
+    sub.frequency.exponentialRampToValueAtTime(40, ctx.currentTime + 0.2);
+    subG.gain.setValueAtTime(0.22 * vol, ctx.currentTime);
+    subG.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
+    sub.connect(subG); subG.connect(ctx.destination);
+    sub.start(ctx.currentTime); sub.stop(ctx.currentTime + 0.26);
+  } catch (e) {}
+}
 
 // Font-fit helper — shrinks font until text fits within container
 function _fitTextToBox(el, container) {
@@ -7210,9 +8024,10 @@ function _fitTextToBox(el, container) {
 // Answer selection for comp-from-quiz flows (full quiz parity)
 function _compQuizSelectAnswer(ans, q, allAnswers, grid, isCorrect, gen) {
   if (grid.dataset.answered) return;
-  if (gen !== undefined && gen !== _cqRenderGen) return;
+  if (gen !== undefined && gen !== window._cqRenderGen) return;
 
   if (isCorrect) {
+    quizSpeakCancel();
     grid.dataset.answered = 'true';
     grid.style.pointerEvents = 'none';
 
@@ -7231,109 +8046,155 @@ function _compQuizSelectAnswer(ans, q, allAnswers, grid, isCorrect, gen) {
     window.quizScore = window._compFromQuizScore;
     if (window.updateQuizScoreBar) window.updateQuizScoreBar();
 
-    if (window.playQuizCorrectSound) window.playQuizCorrectSound();
+    // Resume AudioContext and play correct sound
+    try { const ctx = _getAudioCtx ? _getAudioCtx() : null; if (ctx && ctx.state === 'suspended') ctx.resume(); } catch (_) {}
+    _playCompCorrectSound();
     const greenCard = Array.from(grid.children).find(c => c.dataset.answered);
     if (window.burstConfetti) window.burstConfetti(greenCard || grid);
-    try {
-      const sounds = ['correct1.mp3','correct2.mp3','correct3.mp3'];
-      const snd = new Audio('/assets/sounds/' + sounds[Math.floor(Math.random() * sounds.length)]);
-      snd.volume = 0.6 * _getSfxVolume(); snd.play().catch(() => {});
-    } catch (_) {}
 
-    // Theme celebration
-    const theme = (typeof currentQuizTheme !== 'undefined') ? currentQuizTheme : 'normal';
-    if      (theme === 'ben-holly'     && window.triggerBenElfCelebration) window.triggerBenElfCelebration();
-    else if (theme === 'kung-fu-panda' && window.triggerKfpCelebration)    window.triggerKfpCelebration();
-    else if (theme === 'totoro'        && window.triggerTotoroCelebration) window.triggerTotoroCelebration();
-    else if (theme === 'turning-red'   && window.triggerTRCelebration)     window.triggerTRCelebration();
-    else if (theme === 'zootopia'      && window.triggerZooCelebration)    window.triggerZooCelebration();
+    // ── Celebration sequence ──────────────────────────────────────────────
+    // Order: green card → voiceover congrats → theme characters (3.3s) → next Q
+    // A click or keypress at any point after correct answer instantly skips to next Q.
+    const correctAnsText = (allAnswers.find(a => String(a.id) === String(q.correctId)) || {}).text || '';
+    const resolvedTheme  = (typeof currentQuizTheme !== 'undefined') ? currentQuizTheme : 'normal';
+    const hasThemeChars  = ['ben-holly','kung-fu-panda','totoro','turning-red','zootopia'].includes(resolvedTheme);
 
-    setTimeout(() => {
+    let _advanceFired = false;
+    // advanceNow: called by celebration timer OR by early click/keypress
+    const advanceNow = () => {
+      if (_advanceFired) return;
+      _advanceFired = true;
+      // Cancel pending timers & TTS
+      clearTimeout(_voFallback);
+      clearTimeout(_charFallback);
+      if (typeof quizSpeakCancel === 'function') quizSpeakCancel();
+      // Hide theme celebrations if skip is clicked
+      ['bh-toast','kfp-toast','totoro-toast','tr-toast','zoo-toast'].forEach(id => {
+        const t = document.getElementById(id); if (t) { t.classList.remove('show'); t.classList.add('hide'); }
+      });
+      // Remove early-advance listeners
+      document.removeEventListener('click',   _earlyAdvance, true);
+      document.removeEventListener('keydown', _earlyAdvance, true);
+      // Advance to next question
       window._compFromQuizIdx = (window._compFromQuizIdx || 0) + 1;
       _compQuizRenderQuestion();
-    }, 1600);
+    };
+
+    // earlyAdvance: fires on any click or keypress while waiting
+    const _earlyAdvance = (e) => {
+      if (e.type === 'keydown' && !['Space','Enter','ArrowRight'].includes(e.code)) return;
+      e.stopPropagation();
+      advanceNow();
+    };
+
+    // _doChars: show theme characters and advance after 3700ms
+    let _charFallback;
+    const _doChars = () => {
+      if (_advanceFired) return;
+      if (hasThemeChars) {
+        if      (resolvedTheme === 'ben-holly'     && window.triggerBenElfCelebration) window.triggerBenElfCelebration();
+        else if (resolvedTheme === 'kung-fu-panda' && window.triggerKfpCelebration)    window.triggerKfpCelebration();
+        else if (resolvedTheme === 'totoro'        && window.triggerTotoroCelebration) window.triggerTotoroCelebration();
+        else if (resolvedTheme === 'turning-red'   && window.triggerTRCelebration)     window.triggerTRCelebration();
+        else if (resolvedTheme === 'zootopia'      && window.triggerZooCelebration)    window.triggerZooCelebration();
+        // Advance after characters display (3300ms show + 380ms hide + 20ms buffer)
+        _charFallback = setTimeout(advanceNow, 3700);
+      } else {
+        // No theme chars — advance immediately (brief green flash only)
+        _charFallback = setTimeout(advanceNow, 600);
+      }
+    };
+
+    // Install early-advance listener (only after a 200ms grace period so the click
+    // that selected the answer doesn't immediately skip it)
+    setTimeout(() => {
+      if (!_advanceFired) {
+        document.addEventListener('click',   _earlyAdvance, true);
+        document.addEventListener('keydown', _earlyAdvance, true);
+      }
+    }, 200);
+
+    // Start voiceover; fall back if TTS doesn't fire or voiceOver is disabled
+    let _voFallback;
+    if (typeof quizSpeakCongrats === 'function') {
+      // Safety fallback: if onEnd never fires (known Chrome TTS bug), trigger after 5s
+      _voFallback = setTimeout(_doChars, 5000);
+      quizSpeakCongrats(correctAnsText, { onEnd: () => { clearTimeout(_voFallback); _doChars(); } });
+    } else {
+      // No voiceover at all — go straight to chars
+      _voFallback = null;
+      setTimeout(_doChars, 400);
+    }
 
   } else {
-    // Wrong — shake, mark, keep grid interactive, show explanation
+    // Wrong — shake + flash + sound
     _cqWrongAttempts++;
+    // Clear previous wrong highlights
     Array.from(grid.children).forEach(c => {
       if (c.dataset.state === 'wrong') {
-        c.dataset.state = ''; c.style.background = '#20293a';
+        c.dataset.state = ''; c.style.background = '#20293a'; c.style.outline = '';
         const old = c.querySelector('.wrong-cross'); if (old) old.remove();
       }
     });
     const wrongCard = Array.from(grid.children)[allAnswers.indexOf(ans)];
     if (wrongCard) {
       wrongCard.dataset.state = 'wrong';
-      wrongCard.style.background = 'rgba(239,68,68,0.18)';
+      // Red flash overlay
+      wrongCard.style.background = 'rgba(239,68,68,0.35)';
+      wrongCard.style.outline = '2px solid rgba(239,68,68,0.7)';
       const cross = document.createElement('div');
       cross.className = 'wrong-cross'; cross.style.pointerEvents = 'none';
       wrongCard.appendChild(cross);
-      wrongCard.style.transform = 'translateX(-10px)';
-      setTimeout(() => wrongCard.style.transform = 'translateX(10px)', 50);
-      setTimeout(() => wrongCard.style.transform = 'translateX(0)', 100);
+      // Shake: left-right-left-right-center
+      const shakes = [
+        [0,   'translateX(-12px)'],
+        [60,  'translateX(10px)'],
+        [120, 'translateX(-8px)'],
+        [180, 'translateX(6px)'],
+        [240, 'translateX(0) scale(1.03)'],
+        [340, 'translateX(0) scale(1)'],
+      ];
+      shakes.forEach(([delay, val]) => setTimeout(() => { if (wrongCard.parentNode) wrongCard.style.transform = val; }, delay));
+      // Fade red back to dark after 800ms
+      setTimeout(() => { if (wrongCard.dataset.state === 'wrong') wrongCard.style.background = 'rgba(239,68,68,0.14)'; }, 800);
     }
-    if (window.playWrongSound) window.playWrongSound();
-    // Hint after X wrong attempts
-    if (quizSettings.hintThreshold > 0 && quizSettings.hintThreshold < 11 && _cqWrongAttempts >= quizSettings.hintThreshold) {
+    // Wrong sound
+    try { const ctx = _getAudioCtx ? _getAudioCtx() : null; if (ctx && ctx.state === 'suspended') ctx.resume(); } catch (_) {}
+    _playCompWrongSound();
+    if (!q._hintShown && quizSettings.hintThreshold > 0 && quizSettings.hintThreshold < 11 && _cqWrongAttempts >= quizSettings.hintThreshold) {
       showQuizHint(q);
-    }
-
-    // Explanation panel
-    const oldPanel = document.getElementById('comp-explanation-panel');
-    if (oldPanel) oldPanel.remove();
-    const explanation = q.explanation || '';
-    const correctAns  = allAnswers.find(a => String(a.id) === String(q.correctId));
-    const correctText = correctAns ? correctAns.text : '';
-    if (explanation || correctText) {
-      const panel = document.createElement('div');
-      panel.id = 'comp-explanation-panel';
-      panel.style.cssText = [
-        'position:absolute','bottom:0','left:0','right:0','z-index:200',
-        'background:linear-gradient(135deg,rgba(15,23,42,0.97),rgba(30,41,59,0.97))',
-        'border-top:2px solid rgba(239,68,68,0.4)',
-        'padding:14px 18px 16px','display:flex','flex-direction:column','gap:6px',
-        'transform:translateY(100%)','transition:transform 0.35s cubic-bezier(0.34,1.56,0.64,1)',
-        'box-shadow:0 -8px 32px rgba(0,0,0,0.5)',
-      ].join(';');
-      const header = document.createElement('div');
-      header.style.cssText = 'display:flex;align-items:center;gap:8px;';
-      const icon = document.createElement('span');
-      icon.textContent = '✗'; icon.style.cssText = 'font-size:1.1rem;color:#f87171;font-weight:900;flex-shrink:0;';
-      const htxt = document.createElement('span');
-      htxt.style.cssText = 'font-size:0.78rem;font-weight:800;color:#f87171;text-transform:uppercase;letter-spacing:0.06em;';
-      htxt.textContent = 'Not quite — try again!';
-      header.appendChild(icon); header.appendChild(htxt);
-      panel.appendChild(header);
-      if (correctText) {
-        const hint = document.createElement('div');
-        hint.style.cssText = 'font-size:0.75rem;color:#34d399;font-weight:700;';
-        hint.textContent = `✓ Correct answer: ${correctText}`;
-        panel.appendChild(hint);
-      }
-      if (explanation) {
-        const body = document.createElement('div');
-        body.style.cssText = 'font-size:0.8rem;color:#cbd5e1;line-height:1.5;';
-        body.textContent = explanation;
-        panel.appendChild(body);
-      }
-      const qStage = document.body.classList.contains('quiz-comp-img')
-        ? document.getElementById('comp-q-quadrant')
-        : document.getElementById('comp-question-stage');
-      if (qStage) {
-        qStage.appendChild(panel);
-        requestAnimationFrame(() => { panel.style.transform = 'translateY(0)'; });
-        setTimeout(() => {
-          panel.style.transition = 'transform 0.3s ease';
-          panel.style.transform  = 'translateY(100%)';
-          setTimeout(() => { if (panel.parentNode) panel.remove(); }, 320);
-        }, 4000);
-      }
+      q._hintShown = true;
     }
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────
+// ── Comprehension win-screen actions ─────────────────────────────────────
+window.compPlayAgain = () => {
+  _removeCompVideoOverlay();
+  const winOv = document.getElementById('comp-win-overlay');
+  if (winOv) winOv.style.display = 'none';
+  const viewComp = document.getElementById('view-comprehension');
+  if (viewComp) { viewComp.classList.add('hidden'); viewComp.style.cssText = 'display:none;'; }
+  document.body.classList.remove('comp-active', 'quiz-comp-img');
+  const hdr = document.getElementById('global-header');
+  if (hdr) hdr.style.removeProperty('display');
+  stopQuizMusic();
+  setMode('quiz');
+  setTimeout(() => {
+    window.openQuizSettings();
+    setTimeout(() => window._qsModeSwitch('comp'), 60);
+  }, 80);
+};
+window.compExitAdventure = () => {
+  _removeCompVideoOverlay();
+  const viewComp = document.getElementById('view-comprehension');
+  if (viewComp) { viewComp.classList.add('hidden'); viewComp.style.cssText = 'display:none;'; }
+  document.body.classList.remove('comp-active', 'quiz-comp-img');
+  const hdr = document.getElementById('global-header');
+  if (hdr) hdr.style.removeProperty('display');
+  stopQuizMusic();
+  setMode('landing');
+};
 
 window.startQuiz = () => {
   // Load asked-question history NOW (before the prefetch) so the AI batch
@@ -7408,7 +8269,11 @@ function setQuizMode() {
   const grid = document.getElementById('quiz-answers-grid');
   if (grid) grid.innerHTML = '';
   // Open settings automatically
-  document.getElementById('quiz-settings-overlay').classList.add('show');
+  const ov = document.getElementById('quiz-settings-overlay');
+  if (ov) {
+    ov.style.display = ''; // Clear inline display:none if present
+    ov.classList.add('show');
+  }
 }
 
 // ─────────────────────────────────────────────────────────────

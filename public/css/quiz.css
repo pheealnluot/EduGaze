@@ -15,10 +15,10 @@
 #quiz-settings-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.92);
-  backdrop-filter: blur(16px);
-  z-index: 10001;
-  display: flex;
+  z-index: 10000;
+  background: rgba(15, 23, 42, 0.95);
+  backdrop-filter: blur(12px);
+  display: none; /* Changed from flex to none */
   align-items: center;
   justify-content: center;
   opacity: 0;
@@ -27,8 +27,50 @@
 }
 
 #quiz-settings-overlay.show {
+  display: flex; /* Show as flex when active */
   opacity: 1;
   pointer-events: auto;
+}
+
+/* --- Comprehension Adventure Specific Styles --- */
+#view-comprehension {
+  flex-direction: row !important; /* Force side-by-side layout */
+  height: 100dvh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+/* Hide global header during adventure */
+body.comp-active #global-header,
+body.quiz-comp-img #global-header {
+  display: none !important;
+}
+
+#comp-sidebar {
+  width: 56px;
+  min-width: 56px;
+  height: 100%;
+  background: rgba(15, 23, 42, 0.98);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  flex-shrink: 0;
+  z-index: 20;
+}
+
+#comp-sidebar-top, #comp-sidebar-mid, #comp-sidebar-bot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Ensure global sidebar is hidden during comprehension adventure */
+#view-comprehension:not(.hidden) ~ header #quiz-sidebar-controls {
+  display: none !important;
 }
 
 .quiz-settings-panel {
@@ -1026,10 +1068,10 @@ body.quiz-active .quiz-score-row {
   padding: 1.4rem !important;
   box-sizing: border-box !important;
   text-align: center !important;
-  background: #20293a !important;
+  background: #20293a;
   border: none !important;
   border-radius: 20px !important;
-  transition: transform 0.2s ease, background 0.2s ease !important;
+  transition: transform 0.2s ease, background 0.2s ease;
   position: relative !important;
   overflow: hidden !important;
   cursor: pointer !important;
@@ -1039,6 +1081,15 @@ body.quiz-active .quiz-score-row {
 #comp-answers-grid > div.quiz-answer-card:not([data-answered]):hover {
   background: #364154 !important;
   transform: scale(1.02) !important;
+}
+
+/* JS-driven answer states — must beat the base rule above */
+#comp-answers-grid > div.quiz-answer-card[data-answered="true"] {
+  background: #10b981 !important;
+  transform: scale(1.03);
+}
+#comp-answers-grid > div.quiz-answer-card[data-state="wrong"] {
+  background: rgba(239,68,68,0.22) !important;
 }
 
 /* Answer text */
@@ -1076,28 +1127,37 @@ body.quiz-active .quiz-score-row {
    This class IS reliably added by JS in _renderCompQuestion
    â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 body.quiz-comp-img #comp-question-stage {
-  display: grid !important;
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr 1fr;
-  gap: 4px;
-  padding: 4px;
-  box-sizing: border-box;
-  overflow: hidden;
-  flex-direction: unset;
+  display: flex !important;
+  flex-direction: row !important;
 }
 
-/* Hide normal header/question-section in quadrant mode */
-body.quiz-comp-img #comp-question-stage > div:first-child { display: none !important; }
-body.quiz-comp-img #comp-question-section                 { display: none !important; }
+body.quiz-comp-img #comp-main-panel {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: auto 1fr 1fr; /* Row 1: Score, Row 2: Quadrants, Row 3: Answers */
+  gap: 6px;
+  padding: 6px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* Score bar spans both columns */
+body.quiz-comp-img #comp-main-panel > div:first-child {
+  grid-column: 1 / -1;
+}
+
+/* Hide normal question section in image mode */
+body.quiz-comp-img #comp-question-section { display: none !important; }
 
 /* Image quadrant: top-left */
 body.quiz-comp-img #comp-img-quadrant {
   display: block !important;
   grid-column: 1;
-  grid-row: 1;
+  grid-row: 2;
   overflow: hidden;
   background: #000;
   border-radius: 12px;
+  position: relative;
 }
 body.quiz-comp-img #comp-img-quadrant img {
   width: 100%;
@@ -1110,7 +1170,7 @@ body.quiz-comp-img #comp-img-quadrant img {
 body.quiz-comp-img #comp-q-quadrant {
   display: flex !important;
   grid-column: 2;
-  grid-row: 1;
+  grid-row: 2;
   align-items: center;
   justify-content: center;
   padding: 1.5rem;
@@ -1119,6 +1179,7 @@ body.quiz-comp-img #comp-q-quadrant {
   overflow: hidden;
   border-radius: 12px;
   border-left: 1px solid rgba(255,255,255,0.05);
+  position: relative;
 }
 #comp-q-quadrant-text {
   color: #f1f5f9;
@@ -1132,10 +1193,9 @@ body.quiz-comp-img #comp-q-quadrant {
 /* Answer grid: bottom row */
 body.quiz-comp-img #comp-answers-grid {
   grid-column: 1 / -1 !important;
-  grid-row: 2 !important;
-  grid-template-rows: 1fr !important;
+  grid-row: 3 !important;
   padding: 4px !important;
-  gap: 4px !important;
+  gap: 8px !important;
 }
 
 /* â”€â”€ Comprehension Adventure â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */

@@ -11,7 +11,7 @@ const geminiApiKey   = defineSecret('GEMINI_API_KEY');
 const pixabayApiKey  = defineSecret('PIXABAY_API_KEY');
 const unsplashApiKey = defineSecret('UNSPLASH_ACCESS_KEY');
 
-const GEMINI_MODEL = 'gemini-2.5-flash';
+const GEMINI_MODEL = 'gemini-1.5-flash';
 
 /**
  * Secure proxy for Gemini API — keeps the API key server-side.
@@ -426,7 +426,8 @@ exports.comprehensionGenerate = onRequest(
     if (!apiKey) { res.status(503).json({ error: 'GEMINI_API_KEY not configured' }); return; }
 
     const { phase, medium, subject, educationLevel, numQuestions = 5,
-            videoDurationMin = 3, passageLength = 'medium', mediaContent } = req.body;
+            videoDurationMin = 3, passageLength = 'medium', mediaContent,
+            videoTimeLimitSec = null } = req.body;
 
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
 
@@ -568,36 +569,53 @@ Return ONLY valid JSON:
         // double-grounding ensures questions are about this specific content.
         let transcript = null;
         if (isVideo && videoId) {
-          transcript = await fetchYouTubeTranscript(videoId);
+          const rawTranscript = await fetchYouTubeTranscript(videoId);
+          // If a time limit is set, estimate how many characters correspond to
+          // the watched portion using ~2.5 words/sec × ~5 chars/word = ~12.5 chars/sec.
+          if (rawTranscript && videoTimeLimitSec && videoTimeLimitSec > 0) {
+            const estimatedChars = Math.round(videoTimeLimitSec * 12.5);
+            transcript = rawTranscript.slice(0, estimatedChars);
+            console.log(`[comp questions] Trimmed transcript to ${transcript.length} chars for ${videoTimeLimitSec}s time limit`);
+          } else {
+            transcript = rawTranscript;
+          }
         }
 
         // ════════════════════════════════════════════════════════════
         // VIDEO PROMPT — mirrors Gemini app's "quiz on video" ability
         // ════════════════════════════════════════════════════════════
         const buildVideoPrompt = () => {
+          const timeLimitNote = videoTimeLimitSec && videoTimeLimitSec > 0
+            ? `\n\n⚠️ IMPORTANT: The student ONLY watched the FIRST ${videoTimeLimitSec} SECONDS of this video. Every question MUST be answerable from that opening ${videoTimeLimitSec}-second segment ONLY. Do NOT ask about anything that appears after the ${videoTimeLimitSec}-second mark.`
+            : '';
+
           const transcriptSection = transcript
-            ? `\n\nHere is the full auto-generated transcript of the video for additional grounding:\n"""\n${transcript.slice(0, 6000)}\n"""\nUse the transcript to verify timestamps, quotes, and factual details.`
+            ? `\n\nHere is the auto-generated transcript covering the watched portion of the video:\n"""\n${transcript.slice(0, 6000)}\n"""\nUse this transcript to verify quotes and factual details. All questions must relate to content within this transcript excerpt.`
             : '';
 
           return (
             `You are an expert educational content creator analysing a YouTube video for ${educationLevel} students.\n\n` +
 
             `## Your Task\n` +
-            `Watch the YouTube video provided above in its entirety. Pay close attention to:\n` +
+            (videoTimeLimitSec && videoTimeLimitSec > 0
+              ? `Watch ONLY the first **${videoTimeLimitSec} seconds** of the YouTube video provided above. Stop at the ${videoTimeLimitSec}-second mark. Pay close attention to:\n`
+              : `Watch the YouTube video provided above in its entirety. Pay close attention to:\n`) +
             `- **Narration and dialogue** — every word spoken\n` +
             `- **Visuals and demonstrations** — what is physically shown on screen\n` +
             `- **On-screen text** — titles, labels, captions, subtitles\n` +
             `- **Key facts, sequences, and cause-effect relationships** presented\n` +
             `- **Main characters, people, or subjects** featured\n` +
             `- **Tone and purpose** — is it a tutorial, story, documentary, experiment?\n` +
-            `${transcriptSection}\n\n` +
+            `${timeLimitNote}${transcriptSection}\n\n` +
 
             `## Output Requirements\n` +
             `Generate exactly **${numQuestions}** multiple-choice comprehension questions.\n\n` +
 
             `### Strict Rules\n` +
-            `1. Every question must be answerable ONLY by someone who watched this specific video — not from general knowledge\n` +
-            `2. Distribute questions across the video timeline (beginning, middle, end)\n` +
+            `1. Every question must be answerable ONLY by someone who watched the specified portion of this video — not from general knowledge\n` +
+            (videoTimeLimitSec && videoTimeLimitSec > 0
+              ? `2. ALL questions must be about content within the FIRST ${videoTimeLimitSec} seconds only — do not reference anything after that point\n`
+              : `2. Distribute questions across the video timeline (beginning, middle, end)\n`) +
             `3. Include a mix of question types: recall ("What was shown..."), inference ("Why did..."), sequence ("What happened after..."), and vocabulary ("What does X mean in this context?")\n` +
             `4. Each question has exactly 4 answer options (A, B, C, D)\n` +
             `5. Only ONE answer is correct; distractors must be plausible to someone who didn't pay attention\n` +
@@ -714,32 +732,32 @@ Return ONLY valid JSON:
         } else if (isImage && imageUrl) {
           const prompt = buildImagePrompt();
           console.log('[comp questions] IMAGE prompt (first 300 chars):', prompt.slice(0, 300));
+
+          // Attempt to download the image so Gemini can actually see it.
+          // If this fails for any reason, we refuse to generate guessed questions.
+          let imgB64, mimeType;
           try {
-            // Attempt 1: pass image URL as a fileData URI (works for public HTTP images)
-            raw = await callGemini([
-              { fileData: { fileUri: imageUrl } },
-              { text: prompt },
-            ]);
-            console.log(`[comp questions] Native image analysis succeeded for ${imageUrl}`);
-          } catch (imgErr) {
-            console.warn(`[comp questions] Native image fileData failed (${imgErr.message}), trying inlineData fetch`);
-            try {
-              // Attempt 2: fetch the image bytes and pass as inlineData
-              const imgResp = await fetch(imageUrl);
-              if (!imgResp.ok) throw new Error(`Image fetch failed: ${imgResp.status}`);
-              const imgBuf  = await imgResp.arrayBuffer();
-              const imgB64  = Buffer.from(imgBuf).toString('base64');
-              const mimeType = imgResp.headers.get('content-type') || 'image/jpeg';
-              raw = await callGemini([
-                { inlineData: { mimeType, data: imgB64 } },
-                { text: prompt },
-              ]);
-              console.log(`[comp questions] Inline image analysis succeeded for ${imageUrl}`);
-            } catch (inlineErr) {
-              console.warn(`[comp questions] Inline image also failed (${inlineErr.message}), text-only fallback`);
-              raw = await callGemini([{ text: `An image was provided at this URL: ${imageUrl}\n\n` + prompt }]);
-            }
+            const imgResp = await fetch(imageUrl, { signal: AbortSignal.timeout(10000) });
+            if (!imgResp.ok) throw new Error(`HTTP ${imgResp.status} ${imgResp.statusText}`);
+            const contentType = imgResp.headers.get('content-type') || '';
+            if (!contentType.startsWith('image/')) throw new Error(`URL returned non-image content (${contentType})`);
+            const imgBuf = await imgResp.arrayBuffer();
+            imgB64  = Buffer.from(imgBuf).toString('base64');
+            mimeType = contentType.split(';')[0].trim();
+            console.log(`[comp questions] Image fetched OK (${imgBuf.byteLength} bytes, ${mimeType})`);
+          } catch (fetchErr) {
+            console.warn('[comp questions] Image fetch failed:', fetchErr.message);
+            // Throw a structured error the frontend can display helpfully
+            const err = new Error(fetchErr.message);
+            err.reason = 'IMAGE_UNREACHABLE';
+            throw err;
           }
+
+          raw = await callGemini([
+            { inlineData: { mimeType, data: imgB64 } },
+            { text: prompt },
+          ]);
+          console.log(`[comp questions] Native image analysis succeeded for ${imageUrl}`);
 
         } else {
           // Legacy text/passage path
@@ -757,6 +775,20 @@ Return ONLY valid JSON:
         const jsonMatch = raw.match(/\{[\s\S]*\}/);
         if (!jsonMatch) throw new Error('No JSON in Gemini response for questions');
         const qData = JSON.parse(jsonMatch[0]);
+
+        // Validate that each correctId actually matches one of the answer ids
+        if (Array.isArray(qData.questions)) {
+          const invalid = qData.questions.filter(q =>
+            !q.answers?.some(a => a.id === q.correctId)
+          );
+          if (invalid.length > 0) {
+            console.error('[comp questions] correctId mismatch in', invalid.length, 'question(s):', JSON.stringify(invalid.map(q => ({q: q.question, correctId: q.correctId, ids: q.answers?.map(a => a.id)}))));
+            const err = new Error(`Gemini returned ${invalid.length} question(s) with a correctId that does not match any answer option.`);
+            err.reason = 'INVALID_CORRECT_ID';
+            throw err;
+          }
+        }
+
         res.status(200).json(qData);
 
 

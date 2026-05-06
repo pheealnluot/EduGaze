@@ -7,12 +7,18 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="css/base.css">
   <link rel="stylesheet" href="css/peppa-game.css">
-  <link rel="stylesheet" href="css/quiz.css?v=2">
+  <link rel="stylesheet" href="css/quiz.css?v=3">
   <link rel="stylesheet" href="css/ben-holly.css">
   <link rel="stylesheet" href="css/kung-fu-panda.css">
   <link rel="stylesheet" href="css/totoro.css">
   <link rel="stylesheet" href="css/turning-red.css">
   <link rel="stylesheet" href="css/zootopia.css">
+  <style>
+    @keyframes compLoadPulse {
+      0%   { transform: translateX(-100%); }
+      100% { transform: translateX(250%); }
+    }
+  </style>
 </head>
 
 <body class="min-h-screen flex flex-col items-center py-10 px-4">
@@ -28,7 +34,7 @@
       </feMerge>
     </filter>
   </svg>
-  <header class="w-full max-w-4xl mx-auto flex justify-between items-center mb-10 z-50">
+  <header id="global-header" class="w-full max-w-4xl mx-auto flex justify-between items-center mb-10 z-50">
     <div class="flex items-center gap-6">
       <h1 id="logo" ondblclick="setMode('landing')"
         class="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-emerald-400 cursor-pointer hover:opacity-80 transition-opacity">
@@ -402,149 +408,97 @@
     <!-- ══════════════════════════════════════════════════════════ -->
     <!-- COMPREHENSION ADVENTURE VIEW                              -->
     <!-- ══════════════════════════════════════════════════════════ -->
-    <div id="view-comprehension" class="hidden w-full h-full flex-col" style="position:relative;min-height:0;flex:1;">
+    <div id="view-comprehension" class="hidden" style="position:fixed;inset:0;z-index:500;background:#0a0f1a;display:none;flex-direction:column;">
 
-
-      <!-- ── Sourcing / Loading State ─────────────────────────── -->
-      <div id="comp-sourcing-overlay"
-        style="display:none;position:absolute;inset:0;z-index:100;background:rgba(2,6,23,0.95);display:none;flex-direction:column;align-items:center;justify-content:center;gap:16px;">
-        <div
-          style="width:56px;height:56px;border-radius:50%;border:3px solid #0d9488;border-top-color:transparent;animation:spin 1s linear infinite;">
-        </div>
-        <div style="color:#0d9488;font-size:1rem;font-weight:700;" id="comp-sourcing-label">Finding the perfect content
-          for you…</div>
-        <div style="color:#475569;font-size:0.78rem;" id="comp-sourcing-sublabel">Asking AI to choose a video and
-          prepare questions</div>
-      </div>
-
-      <!-- ── Media Stage ──────────────────────────────────────── -->
-      <div id="comp-media-stage" style="display:none;flex-direction:column;width:100%;height:100%;position:relative;">
-
-        <!-- Top bar: title + skip -->
-        <div
-          style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;background:rgba(2,6,23,0.7);flex-shrink:0;gap:12px;">
-          <div>
-            <div style="font-size:0.65rem;font-weight:700;color:#0d9488;text-transform:uppercase;letter-spacing:0.1em;">
-              Comprehension Adventure</div>
-            <div id="comp-media-title"
-              style="font-size:0.9rem;font-weight:700;color:#f1f5f9;max-width:60vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-              Loading…</div>
+      <!-- ── Transition Stage ──────────────────────────────────────────── -->
+      <div id="comp-transition-stage" style="display:none;flex-direction:column;align-items:center;justify-content:center;width:100%;height:100%;background:linear-gradient(135deg,#020617,#0f172a);gap:24px;text-align:center;overflow:hidden;">
+        <video id="comp-trans-video" style="display:none;width:100%;height:100%;object-fit:cover;"></video>
+        <div id="comp-trans-static-content" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px;">
+          <div id="comp-trans-character-box" style="width:180px;height:180px;display:flex;align-items:center;justify-content:center;"></div>
+          <div style="max-width:500px;padding:0 20px;">
+            <h2 style="font-size:2rem;font-weight:900;color:#fff;margin-bottom:8px;" id="comp-trans-title">Great watching!</h2>
+            <p style="font-size:1.1rem;color:#0d9488;font-weight:700;" id="comp-trans-msg">Now, let's answer the questions!</p>
           </div>
-          <div style="display:flex;gap:8px;flex-shrink:0;align-items:center;">
-            <a id="comp-yt-link-btn" href="#" target="_blank" rel="noopener"
-              style="display:none;padding:6px 12px;border:1px solid rgba(255,80,80,0.4);border-radius:8px;background:rgba(255,80,80,0.1);color:#f87171;font-size:0.75rem;font-weight:700;text-decoration:none;align-items:center;gap:5px;">
-              ▶ YouTube ↗
-            </a>
-            <button id="comp-skip-btn" onclick="window.onCompMediaComplete()"
-              style="padding:7px 16px;border:1px solid rgba(13,148,136,0.4);border-radius:8px;background:rgba(13,148,136,0.1);color:#0d9488;font-size:0.8rem;font-weight:700;cursor:pointer;">Skip
-              ⏭</button>
-            <button id="comp-continue-btn" onclick="window.onCompMediaComplete()"
-              style="display:none;padding:7px 16px;border:none;border-radius:8px;background:linear-gradient(90deg,#0d9488,#0284c7);color:#fff;font-size:0.8rem;font-weight:700;cursor:pointer;">Continue
-              to Questions →</button>
-          </div>
-        </div>
-
-        <!-- Media area (fills remaining height) -->
-        <div id="comp-media-area" style="flex:1;position:relative;overflow:hidden;background:#000;">
-
-          <!-- Video (YouTube iframe) -->
-          <iframe id="comp-video-iframe" style="display:none;width:100%;height:100%;border:none;"
-            allow="autoplay; encrypted-media" allowfullscreen></iframe>
-
-          <!-- Image display -->
-          <div id="comp-image-container"
-            style="display:none;width:100%;height:100%;display:none;align-items:center;justify-content:center;background:#0a0f1a;">
-            <img id="comp-image-el" src="" alt=""
-              style="max-width:90%;max-height:85%;object-fit:contain;border-radius:12px;box-shadow:0 8px 40px rgba(0,0,0,0.6);">
-            <div id="comp-image-caption"
-              style="position:absolute;bottom:0;left:0;right:0;padding:12px 20px;background:linear-gradient(transparent,rgba(0,0,0,0.8));color:#f1f5f9;font-size:0.85rem;text-align:center;">
-            </div>
-          </div>
-
-          <!-- Text passage -->
-          <div id="comp-text-container"
-            style="display:none;width:100%;height:100%;overflow-y:auto;padding:24px 32px;box-sizing:border-box;background:#0a0f1a;">
-            <div id="comp-text-passage"
-              style="max-width:720px;margin:0 auto;font-size:1.05rem;line-height:1.8;color:#e2e8f0;font-family:'Georgia',serif;">
-            </div>
-          </div>
-
-          <!-- Sounds / TTS display -->
-          <div id="comp-sounds-container"
-            style="display:none;width:100%;height:100%;display:none;align-items:center;justify-content:center;flex-direction:column;gap:24px;background:#0a0f1a;">
-            <div style="font-size:4rem;">🔊</div>
-            <div id="comp-sounds-label" style="font-size:1.1rem;font-weight:700;color:#0d9488;text-align:center;">
-              Listening…</div>
-            <!-- TTS progress bar -->
-            <div
-              style="width:min(400px,80%);height:6px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden;">
-              <div id="comp-sounds-bar"
-                style="height:100%;width:0%;background:linear-gradient(90deg,#0d9488,#0284c7);border-radius:3px;transition:width 0.5s linear;">
-              </div>
-            </div>
-            <div id="comp-sounds-passage"
-              style="max-width:500px;font-size:0.85rem;color:#475569;text-align:center;font-style:italic;padding:0 16px;">
-            </div>
-          </div>
-        </div>
-
-        <!-- Media progress bar (thin, at very bottom) -->
-        <div style="height:3px;background:rgba(255,255,255,0.06);flex-shrink:0;">
-          <div id="comp-media-progress"
-            style="height:100%;width:0%;background:linear-gradient(90deg,#0d9488,#0284c7);transition:width 0.5s;"></div>
         </div>
       </div>
 
-      <!-- ── Question Stage (reuses quiz board structure) ─────── -->
-      <div id="comp-question-stage"
-        style="display:none;position:relative;">
-        <!-- Score bar -->
-        <div
-          style="display:flex;align-items:center;justify-content:space-between;padding:8px 16px;background:rgba(2,6,23,0.7);flex-shrink:0;">
-          <div style="font-size:0.7rem;font-weight:700;color:#0d9488;text-transform:uppercase;letter-spacing:0.08em;">
-            Comprehension Questions</div>
-          <div style="display:flex;align-items:center;gap:10px;">
-            <span id="comp-q-counter" style="font-size:0.78rem;color:#64748b;font-weight:600;">Q 1 / 5</span>
-            <span id="comp-score-badge" style="font-size:0.78rem;font-weight:900;color:#0d9488;">⭐ 0</span>
+      <!-- ── Question Stage ─────────────────────────────────────────────── -->
+      <!-- flex-row: left sidebar + main content, mirrors image quiz layout -->
+      <div id="comp-question-stage" style="display:none;flex-direction:row;width:100%;height:100%;position:relative;flex:1;min-height:0;overflow:hidden;">
+
+        <!-- Left Sidebar -->
+        <div id="comp-sidebar" style="width:56px;min-width:56px;height:100%;background:rgba(15,23,42,0.98);border-right:1px solid rgba(255,255,255,0.08);display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:12px 0;flex-shrink:0;z-index:20;">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:10px;">
+            <span class="quiz-sidebar-logo" id="comp-sb-home" title="Double-click: back to home">EduGaze</span>
+            <div id="comp-sidebar-user" class="quiz-sidebar-user" title="Guest">G</div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
+            <button id="comp-btn-replay" class="quiz-sidebar-btn" title="Replay Video (double-click)">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.5"/>
+              </svg>
+            </button>
+            <button id="comp-btn-settings" class="quiz-sidebar-btn" title="Quiz Settings (double-click)">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+              </svg>
+            </button>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
+            <button id="comp-btn-exit" class="quiz-sidebar-btn" title="Exit Adventure" style="color:#f87171;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
           </div>
         </div>
 
-        <!-- Question display (reuses quiz styles) -->
-        <div id="comp-question-section" class="quiz-question-section" style="flex-shrink:0;">
-          <button id="comp-prev-btn" class="quiz-nav-arrow" onclick="window.compNavPrev()">‹</button>
-          <div id="comp-display-question" class="quiz-question-text">Loading question…</div>
-          <button id="comp-next-btn" class="quiz-nav-arrow" onclick="window.compNavNext()">›</button>
-        </div>
+        <!-- Main content panel -->
+        <div id="comp-main-panel" style="flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;">
+          <!-- Score bar -->
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 16px;background:rgba(2,6,23,0.7);flex-shrink:0;">
+            <div style="font-size:0.7rem;font-weight:700;color:#0d9488;text-transform:uppercase;letter-spacing:0.08em;">Comprehension Questions</div>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span id="comp-q-counter" style="font-size:0.78rem;color:#64748b;font-weight:600;">Q 1 / 5</span>
+              <span id="comp-score-badge" style="font-size:0.78rem;font-weight:900;color:#0d9488;">⭐ 0</span>
+            </div>
+          </div>
 
-        <!-- Answer grid (reuses quiz grid styles) -->
-        <div id="comp-answers-grid">
-        </div>
+          <!-- Question display -->
+          <div id="comp-question-section" class="quiz-question-section" style="flex-shrink:0;position:relative;">
+            <button id="comp-prev-btn" class="quiz-nav-arrow" onclick="window.compNavPrev()">‹</button>
+            <div id="comp-display-question" class="quiz-question-text">Loading question…</div>
+            <button id="comp-next-btn" class="quiz-nav-arrow" onclick="window.compNavNext()">›</button>
+          </div>
 
-        <!-- Image quadrant (top-left in quiz-comp-img mode) -->
-        <div id="comp-img-quadrant" style="display:none;overflow:hidden;background:#000;border-radius:12px;">
-          <img id="comp-img-quadrant-img" src="" alt="Quiz image" style="width:100%;height:100%;object-fit:cover;display:block;">
-        </div>
-        <!-- Question quadrant (top-right in quiz-comp-img mode) -->
-        <div id="comp-q-quadrant" style="display:none;align-items:center;justify-content:center;padding:1.5rem;box-sizing:border-box;background:rgba(15,23,42,0.97);overflow:hidden;border-radius:12px;">
-          <div id="comp-q-quadrant-text"></div>
-        </div>
+          <!-- Image Quadrant Layout (for image-based adventures) -->
+          <div id="comp-img-quadrant" style="display:none;">
+            <img id="comp-display-image" src="" alt="Comprehension Image">
+          </div>
+          <div id="comp-q-quadrant" style="display:none;">
+            <div id="comp-q-quadrant-text"></div>
+          </div>
 
-        <!-- Win overlay -->
-        <div id="comp-win-overlay"
-          style="display:none;position:absolute;inset:0;z-index:300;background:rgba(2,6,23,0.92);flex-direction:column;align-items:center;justify-content:center;gap:16px;text-align:center;padding:24px;">
-          <div style="font-size:3.5rem;">🎉</div>
-          <div style="font-size:1.5rem;font-weight:900;color:#f1f5f9;" id="comp-win-message">Adventure Complete!</div>
-          <div style="font-size:0.9rem;color:#0d9488;font-weight:700;" id="comp-win-score">You answered X out of Y
-            correctly!</div>
-          <div style="display:flex;gap:12px;margin-top:8px;">
-            <button onclick="window.startComprehensionAdventure()"
-              style="padding:12px 24px;border:none;border-radius:10px;background:linear-gradient(135deg,#0d9488,#0284c7);color:#fff;font-weight:800;font-size:0.9rem;cursor:pointer;">
-              🔄 New Adventure
-            </button>
-            <button onclick="window.setMode('landing')"
-              style="padding:12px 24px;border:1px solid rgba(255,255,255,0.12);border-radius:10px;background:transparent;color:#94a3b8;font-weight:700;font-size:0.9rem;cursor:pointer;">
-              🏠 Home
-            </button>
+          <!-- Answer grid -->
+          <div id="comp-answers-grid" style="flex:1;min-height:0;"></div>
+
+          <!-- Win overlay -->
+          <div id="comp-win-overlay"
+            style="display:none;position:absolute;inset:0;z-index:300;background:rgba(2,6,23,0.92);flex-direction:column;align-items:center;justify-content:flex-start;gap:24px;text-align:center;padding-top:8vh;padding-left:24px;padding-right:24px;">
+            <div id="comp-win-char-box" style="width:300px;height:300px;display:flex;align-items:center;justify-content:center;"></div>
+
+            <div style="font-size:3rem;font-weight:900;color:#f1f5f9;" id="comp-win-message">Adventure Complete!</div>
+            <div style="font-size:1.5rem;color:#0d9488;font-weight:700;" id="comp-win-score">You answered X out of Y correctly!</div>
+            <div style="display:flex;gap:16px;margin-top:8px;">
+              <button onclick="window.compPlayAgain()"
+                style="padding:18px 40px;border:none;border-radius:14px;background:linear-gradient(135deg,#0d9488,#0284c7);color:#fff;font-weight:800;font-size:1.4rem;cursor:pointer;">
+                🔄 Play Again
+              </button>
+              <button onclick="window.compExitAdventure()"
+                style="padding:18px 40px;border:1px solid rgba(255,255,255,0.12);border-radius:14px;background:transparent;color:#94a3b8;font-weight:700;font-size:1.4rem;cursor:pointer;">
+                🏠 Exit
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -879,18 +833,36 @@
                     <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
                   </svg>
                 </button>
+                <button id="qs-comp-url-clear" onclick="window._qsCompUrlClear()"
+                  title="Clear URL"
+                  style="flex-shrink:0;width:36px;display:flex;align-items:center;justify-content:center;
+                         background:rgba(15,23,42,0.7);border:1.5px solid rgba(248,113,113,0.2);
+                         border-radius:0.75rem;color:#64748b;cursor:pointer;transition:all 0.2s;font-size:1.1rem;line-height:1;"
+                  onmouseenter="this.style.color='#f87171';this.style.borderColor='rgba(248,113,113,0.5)'"
+                  onmouseleave="this.style.color='#64748b';this.style.borderColor='rgba(248,113,113,0.2)'">&#x2715;</button>
               </div>
               <!-- History dropdown -->
               <div id="qs-comp-history-dropdown"
                 style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:9999;
                        background:linear-gradient(145deg,#1e293b,#0f172a);
                        border:1.5px solid rgba(139,92,246,0.25);border-radius:0.85rem;
-                       box-shadow:0 12px 32px rgba(0,0,0,0.5);overflow:hidden;max-height:220px;overflow-y:auto;
+                       box-shadow:0 12px 32px rgba(0,0,0,0.5);overflow:hidden;max-height:320px;overflow-y:auto;overflow-x:hidden;
                        scrollbar-width:thin;scrollbar-color:rgba(139,92,246,0.3) transparent;">
                 <!-- filled by JS -->
               </div>
+
             </div>
             <div id="qs-comp-url-feedback" class="info">Paste a YouTube video URL or a direct image URL.</div>
+            <!-- Media preview card — shown when a valid URL is detected -->
+            <div id="qs-comp-preview" style="display:none;border-radius:12px;overflow:hidden;border:1.5px solid rgba(139,92,246,0.2);background:rgba(15,23,42,0.7);flex-direction:row;gap:0;align-items:stretch;margin-top:2px;">
+              <div id="qs-comp-preview-thumb" style="flex-shrink:0;width:120px;min-height:68px;background:#0f172a;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;">
+                <!-- filled by JS -->
+              </div>
+              <div style="flex:1;padding:10px 12px;display:flex;flex-direction:column;justify-content:center;gap:4px;min-width:0;">
+                <div id="qs-comp-preview-title" style="font-size:0.78rem;font-weight:700;color:#e2e8f0;line-height:1.3;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">Loading…</div>
+                <div id="qs-comp-preview-meta" style="font-size:0.65rem;color:#64748b;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
+              </div>
+            </div>
             <!-- Time limit row — shown only for YouTube URLs (JS toggles visibility) -->
             <div id="qs-comp-timelimit-row"
               style="display:none;align-items:center;gap:10px;margin-top:2px;">
@@ -1143,7 +1115,6 @@
               (0-10000ms)</p>
           </div>
 
-          <!-- Voice Over -->
           <div class="space-y-1 border-t border-slate-800 pt-5">
             <div class="flex items-center gap-3">
               <input type="checkbox" id="quiz-voiceover-enabled"
@@ -1153,6 +1124,16 @@
                 Over</label>
             </div>
             <p class="text-[10px] text-slate-500">Reads the question aloud, then each answer.</p>
+            <!-- Sub-option: volume -->
+            <div id="quiz-vo-volume-row" class="flex items-center gap-3 pl-7 mt-1" style="display:none">
+              <svg class="w-4 h-4 text-slate-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M15.536 8.464a5 5 0 010 7.072M12 6v12m0 0l-3-3m3 3l3-3M9.172 14.828A4 4 0 116 12" />
+              </svg>
+              <input type="range" id="quiz-vo-volume-slider" min="0" max="100" step="5" value="100"
+                class="flex-1 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500">
+              <span id="quiz-vo-volume-display" class="text-cyan-400 font-black text-sm w-8 text-right">100%</span>
+            </div>
             <!-- Sub-option: repeat on hover -->
             <div id="quiz-vo-hover-row" class="flex items-center gap-3 pl-7 mt-1" style="display:none">
               <input type="checkbox" id="quiz-vo-hover-repeat"
@@ -1743,202 +1724,10 @@
 
 
 
-  <!-- ══ Comprehension Adventure Settings Overlay (body-level, position:fixed) ══ -->
-  <!-- Kept here so no ancestor display:none can hide it                           -->
-  <div id="comp-settings-overlay"
-    style="position:fixed;inset:0;z-index:1000;display:none;align-items:center;justify-content:center;background:rgba(2,6,23,0.92);backdrop-filter:blur(8px);">
-    <div
-      style="width:100%;max-width:520px;max-height:90vh;overflow-y:auto;background:linear-gradient(135deg,#0f172a,#1e293b);border:1px solid rgba(13,148,136,0.3);border-radius:20px;padding:28px;box-shadow:0 24px 80px rgba(0,0,0,0.6);">
+  <!-- comp-settings-overlay removed — entry is now via Knowledge Explorer → Comprehension tab -->
 
-      <!-- Header -->
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;">
-        <div>
-          <h2 style="font-size:1.3rem;font-weight:900;color:#f1f5f9;margin:0;">🎯 Comprehension Adventure</h2>
-          <p style="font-size:0.72rem;color:#64748b;margin:4px 0 0;">Configure your learning session</p>
-        </div>
-        <button onclick="window.setMode('landing')"
-          style="width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,0.06);border:none;color:#94a3b8;font-size:1.1rem;cursor:pointer;display:flex;align-items:center;justify-content:center;">✕</button>
-      </div>
-
-      <div style="display:flex;flex-direction:column;gap:20px;">
-
-        <!-- Medium Selection -->
-        <div style="padding-bottom:20px;border-bottom:1px solid rgba(255,255,255,0.06);">
-          <label
-            style="font-size:0.7rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:10px;">📡
-            Medium (choose one or more)</label>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;" id="comp-medium-grid">
-            <div class="comp-medium-chip active-medium" data-medium="video">🎬 Video</div>
-            <div class="comp-medium-chip" data-medium="image">🖼️ Image</div>
-            <div class="comp-medium-chip" data-medium="text">📄 Text</div>
-            <div class="comp-medium-chip" data-medium="sounds">🔊 Sounds</div>
-          </div>
-
-          <!-- YouTube URL paste field — shown only when Video is selected -->
-          <div id="comp-yt-paste-section" style="margin-top:12px;display:flex;flex-direction:column;gap:6px;">
-            <label
-              style="font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.08em;">
-              📎 Paste a specific YouTube link <span style="font-weight:400;color:#475569;">(optional — AI will use it
-                instead of searching)</span>
-            </label>
-            <div style="position:relative;">
-              <input type="url" id="comp-yt-url-input" placeholder="https://www.youtube.com/watch?v=... or youtu.be/..."
-                style="width:100%;box-sizing:border-box;background:#0f172a;border:1px solid rgba(13,148,136,0.3);border-radius:10px;padding:9px 12px;color:#f1f5f9;font-size:0.82rem;outline:none;transition:border-color 0.2s;padding-right:80px;">
-              <button id="comp-yt-clear-btn"
-                onclick="document.getElementById('comp-yt-url-input').value='';window._compClearCustomVideo();"
-                style="display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,0.07);border:none;border-radius:6px;color:#94a3b8;font-size:0.72rem;padding:3px 8px;cursor:pointer;">
-                Clear ✕
-              </button>
-            </div>
-            <div id="comp-yt-url-feedback" style="font-size:0.72rem;min-height:16px;"></div>
-          </div>
-        </div>
-
-        <!-- Content Length -->
-        <div id="comp-length-section" style="padding-bottom:20px;border-bottom:1px solid rgba(255,255,255,0.06);">
-          <label
-            style="font-size:0.7rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:10px;">⏱️
-            Content Length</label>
-          <div id="comp-len-video" style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
-            <span style="font-size:0.75rem;color:#94a3b8;width:100px;flex-shrink:0;">🎬 Video (min)</span>
-            <input type="range" id="comp-video-len-slider" min="1" max="15" step="1" value="3"
-              style="flex:1;height:4px;accent-color:#0d9488;">
-            <span id="comp-video-len-display"
-              style="font-size:0.85rem;font-weight:900;color:#0d9488;width:28px;text-align:right;">3</span>
-          </div>
-          <div id="comp-len-text" style="display:none;align-items:center;gap:10px;margin-bottom:8px;">
-            <span style="font-size:0.75rem;color:#94a3b8;width:100px;flex-shrink:0;">📄 Text length</span>
-            <div style="display:flex;gap:6px;flex:1;">
-              <button class="comp-len-chip active-len" data-len="short">Short<br><span
-                  style="font-size:0.6rem;opacity:0.6">~100w</span></button>
-              <button class="comp-len-chip" data-len="medium">Medium<br><span
-                  style="font-size:0.6rem;opacity:0.6">~250w</span></button>
-              <button class="comp-len-chip" data-len="long">Long<br><span
-                  style="font-size:0.6rem;opacity:0.6">~500w</span></button>
-            </div>
-          </div>
-          <div id="comp-len-sounds" style="display:none;align-items:center;gap:10px;">
-            <span style="font-size:0.75rem;color:#94a3b8;width:100px;flex-shrink:0;">🔊 Listen (sec)</span>
-            <input type="range" id="comp-sounds-len-slider" min="30" max="300" step="30" value="90"
-              style="flex:1;height:4px;accent-color:#0d9488;">
-            <span id="comp-sounds-len-display"
-              style="font-size:0.85rem;font-weight:900;color:#0d9488;width:36px;text-align:right;">90s</span>
-          </div>
-          <!-- Image display duration (shown when Image medium selected) -->
-          <div id="comp-len-image" style="display:none;align-items:center;gap:10px;">
-            <span style="font-size:0.75rem;color:#94a3b8;width:100px;flex-shrink:0;">🖼️ Show image</span>
-            <input type="number" id="comp-imagedur-input" min="0" max="60" step="1" value="5"
-              style="width:52px;background:rgba(15,23,42,0.8);border:1px solid rgba(13,148,136,0.35);border-radius:8px;
-                     color:#f1f5f9;font-size:0.85rem;font-weight:700;padding:4px 6px;text-align:center;font-family:monospace;">
-            <input type="range" id="comp-imagedur-slider" min="0" max="60" step="1" value="5"
-              style="flex:1;height:4px;accent-color:#0d9488;">
-            <span id="comp-imagedur-display"
-              style="font-size:0.85rem;font-weight:900;color:#0d9488;width:36px;text-align:right;">5s</span>
-          </div>
-        </div>
-
-        <!-- Number of questions -->
-        <div style="padding-bottom:20px;border-bottom:1px solid rgba(255,255,255,0.06);">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-            <label
-              style="font-size:0.7rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.08em;">❓
-              Number of Questions</label>
-            <span id="comp-numq-display" style="font-size:1.2rem;font-weight:900;color:#0d9488;">5</span>
-          </div>
-          <input type="range" id="comp-numq-slider" min="3" max="10" step="1" value="5"
-            style="width:100%;height:4px;accent-color:#0d9488;">
-        </div>
-
-        <!-- Shared Quiz Settings -->
-        <div style="padding-bottom:4px;">
-          <p style="font-size:0.68rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:6px;">
-            — Q&A Style from Quiz Settings —</p>
-          <p style="font-size:0.68rem;color:#475569;margin-bottom:14px;line-height:1.5;">
-            Font size, theme, character pop-ins, dwell time, voice over, hints, and answer/question read times are all inherited from the <strong style="color:#64748b;">Quiz Settings</strong> panel. Adjust them there.</p>
-
-          <div style="margin-bottom:16px;">
-            <label
-              style="font-size:0.7rem;font-weight:700;color:#94a3b8;text-transform:uppercase;display:block;margin-bottom:8px;">📚
-              Subjects</label>
-            <div id="comp-subjects-grid" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
-          </div>
-
-          <div style="margin-bottom:16px;">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-              <label style="font-size:0.7rem;font-weight:700;color:#94a3b8;text-transform:uppercase;">🎓 Education
-                Level</label>
-              <span id="comp-edu-display" style="font-size:1.1rem;font-weight:900;color:#0d9488;">P2</span>
-            </div>
-            <div id="comp-edu-grid" style="display:flex;flex-wrap:wrap;gap:4px;"></div>
-          </div>
-
-          <div style="margin-bottom:16px;">
-            <label
-              style="font-size:0.7rem;font-weight:700;color:#94a3b8;text-transform:uppercase;display:block;margin-bottom:8px;">🖱️
-              Dwell Time (ms)</label>
-            <div style="display:flex;align-items:center;gap:8px;">
-              <input type="number" id="comp-dwell-input" min="0" max="6000" step="100" value="0"
-                style="width:80px;background:#0f172a;border:1px solid #334155;border-radius:8px;padding:6px 10px;color:#f1f5f9;font-size:0.85rem;font-family:monospace;">
-              <input type="range" id="comp-dwell-slider" min="0" max="6000" step="100" value="0"
-                style="flex:1;height:4px;accent-color:#0d9488;">
-            </div>
-          </div>
-
-          <div style="margin-bottom:16px;">
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-              <input type="checkbox" id="comp-vo-enabled" style="width:16px;height:16px;accent-color:#0d9488;">
-              <span
-                style="font-size:0.7rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.08em;">🔊
-                Voice Over (reads questions aloud)</span>
-            </label>
-          </div>
-
-          <div style="margin-bottom:16px;">
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px;">
-              <input type="checkbox" id="comp-qread-enabled" style="width:16px;height:16px;accent-color:#0d9488;">
-              <span
-                style="font-size:0.7rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.08em;">⏳
-                Question Read Time</span>
-            </label>
-            <div id="comp-qread-controls"
-              style="display:flex;align-items:center;gap:8px;opacity:0.4;pointer-events:none;">
-              <input type="number" id="comp-qread-input" min="0" max="10000" step="100" value="2000"
-                style="width:80px;background:#0f172a;border:1px solid #334155;border-radius:8px;padding:6px 10px;color:#f1f5f9;font-size:0.85rem;font-family:monospace;">
-              <input type="range" id="comp-qread-slider" min="0" max="10000" step="100" value="2000"
-                style="flex:1;height:4px;accent-color:#f59e0b;">
-            </div>
-          </div>
-
-          <div>
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px;">
-              <input type="checkbox" id="comp-aread-enabled" style="width:16px;height:16px;accent-color:#10b981;">
-              <span
-                style="font-size:0.7rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.08em;">📖
-                Answer Read Time</span>
-            </label>
-            <div id="comp-aread-controls"
-              style="display:flex;align-items:center;gap:8px;opacity:0.4;pointer-events:none;">
-              <input type="number" id="comp-aread-input" min="0" max="10000" step="100" value="2000"
-                style="width:80px;background:#0f172a;border:1px solid #334155;border-radius:8px;padding:6px 10px;color:#f1f5f9;font-size:0.85rem;font-family:monospace;">
-              <input type="range" id="comp-aread-slider" min="0" max="10000" step="100" value="2000"
-                style="flex:1;height:4px;accent-color:#10b981;">
-            </div>
-          </div>
-        </div>
-
-      </div>
-
-      <button onclick="window.startComprehensionAdventure()"
-        style="width:100%;margin-top:24px;padding:14px;border:none;border-radius:12px;background:linear-gradient(135deg,#0d9488,#0284c7);color:#fff;font-size:1rem;font-weight:900;cursor:pointer;letter-spacing:0.04em;transition:opacity 0.2s;box-shadow:0 4px 20px rgba(13,148,136,0.4);"
-        onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
-        🚀 Start Adventure
-      </button>
-    </div>
-  </div>
-  <!-- ══ END Comprehension Settings Overlay ══ -->
-
-  <script type="module" src="js/app.js?v=18"></script>
-  <script defer src="js/comprehension.js?v=7"></script>
+  <script type="module" src="js/app.js?v=41"></script>
+  <script type="module" src="js/comprehension.js?v=9"></script>
 </body>
 
 </html>
