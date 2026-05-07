@@ -824,6 +824,7 @@ Return ONLY valid JSON:
           `7. Do NOT ask questions answerable by general knowledge alone — anchor every question in what's visually present\n` +
           `8. Answer text must be plain English only — no Chinese characters or non-Latin scripts\n` +
           `9. ⚠️ COUNTING RULE — If you include a counting question (e.g. "How many X are visible?"): count EVERY item individually in the image before writing the answer. Only ask a counting question if you are CERTAIN of the exact number. If you are not 100% sure of the count, ask a different type of question instead. NEVER guess a count.\n\n` +
+          `10. ⚠️ SPATIAL ACCURACY — Be extremely careful with "left" and "right". If you refer to a person's "left hand" or "right eye", ensure it matches their body orientation. For musical instruments (like guitar), remember standard orientations (e.g., the fretting hand on the neck is the LEFT hand for a right-handed player). If you mean the left/right side of the image, state that clearly. Errors in spatial orientation are unacceptable.\n\n` +
 
           `Return ONLY valid JSON (no markdown, no commentary):\n` +
           `{\n` +
@@ -889,6 +890,68 @@ Return ONLY valid JSON:
             if (patchCount > 0) console.log(`[comp questions] Patched ${patchCount} counting answer(s)`);
           } catch (verifyErr) {
             console.warn('[comp questions] Count verification failed (using original answers):', verifyErr.message);
+          }
+
+          return questions;
+        };
+
+        // ── Spatial-accuracy verifier ───────────────────────────────────────────
+        // Re-checks any question/answer that mentions "left" or "right" against the image.
+        // Vision models often confuse orientation; this second pass focuses solely on
+        // spatial correctness (handedness, image sides, etc.) to prevent errors.
+        const verifySpatial = async (questions, imgB64, mimeType) => {
+          const spatialKeywords = /\bleft\b|\bright\b/i;
+          const needsVerify = questions.filter(q => spatialKeywords.test(q.question) || q.answers.some(a => spatialKeywords.test(a.text)));
+          if (!needsVerify.length) return questions;
+
+          console.log(`[comp questions] Verifying ${needsVerify.length} spatial question(s) against image`);
+
+          const verifyPrompt =
+            `Look carefully at the image. For each question below, verify if the use of "left" or "right" is correct. ` +
+            `Study the anatomy, handedness, and positioning in the image. ` +
+            `If a question or answer incorrectly identifies left vs right (e.g. says "right wrist" but it's the "left wrist"), provide the CORRECTED text.\n\n` +
+            `Questions to verify:\n` +
+            needsVerify.map((q, i) =>
+              `Q${i + 1}: ${q.question}\n` +
+              q.answers.map(a => `  ${a.id}) ${a.text}`).join('\n')
+            ).join('\n\n') +
+            `\n\nReturn ONLY valid JSON — an array in the same order as the questions above:\n` +
+            `[{ "question": "Original or corrected question", "answers": [{ "id": "a", "text": "Original or corrected text" }, ...] }, ...]`;
+
+          try {
+            const verifyRaw = await callGemini([
+              { inlineData: { mimeType, data: imgB64 } },
+              { text: verifyPrompt },
+            ]);
+            const arrMatch = verifyRaw.match(/\[[\s\S]*\]/);
+            if (!arrMatch) throw new Error('No JSON array in spatial verify response');
+            const verified = JSON.parse(arrMatch[0]);
+
+            let patchCount = 0;
+            needsVerify.forEach((q, i) => {
+              const v = verified[i];
+              if (!v) return;
+              let changed = false;
+              if (v.question && v.question !== q.question) {
+                console.log(`[comp questions] Spatial mismatch — patching Q: "${q.question}" → "${v.question}"`);
+                q.question = v.question;
+                changed = true;
+              }
+              if (Array.isArray(v.answers)) {
+                v.answers.forEach(va => {
+                  const qa = q.answers.find(a => a.id === va.id);
+                  if (qa && va.text && va.text !== qa.text) {
+                    console.log(`[comp questions] Spatial mismatch — patching A ${qa.id}: "${qa.text}" → "${va.text}"`);
+                    qa.text = va.text;
+                    changed = true;
+                  }
+                });
+              }
+              if (changed) patchCount++;
+            });
+            if (patchCount > 0) console.log(`[comp questions] Patched ${patchCount} spatial question(s)`);
+          } catch (verifyErr) {
+            console.warn('[comp questions] Spatial verification failed:', verifyErr.message);
           }
 
           return questions;
@@ -1024,6 +1087,7 @@ Return ONLY valid JSON:
           // raw._imgB64 / raw._mimeType are set earlier only in the isImage branch.
           if (isImage && raw._imgB64 && raw._mimeType) {
             qData.questions = await verifyCounts(qData.questions, raw._imgB64, raw._mimeType);
+            qData.questions = await verifySpatial(qData.questions, raw._imgB64, raw._mimeType);
           }
         }
 

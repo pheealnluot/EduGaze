@@ -99,23 +99,226 @@ app.post('/api/comprehension-generate', async (req, res) => {
 });
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ── YouTube Video Search proxy ────────────────────────────────────────────────
-// Forwards to the deployed Cloud Function so "Find a Video" works locally.
-const YOUTUBE_VIDEO_SEARCH_URL = 'https://us-central1-edugaze-50cdb.cloudfunctions.net/youtubeVideoSearch';
+// ── YouTube Video Search (local implementation) ──────────────────────────────
+// Full local implementation so it works without deploying Cloud Functions.
+// Strategy:
+//   1. Ask Gemini to generate search queries
+//   2. Use YouTube's public search (no API key needed)
+//   3. Verify transcript is fetchable for each candidate when requireCaption=true
+//   4. Validate via oEmbed before returning
+
+/**
+ * Extract transcript from already-fetched YouTube watch page HTML.
+ * Returns { transcript, tracks } or null.
+ */
+function extractTranscriptData(html, videoId) {
+  let tracks = [];
+  const startIdx = html.indexOf('"captionTracks":');
+  if (startIdx !== -1) {
+    const arrStart = html.indexOf('[', startIdx);
+    if (arrStart !== -1) {
+      let depth = 0, arrEnd = -1;
+      for (let i = arrStart; i < html.length && i < arrStart + 50000; i++) {
+        if (html[i] === '[') depth++;
+        else if (html[i] === ']') { depth--; if (depth === 0) { arrEnd = i + 1; break; } }
+      }
+      if (arrEnd !== -1) {
+        try { tracks = JSON.parse(html.slice(arrStart, arrEnd)); } catch {}
+      }
+    }
+  }
+  if (!tracks.length) return null;
+
+  // Prefer English (manual > auto), fall back to first
+  const en = tracks.find(t => t.languageCode === 'en' && !t.kind) ||
+             tracks.find(t => t.languageCode === 'en') ||
+             tracks.find(t => t.languageCode?.startsWith('en')) ||
+             tracks[0];
+  if (!en?.baseUrl) return null;
+
+  // Unescape the baseUrl
+  const cleanUrl = en.baseUrl.replace(/\\u0026/g, '&').replace(/\\\//g, '/');
+  return { baseUrl: cleanUrl, langCode: en.languageCode, trackCount: tracks.length };
+}
+
+/**
+ * Check if a YouTube video has caption tracks by fetching its watch page.
+ * Does NOT download the actual caption text (that happens later during question generation).
+ * This avoids the secondary request that triggers YouTube's rate limiter.
+ * Returns { hasCaptions, langCode, trackCount } or null on error.
+ */
+async function checkVideoCaptions(videoId) {
+  try {
+    const pageRes = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+    });
+    if (!pageRes.ok) {
+      console.log(`[captions] HTTP ${pageRes.status} for ${videoId}`);
+      return null;
+    }
+    const html = await pageRes.text();
+
+    const trackData = extractTranscriptData(html, videoId);
+    if (!trackData) {
+      console.log(`[captions] No caption tracks for ${videoId}`);
+      return { hasCaptions: false };
+    }
+
+    // If we found caption tracks with an English track and a baseUrl, that's good enough.
+    // The actual transcript will be fetched later by the comprehension-generate endpoint.
+    console.log(`[captions] ${videoId}: ${trackData.trackCount} track(s), lang=${trackData.langCode} — captions confirmed ✓`);
+    return { hasCaptions: true, langCode: trackData.langCode, trackCount: trackData.trackCount };
+  } catch (err) {
+    console.warn(`[captions] Error for ${videoId}:`, err.message);
+    return null;
+  }
+}
+
+/**
+ * Search YouTube using the public search page (no API key needed).
+ * Returns array of {videoId} objects.
+ */
+async function searchYouTubePublic(query, maxResults = 10) {
+  try {
+    const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}&sp=EgIQAQ%3D%3D`;
+    const resp = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+    });
+    if (!resp.ok) return [];
+    const html = await resp.text();
+
+    const results = [];
+    const videoIdPattern = /"videoId"\s*:\s*"([A-Za-z0-9_-]{11})"/g;
+    const seen = new Set();
+    let match;
+    while ((match = videoIdPattern.exec(html)) !== null && results.length < maxResults) {
+      const vid = match[1];
+      if (seen.has(vid)) continue;
+      seen.add(vid);
+      results.push({ videoId: vid });
+    }
+    return results;
+  } catch (err) {
+    console.warn(`[ytSearch] Public search failed for "${query}":`, err.message);
+    return [];
+  }
+}
 
 app.post('/api/youtube-video-search', async (req, res) => {
+  if (!GEMINI_API_KEY) {
+    return res.status(503).json({ error: 'GEMINI_API_KEY not configured' });
+  }
+
+  const { educationLevel = 'P2', subject = null,
+          exclude = [], requireCaption = false } = req.body;
+
+  console.log(`[ytVideoSearch] Starting (requireCaption=${requireCaption}, subject=${subject || 'any'})`);
+
+  // Step 1: Ask Gemini for search queries
+  const captionGuidance = requireCaption
+    ? `IMPORTANT: Bias queries toward channels that ALWAYS have captions:\n` +
+      `TED-Ed, National Geographic Kids, BBC Earth, SciShow Kids, Kurzgesagt, Khan Academy, Crash Course Kids.\n` +
+      `Include the channel name, e.g. "TED-Ed how volcanoes work".\n`
+    : '';
+  const subjectNote = subject ? ` about "${subject}"` : '';
+
+  const queryPrompt =
+    `You are an educational content curator for ${educationLevel} students.\n` +
+    `Generate 5 different YouTube search queries for great educational videos${subjectNote}.\n` +
+    `Suitable for children, interesting topics.\n` +
+    `${captionGuidance}` +
+    `Each query: 3-6 words, specific.\n` +
+    `Return ONLY valid JSON:\n{"queries":["q1","q2","q3","q4","q5"]}`;
+
+  let queries = [];
   try {
-    const response = await fetch(YOUTUBE_VIDEO_SEARCH_URL, {
+    const gResp = await fetch(GEMINI_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(req.body),
+      signal: AbortSignal.timeout(20000),
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: queryPrompt }] }],
+        generationConfig: { thinkingConfig: { thinkingBudget: 0 }, maxOutputTokens: 512 },
+      }),
     });
-    const data = await response.json().catch(() => ({}));
-    res.status(response.status).json(data);
+    const gData = await gResp.json();
+    const raw = gData?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const m = raw.match(/\{[\s\S]*\}/);
+    if (m) {
+      const parsed = JSON.parse(m[0]);
+      queries = (parsed.queries || []).filter(q => typeof q === 'string' && q.length > 2);
+    }
   } catch (err) {
-    console.error('[youtube-video-search proxy error]', err.message);
-    res.status(502).json({ error: err.message });
+    console.warn('[ytVideoSearch] Gemini query gen failed:', err.message);
   }
+
+  if (!queries.length) {
+    queries = requireCaption
+      ? ['TED-Ed science explained', 'National Geographic Kids animals', 'Kurzgesagt how things work',
+         'SciShow Kids experiments', 'Crash Course Kids earth science']
+      : ['educational science for kids', 'nature animals documentary children',
+         'how things work kids educational', 'space planets for kids', 'history for children'];
+  }
+  console.log(`[ytVideoSearch] Queries:`, queries);
+
+  const excludeSet = new Set(exclude);
+  // CRITICAL: Only check 2 candidates per query to avoid YouTube rate limiting (429).
+  // Each check = 1 watch page fetch + 1 caption URL fetch = 2 HTTP requests.
+  const MAX_CHECKS_PER_QUERY = 2;
+
+  for (const query of queries) {
+    const results = await searchYouTubePublic(query, 8);
+    console.log(`[ytVideoSearch] "${query}" => ${results.length} results`);
+
+    let checksThisQuery = 0;
+    for (const item of results) {
+      if (excludeSet.has(item.videoId)) continue;
+      if (checksThisQuery >= MAX_CHECKS_PER_QUERY) break;
+
+      // Validate via oEmbed first (lightweight, no rate limit)
+      try {
+        const oResp = await fetch(
+          `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${item.videoId}&format=json`
+        );
+        if (!oResp.ok) continue;
+        const oData = await oResp.json();
+
+        if (requireCaption) {
+          checksThisQuery++;
+          // Delay to be respectful to YouTube
+          await new Promise(r => setTimeout(r, 1500));
+          const captionCheck = await checkVideoCaptions(item.videoId);
+          if (!captionCheck?.hasCaptions) {
+            console.log(`[ytVideoSearch] ${item.videoId} — no captions, skipping`);
+            continue;
+          }
+          console.log(`[ytVideoSearch] ✅ FOUND with captions: ${item.videoId} — "${oData.title}"`);
+        } else {
+          console.log(`[ytVideoSearch] ✅ FOUND: ${item.videoId} — "${oData.title}"`);
+        }
+
+        return res.status(200).json({
+          videoId: item.videoId,
+          title: oData.title || '',
+          channelName: oData.author_name || '',
+          description: '',
+          searchQuery: query,
+          hasCaption: requireCaption,
+        });
+      } catch { continue; }
+    }
+    // Delay between search queries to avoid rate limiting
+    await new Promise(r => setTimeout(r, 2000));
+  }
+
+  console.error('[ytVideoSearch] No suitable video found');
+  res.status(200).json({ error: 'no_video_found' });
 });
 // ─────────────────────────────────────────────────────────────────────────────
 
