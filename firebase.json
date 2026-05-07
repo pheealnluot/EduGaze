@@ -39,6 +39,10 @@
         "function": "youtubeVideoSearch"
       },
       {
+        "source": "/api/youtube-video-info",
+        "function": "youtubeVideoInfo"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

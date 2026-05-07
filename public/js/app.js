@@ -10643,7 +10643,9 @@ window.renderAdminReportsPanel = async () => {
   }
 };
 
-// ── Report image retry — re-fetches from Pixabay when stored URLs expire ────
+// ── Report image retry — re-fetches from the original source when stored URLs expire ────
+// Supports all image sources: Pixabay, Unsplash, Wikipedia, Wikimedia Commons.
+// Falls back through alternative sources if the original source fails.
 window._reportImgRetry = async function(img) {
   if (img.dataset.retried) {
     // Already retried once — show fallback
@@ -10659,24 +10661,75 @@ window._reportImgRetry = async function(img) {
     if (img.nextElementSibling) img.nextElementSibling.style.display = 'flex';
     return;
   }
-  // Try re-fetching from the appropriate source
+
+  // Helper: try Pixabay
+  const _tryPixabay = async (keyword) => {
+    try {
+      const resp = await fetch(`/api/pixabay-search?q=${encodeURIComponent(keyword)}&per_page=5&image_type=photo`);
+      if (resp.ok) {
+        const data = await resp.json();
+        const hits = data?.hits || [];
+        if (hits.length > 0) return hits[0]?.webformatURL || null;
+      }
+    } catch {}
+    return null;
+  };
+
+  // Helper: try Unsplash
+  const _tryUnsplash = async (keyword) => {
+    try {
+      const resp = await fetch(`/api/unsplash-search?q=${encodeURIComponent(keyword)}&per_page=3`);
+      if (resp.ok) {
+        const data = await resp.json();
+        const hits = data?.hits || [];
+        if (hits.length > 0) return hits[0]?.webformatURL || null;
+      }
+    } catch {}
+    return null;
+  };
+
+  // Helper: try Wikipedia pageimages (uses existing global function)
+  const _tryWikipedia = async (keyword) => {
+    try {
+      if (typeof fetchWikipediaPageImage === 'function') {
+        return await fetchWikipediaPageImage(keyword) || null;
+      }
+    } catch {}
+    return null;
+  };
+
+  // Helper: try Wikimedia Commons (uses existing global function)
+  const _tryWikimedia = async (keyword) => {
+    try {
+      if (typeof fetchWikiImage === 'function') {
+        return await fetchWikiImage(keyword) || null;
+      }
+    } catch {}
+    return null;
+  };
+
+  // Try the original source first, then fall back through alternatives
   try {
     let freshUrl = null;
-    if (src === 'pixabay' || !src) {
-      const resp = await fetch(`/api/pixabay-search?q=${encodeURIComponent(kw)}&per_page=5&image_type=photo`);
-      if (resp.ok) {
-        const data = await resp.json();
-        const hits = data?.hits || [];
-        if (hits.length > 0) freshUrl = hits[0]?.webformatURL;
-      }
+
+    // Primary: try original source
+    if (src === 'wikipedia') {
+      freshUrl = await _tryWikipedia(kw);
+    } else if (src === 'wikimedia') {
+      freshUrl = await _tryWikimedia(kw);
     } else if (src === 'unsplash') {
-      const resp = await fetch(`/api/unsplash-search?q=${encodeURIComponent(kw)}&per_page=3`);
-      if (resp.ok) {
-        const data = await resp.json();
-        const hits = data?.hits || [];
-        if (hits.length > 0) freshUrl = hits[0]?.webformatURL;
-      }
+      freshUrl = await _tryUnsplash(kw);
+    } else {
+      // pixabay or unknown
+      freshUrl = await _tryPixabay(kw);
     }
+
+    // Fallback chain: if original source failed, try alternatives
+    if (!freshUrl && src !== 'wikipedia')  freshUrl = await _tryWikipedia(kw);
+    if (!freshUrl && src !== 'wikimedia')  freshUrl = await _tryWikimedia(kw);
+    if (!freshUrl && src !== 'pixabay')    freshUrl = await _tryPixabay(kw);
+    if (!freshUrl && src !== 'unsplash')   freshUrl = await _tryUnsplash(kw);
+
     if (freshUrl) {
       img.src = freshUrl;
     } else {
@@ -10798,7 +10851,7 @@ function _renderReportModal(data, docId, isAdminView) {
     if (hasQuestionImage) {
       const qi = q.questionImageUrl || {};
       const qiSrc = qi.source || 'pixabay';
-      const srcMap = { pixabay:'#10b981', unsplash:'#f59e0b', wikimedia:'#3b82f6', ai:'#8b5cf6' };
+      const srcMap = { pixabay:'#10b981', unsplash:'#f59e0b', wikimedia:'#3b82f6', wikipedia:'#ef4444', ai:'#8b5cf6' };
       const qiCol  = srcMap[qiSrc] || '#64748b';
       let qiImg = '';
       if (qi.svg) {

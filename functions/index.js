@@ -398,11 +398,95 @@ async function searchYouTubeVideo(query, maxDurationMin, ytApiKey, requireCaptio
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ── YouTube transcript fetcher (free, no API key) ──────────────────────────
+// ── YouTube transcript fetcher — timedtext API (Cloud Run compatible) ───────
+// YouTube's timedtext API endpoint is more reliable from Cloud Run IPs
+// than scraping the full watch page (which gets blocked by YouTube's bot detection).
+// Strategy:
+//   1. Try YouTube's timedtext API directly (lightweight, less bot detection)
+//   2. Fall back to watch page scraping if timedtext fails
+async function fetchTranscriptTimedText(videoId) {
+  // YouTube's timedtext API accepts a video ID and returns captions.
+  // First, get the list of available caption tracks.
+  const listUrl = `https://www.youtube.com/api/timedtext?type=list&v=${videoId}`;
+  try {
+    const listRes = await fetch(listUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+    });
+    if (!listRes.ok) {
+      console.log(`[timedtext] List request failed: HTTP ${listRes.status} for ${videoId}`);
+      return null;
+    }
+    const listXml = await listRes.text();
+    if (!listXml || listXml.length < 20) {
+      console.log(`[timedtext] Empty or invalid track list for ${videoId}`);
+      return null;
+    }
+
+    // Parse XML to find English track (or first available)
+    // Format: <track id="0" name="" lang_code="en" lang_original="English" .../>
+    const trackMatches = [...listXml.matchAll(/<track[^>]*lang_code="([^"]*)"[^>]*(?:kind="([^"]*)")?[^>]*\/?\s*>/gi)];
+    if (!trackMatches.length) {
+      console.log(`[timedtext] No caption tracks found for ${videoId}`);
+      return null;
+    }
+
+    // Prefer English manual > English auto > first available
+    let bestLang = null;
+    for (const m of trackMatches) {
+      const lang = m[1], kind = m[2] || '';
+      if (lang === 'en' && kind !== 'asr') { bestLang = { lang, kind }; break; }
+      if (lang === 'en' && !bestLang) bestLang = { lang, kind };
+      if (lang?.startsWith('en') && !bestLang) bestLang = { lang, kind };
+    }
+    if (!bestLang) bestLang = { lang: trackMatches[0][1], kind: trackMatches[0][2] || '' };
+
+    // Fetch the actual captions in JSON3 format
+    let captUrl = `https://www.youtube.com/api/timedtext?v=${videoId}&lang=${bestLang.lang}&fmt=json3`;
+    if (bestLang.kind) captUrl += `&kind=${bestLang.kind}`;
+
+    const captRes = await fetch(captUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+      },
+    });
+    if (!captRes.ok) {
+      console.log(`[timedtext] Caption fetch failed: HTTP ${captRes.status} for ${videoId}`);
+      return null;
+    }
+    const captData = await captRes.json();
+
+    // Flatten all segments into a plain text string
+    const events = captData?.events || [];
+    const transcript = events
+      .filter(e => e.segs)
+      .map(e => e.segs.map(s => (s.utf8 || '').replace(/\n/g, ' ')).join(''))
+      .join(' ')
+      .replace(/\[.*?\]/g, '')   // strip [Music], [Applause] etc.
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (transcript.length < 100) {
+      console.log(`[timedtext] Transcript too short (${transcript.length} chars) for ${videoId}`);
+      return null;
+    }
+    console.log(`[timedtext] ✅ Fetched ${transcript.length} chars for ${videoId} (lang: ${bestLang.lang})`);
+    return transcript;
+  } catch (err) {
+    console.warn(`[timedtext] Error for ${videoId}:`, err.message);
+    return null;
+  }
+}
+
+// ── YouTube transcript fetcher (watch page scraping — fallback) ─────────────
 // Fetches auto-generated or manual captions by:
 //   1. Scraping the YouTube watch page to find caption track URLs
 //   2. Fetching the JSON3-format caption track
 //   3. Joining all segment texts into a single transcript string
+// NOTE: This often fails on Cloud Run due to YouTube's bot detection.
+// Use fetchTranscriptTimedText() first — this is the fallback.
 async function fetchYouTubeTranscript(videoId) {
   try {
     // Fetch the watch page — YouTube embeds caption track metadata here
@@ -701,6 +785,7 @@ Return ONLY valid JSON:
         let transcript = null;
         let videoMetaTitle = null;
         let videoMetaChannel = null;
+        let videoMetaDesc = null; // description for enriched metadata fallback
         const allowMetadataFallback = req.body.allowMetadataFallback !== false; // default: true
         const prefetchedTranscript = req.body.prefetchedTranscript || null;
 
@@ -717,8 +802,17 @@ Return ONLY valid JSON:
               transcript = prefetchedTranscript;
             }
           } else {
-            // No pre-fetched transcript — try fetching ourselves (may fail on Cloud Run)
-            const rawTranscript = await fetchYouTubeTranscript(videoId);
+            // No pre-fetched transcript — try fetching ourselves.
+            // Strategy 1: timedtext API (lightweight, more likely to work from Cloud Run)
+            console.log(`[comp questions] Trying timedtext API for ${videoId}...`);
+            let rawTranscript = await fetchTranscriptTimedText(videoId);
+
+            // Strategy 2: watch page scraping (fallback, often blocked on Cloud Run)
+            if (!rawTranscript) {
+              console.log(`[comp questions] timedtext failed, trying watch page scraping for ${videoId}...`);
+              rawTranscript = await fetchYouTubeTranscript(videoId);
+            }
+
             // If a time limit is set, estimate how many characters correspond to
             // the watched portion using ~2.5 words/sec × ~5 chars/word = ~12.5 chars/sec.
             if (rawTranscript && videoTimeLimitSec && videoTimeLimitSec > 0) {
@@ -741,8 +835,8 @@ Return ONLY valid JSON:
               });
               return;
             }
-            // Metadata fallback: fetch title/channel via oEmbed so questions are topic-relevant
-            console.warn(`[comp questions] No transcript for videoId=${videoId} — using metadata fallback`);
+            // Metadata fallback: fetch title/channel via oEmbed + description via YouTube Data API
+            console.warn(`[comp questions] No transcript for videoId=${videoId} — using enriched metadata fallback`);
             try {
               const oembed = await fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`);
               if (oembed.ok) {
@@ -751,7 +845,30 @@ Return ONLY valid JSON:
                 videoMetaChannel = od.author_name || null;
               }
             } catch { /* metadata fetch failed — generate from videoId only */ }
-            console.log(`[comp questions] Metadata fallback — title: "${videoMetaTitle}", channel: "${videoMetaChannel}"`);
+
+            // Try YouTube Data API for full description + tags (much richer than oEmbed)
+            if (ytKey) {
+              try {
+                const snippetUrl = `https://www.googleapis.com/youtube/v3/videos?part=snippet&id=${videoId}&key=${ytKey}`;
+                const snippetResp = await fetch(snippetUrl);
+                if (snippetResp.ok) {
+                  const snippetData = await snippetResp.json();
+                  const snippet = snippetData?.items?.[0]?.snippet;
+                  if (snippet) {
+                    if (!videoMetaTitle) videoMetaTitle = snippet.title || null;
+                    if (!videoMetaChannel) videoMetaChannel = snippet.channelTitle || null;
+                    videoMetaDesc = (snippet.description || '').slice(0, 800).trim();
+                    const tags = (snippet.tags || []).slice(0, 10).join(', ');
+                    if (tags && videoMetaDesc) videoMetaDesc += `\nTags: ${tags}`;
+                    console.log(`[comp questions] YouTube API enriched metadata — desc: ${videoMetaDesc.length} chars, tags: ${tags.length} chars`);
+                  }
+                }
+              } catch (e) {
+                console.warn(`[comp questions] YouTube API snippet fetch failed:`, e.message);
+              }
+            }
+
+            console.log(`[comp questions] Metadata fallback — title: "${videoMetaTitle}", channel: "${videoMetaChannel}", desc: ${videoMetaDesc?.length || 0} chars`);
           }
         }
 
@@ -1013,19 +1130,23 @@ Return ONLY valid JSON:
 
           } else {
             // ── PATH B: Metadata/topic fallback (no transcript available) ────
-            // Generate questions about the video's EDUCATIONAL TOPIC using its title.
-            // The key is asking about the subject matter, NOT about YouTube or the video itself.
+            // Generate questions about the video's EDUCATIONAL TOPIC using title + description.
+            // When the YouTube Data API is available, we now have the full video description
+            // which provides much richer context for question generation.
             console.log('[comp questions] Generating VIDEO questions from metadata (no transcript)');
             const topicHint = videoMetaTitle
               ? `The video is titled "${videoMetaTitle}"${videoMetaChannel ? ` by ${videoMetaChannel}` : ''}.`
               : `The video ID is ${videoId}.`;
+            const descSection = videoMetaDesc
+              ? `\n\nHere is the video's full description:\n"""\n${videoMetaDesc}\n"""\n`
+              : '';
             const metadataPrompt =
               `You are an expert educational content creator for ${educationLevel} students.\n\n` +
-              `${topicHint}\n` +
-              `Based on the topic of this educational video, generate exactly ${numQuestions} multiple-choice comprehension questions ` +
+              `${topicHint}${descSection}\n` +
+              `Based on the topic of this educational video${videoMetaDesc ? ' and its description' : ''}, generate exactly ${numQuestions} multiple-choice comprehension questions ` +
               `that a student could answer after watching a video on this topic.\n\n` +
               `Important rules:\n` +
-              `1. Extract the EDUCATIONAL TOPIC from the title (e.g. "The Water Cycle" → ask about evaporation, condensation, precipitation)\n` +
+              `1. Extract the EDUCATIONAL TOPIC from the title${videoMetaDesc ? ' and description' : ''} (e.g. "The Water Cycle" → ask about evaporation, condensation, precipitation)\n` +
               `2. Generate questions that test UNDERSTANDING of the topic — facts, causes, effects, definitions\n` +
               `3. Do NOT ask meta-questions about YouTube, the video format, or "what is this video about?"\n` +
               `4. Each question has exactly 4 answer options (A, B, C, D)\n` +
@@ -1036,7 +1157,7 @@ Return ONLY valid JSON:
               `Return ONLY valid JSON:\n` +
               `{ "questions": [{ "question": "?", "answers": [{"id":"a","text":""},{"id":"b","text":""},{"id":"c","text":""},{"id":"d","text":""}], "correctId": "a", "explanation": "" }] }`;
             raw = await callGemini([{ text: metadataPrompt }]);
-            console.log(`[comp questions] Metadata-based generation complete for ${videoId} (title: "${videoMetaTitle}")`);
+            console.log(`[comp questions] Metadata-based generation complete for ${videoId} (title: "${videoMetaTitle}", desc: ${videoMetaDesc?.length || 0} chars)`);
           }
 
 
@@ -1232,9 +1353,10 @@ exports.youtubeVideoSearch = onRequest(
     else if (maxDurationMin > 20) videoDuration = 'long';
 
     const excludeSet = new Set(exclude);
-    // Use videoCaption=any to include high-quality auto-generated captions, 
-    // which fetchYouTubeTranscript will verify server-side.
-    const captionParam = requireCaption ? '&videoCaption=any' : '';
+    // Use videoCaption=closedCaption to filter to only videos with closed captions.
+    // Previously we used 'any' + watch-page scraping to verify, but YouTube blocks
+    // Cloud Run IPs from scraping watch pages. The API filter is reliable and fast.
+    const captionParam = requireCaption ? '&videoCaption=closedCaption' : '';
 
     for (const query of queries) {
       // Add a small delay between queries to avoid hitting rate limits
@@ -1272,15 +1394,11 @@ exports.youtubeVideoSearch = onRequest(
             }
             const oData = await oResp.json();
 
-            // When transcript is required, verify it's actually fetchable before returning.
-            // This is done server-side to avoid expensive client round-trips.
+            // When transcript is required, the YouTube API's videoCaption=closedCaption
+            // filter already ensures the video has captions. No need to scrape the watch
+            // page (which fails on Cloud Run due to YouTube's bot detection).
             if (requireCaption) {
-              const transcript = await fetchYouTubeTranscript(videoId);
-              if (!transcript || transcript.trim().length < 100) {
-                console.log(`[ytVideoSearch] ${videoId} has no usable transcript — skipping`);
-                continue;
-              }
-              console.log(`[ytVideoSearch] ${videoId} transcript OK (${transcript.length} chars)`);
+              console.log(`[ytVideoSearch] ${videoId} — caption-filtered via YouTube API ✓`);
             }
 
             console.log(`[ytVideoSearch] FOUND ${videoId} -- "${oData.title}"`);
@@ -1290,7 +1408,7 @@ exports.youtubeVideoSearch = onRequest(
               channelName: oData.author_name   || item.snippet?.channelTitle || '',
               description: item.snippet?.description?.slice(0, 200) || '',
               searchQuery: query,
-              hasCaption:  requireCaption, // transcript was verified server-side
+              hasCaption:  requireCaption, // filtered via YouTube API closedCaption param
             });
             return;
           } catch { continue; }
@@ -1302,5 +1420,79 @@ exports.youtubeVideoSearch = onRequest(
 
     console.error('[ytVideoSearch] No embeddable video found after all queries');
     res.status(200).json({ error: 'no_video_found' });
+  }
+);
+
+// ── YouTube Video Info endpoint ──────────────────────────────────────────────
+// Returns metadata (duration, channel, description) for a given video ID.
+// Uses the YouTube Data API v3 (works from Cloud Run, unlike watch page scraping).
+// The local server.js version scrapes the watch page, but that's blocked from Cloud Run.
+exports.youtubeVideoInfo = onRequest(
+  {
+    secrets: [youtubeApiKey],
+    cors: true,
+    invoker: 'public',
+    timeoutSeconds: 15,
+    memory: '128MiB',
+    region: 'us-central1',
+  },
+  async (req, res) => {
+    res.set('Access-Control-Allow-Origin', '*');
+    if (req.method === 'OPTIONS') {
+      res.set('Access-Control-Allow-Methods', 'GET');
+      res.set('Access-Control-Allow-Headers', 'Content-Type');
+      res.status(204).send('');
+      return;
+    }
+
+    const videoId = req.query.v;
+    if (!videoId || !/^[A-Za-z0-9_-]{11}$/.test(videoId)) {
+      res.status(400).json({ error: 'Invalid video ID' });
+      return;
+    }
+
+    const ytKey = youtubeApiKey.value();
+    if (!ytKey) {
+      res.status(503).json({ error: 'YOUTUBE_API_KEY not configured' });
+      return;
+    }
+
+    try {
+      const apiUrl = `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails&id=${videoId}&key=${ytKey}`;
+      const apiResp = await fetch(apiUrl);
+      if (!apiResp.ok) {
+        const errText = await apiResp.text();
+        console.error('[ytVideoInfo] YouTube API error:', apiResp.status, errText.slice(0, 200));
+        res.status(502).json({ error: `YouTube API returned HTTP ${apiResp.status}` });
+        return;
+      }
+      const apiData = await apiResp.json();
+      const item = apiData?.items?.[0];
+      if (!item) {
+        res.status(404).json({ error: 'Video not found' });
+        return;
+      }
+
+      // Parse ISO 8601 duration (PT#M#S) to seconds
+      const durationIso = item.contentDetails?.duration || '';
+      let durationSec = 0;
+      const durMatch = durationIso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+      if (durMatch) {
+        durationSec = (parseInt(durMatch[1] || '0') * 3600) +
+                      (parseInt(durMatch[2] || '0') * 60) +
+                       parseInt(durMatch[3] || '0');
+      }
+
+      const snippet = item.snippet || {};
+      const channelName = snippet.channelTitle || '';
+      const title = snippet.title || '';
+      const description = (snippet.description || '').slice(0, 300).trim();
+
+      console.log(`[ytVideoInfo] ${videoId}: ${durationSec}s, channel="${channelName}"`);
+      res.json({ videoId, durationSec, channelName, description, title });
+    } catch (err) {
+      console.error('[ytVideoInfo] Error:', err.message);
+      res.status(502).json({ error: err.message });
+    }
   }
 );
