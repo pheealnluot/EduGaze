@@ -35,6 +35,10 @@
         "function": "comprehensionGenerate"
       },
       {
+        "source": "/api/youtube-video-search",
+        "function": "youtubeVideoSearch"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

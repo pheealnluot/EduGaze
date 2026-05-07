@@ -10,8 +10,10 @@ if (!admin.apps.length) {
 const geminiApiKey   = defineSecret('GEMINI_API_KEY');
 const pixabayApiKey  = defineSecret('PIXABAY_API_KEY');
 const unsplashApiKey = defineSecret('UNSPLASH_ACCESS_KEY');
+const youtubeApiKey  = defineSecret('YOUTUBE_API_KEY');
 
-const GEMINI_MODEL = 'gemini-1.5-flash';
+// gemini-2.5-flash: best free-tier stable model — superior reasoning & 1M context window
+const GEMINI_MODEL = 'gemini-2.5-flash';
 
 /**
  * Secure proxy for Gemini API — keeps the API key server-side.
@@ -331,6 +333,71 @@ exports.adminAction = onRequest(
   }
 );
 
+// ── YouTube Data API v3 search — returns a real, embeddable video ──────────
+// Fix B: replaces Gemini hallucinated video IDs with real search results.
+// Requires YOUTUBE_API_KEY Firebase secret (YouTube Data API v3, free 10k quota/day).
+// If no key is configured, returns null so the caller falls back to Gemini.
+async function searchYouTubeVideo(query, maxDurationMin, ytApiKey, requireCaption = false) {
+  if (!ytApiKey) return null;
+
+  // Map duration to YouTube's coarse filter buckets
+  // short=<4min, medium=4-20min, long=>20min
+  let videoDuration = 'medium';
+  if (maxDurationMin <= 4)  videoDuration = 'short';
+  else if (maxDurationMin > 20) videoDuration = 'long';
+
+  // videoCaption=closedCaption filters to only videos with captions on YouTube's side.
+  // This is far more reliable than post-hoc scraping for every candidate.
+  const captionParam = requireCaption ? '&videoCaption=closedCaption' : '';
+
+  const searchUrl =
+    `https://www.googleapis.com/youtube/v3/search` +
+    `?part=snippet&type=video&q=${encodeURIComponent(query)}` +
+    `&videoDuration=${videoDuration}&videoEmbeddable=true` +
+    `&safeSearch=strict&maxResults=10&key=${ytApiKey}${captionParam}`;
+
+  try {
+    const r = await fetch(searchUrl);
+    if (!r.ok) {
+      const errBody = await r.text();
+      console.warn('[ytSearch] API error:', r.status, errBody.slice(0, 200));
+      return null;
+    }
+    const data = await r.json();
+    const items = data.items || [];
+    if (!items.length) {
+      console.log('[ytSearch] No results for query:', query);
+      return null;
+    }
+
+    // Validate embeddability and pick the first valid result
+    for (const item of items) {
+      const videoId = item.id?.videoId;
+      if (!videoId || videoId.length !== 11) continue;
+      try {
+        const oEmbed = await fetch(
+          `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`
+        );
+        if (!oEmbed.ok) continue; // not embeddable
+        const meta = await oEmbed.json();
+        console.log(`[ytSearch] Found embeddable video: ${videoId} — "${meta.title}"${requireCaption ? ' (caption-filtered)' : ''}`);
+        return {
+          videoId,
+          title:       meta.title       || item.snippet?.title       || 'Educational Video',
+          channel:     meta.author_name || item.snippet?.channelTitle || '',
+          description: item.snippet?.description?.slice(0, 150) || '',
+        };
+      } catch { continue; }
+    }
+    console.warn('[ytSearch] No embeddable video found in results');
+    return null;
+  } catch (err) {
+    console.warn('[ytSearch] Fetch failed:', err.message);
+    return null;
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 // ── YouTube transcript fetcher (free, no API key) ──────────────────────────
 // Fetches auto-generated or manual captions by:
 //   1. Scraping the YouTube watch page to find caption track URLs
@@ -348,17 +415,44 @@ async function fetchYouTubeTranscript(videoId) {
     if (!pageRes.ok) return null;
     const html = await pageRes.text();
 
-    // Extract just the captionTracks array from ytInitialPlayerResponse
-    // YouTube embeds it as:  "captionTracks":[{...},{...}],"audioTracks"
-    const captionMatch = html.match(/"captionTracks"\s*:\s*(\[\{[\s\S]*?\}\])\s*,\s*"(?:audioTracks|translationLanguages|defaultAudioTrackIndex)"/);
-    if (!captionMatch) {
-      console.log(`[transcript] No captionTracks found for ${videoId}`);
-      return null;
+    // Strategy 1: Find "captions":{...} directly (most stable)
+    let tracks = [];
+    const captionsMatch = html.match(/"captions":\s*({[\s\S]*?})\s*,\s*"videoDetails"/);
+    if (captionsMatch) {
+      try {
+        const captionsObj = JSON.parse(captionsMatch[1]);
+        tracks = captionsObj.playerCaptionsTracklistRenderer?.captionTracks || [];
+        if (tracks.length > 0) console.log(`[transcript] Found ${tracks.length} tracks via Strategy 1 (captions object)`);
+      } catch (e) { }
     }
 
-    let tracks;
-    try { tracks = JSON.parse(captionMatch[1]); } catch { return null; }
-    if (!tracks || tracks.length === 0) return null;
+    // Strategy 2: Parse ytInitialPlayerResponse more greedily
+    if (tracks.length === 0) {
+      const playerResponseMatch = html.match(/ytInitialPlayerResponse\s*=\s*({[\s\S]*?});\s*(?:var|window|window\.ytplayer|<\/script)/);
+      if (playerResponseMatch) {
+        try {
+          const playerResponse = JSON.parse(playerResponseMatch[1]);
+          tracks = playerResponse.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
+          if (tracks.length > 0) console.log(`[transcript] Found ${tracks.length} tracks via Strategy 2 (playerResponse)`);
+        } catch (e) { }
+      }
+    }
+
+    // Strategy 3: Target "captionTracks":[...] directly
+    if (tracks.length === 0) {
+      const directMatch = html.match(/"captionTracks"\s*:\s*(\[[\s\S]*?\])/);
+      if (directMatch) {
+        try {
+          tracks = JSON.parse(directMatch[1]);
+          if (tracks.length > 0) console.log(`[transcript] Found ${tracks.length} tracks via Strategy 3 (direct array)`);
+        } catch (e) { }
+      }
+    }
+
+    if (!tracks || tracks.length === 0) {
+      console.log(`[transcript] No captionTracks found for ${videoId}. Length of HTML: ${html.length}`);
+      return null;
+    }
 
     // Prefer English (manual first, then auto-generated), fall back to first available
     const en = tracks.find(t => t.languageCode === 'en' && !t.kind) ||
@@ -405,7 +499,7 @@ async function fetchYouTubeTranscript(videoId) {
  */
 exports.comprehensionGenerate = onRequest(
   {
-    secrets: [geminiApiKey],
+    secrets: [geminiApiKey, youtubeApiKey],
     cors: true,
     invoker: 'public',
     timeoutSeconds: 120,
@@ -428,15 +522,25 @@ exports.comprehensionGenerate = onRequest(
     const { phase, medium, subject, educationLevel, numQuestions = 5,
             videoDurationMin = 3, passageLength = 'medium', mediaContent,
             videoTimeLimitSec = null } = req.body;
+    const ytKey = youtubeApiKey.value() || null;
 
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
 
     // ── Helper: call Gemini ──────────────────────────────────────────────
-    const callGemini = async (parts) => {
+    const callGemini = async (parts, extraConfig = {}) => {
       const r = await fetch(geminiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ role: 'user', parts }] }),
+        signal: AbortSignal.timeout(55000), // never hang past Cloud Function timeout
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts }],
+          generationConfig: {
+            // Disable thinking mode -- gemini-2.5-flash thinks by default and adds 60-120s latency
+            thinkingConfig: { thinkingBudget: 0 },
+            maxOutputTokens: 4096,
+            ...extraConfig,
+          },
+        }),
       });
       const d = await r.json();
       const txt = d?.candidates?.[0]?.content?.parts?.[0]?.text || '';
@@ -450,21 +554,40 @@ exports.comprehensionGenerate = onRequest(
       if (phase === 'source') {
 
         if (medium === 'video') {
-          // Validate a videoId is real and embeddable using YouTube's free oEmbed API
-          const validateYT = async (videoId) => {
-            if (!videoId || videoId.length !== 11) return false;
-            try {
-              const r = await fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`);
-              return r.ok; // 200 = valid+embeddable; 401/404 = unavailable or embedding disabled
-            } catch { return false; }
-          };
-
+          // ── Fix B: Real YouTube Data API search (preferred over Gemini hallucination) ──
+          // Uses YouTube Data API v3 if key is set; falls back to Gemini if not.
           let videoData = null;
-          for (let attempt = 1; attempt <= 3; attempt++) {
-            const retryNote = attempt > 1
-              ? `Attempt ${attempt - 1} returned an invalid or non-embeddable video ID. Try a DIFFERENT specific video.`
-              : '';
-            const prompt = `You are an expert educational content curator.
+
+          // --- Path A: YouTube Data API (Fix B) ---
+          if (ytKey) {
+            console.log('[comp video] Using YouTube Data API for video search');
+            // Build a focused query from subject + level
+            const ytQuery = `${subject} educational ${educationLevel} for kids`;
+            videoData = await searchYouTubeVideo(ytQuery, videoDurationMin, ytKey);
+            if (videoData) {
+              console.log(`[comp video] YouTube API found: ${videoData.videoId} — "${videoData.title}"`);
+            } else {
+              console.warn('[comp video] YouTube API returned no results — falling back to Gemini');
+            }
+          }
+
+          // --- Path B: Gemini fallback (used only if no YouTube API key or search failed) ---
+          if (!videoData) {
+            console.log('[comp video] Using Gemini for video suggestion (YouTube API not available)');
+            // Validate a videoId is real and embeddable using YouTube's free oEmbed API
+            const validateYT = async (videoId) => {
+              if (!videoId || videoId.length !== 11) return false;
+              try {
+                const r = await fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`);
+                return r.ok; // 200 = valid+embeddable; 401/404 = unavailable or embedding disabled
+              } catch { return false; }
+            };
+
+            for (let attempt = 1; attempt <= 3; attempt++) {
+              const retryNote = attempt > 1
+                ? `Attempt ${attempt - 1} returned an invalid or non-embeddable video ID. Try a DIFFERENT specific video.`
+                : '';
+              const prompt = `You are an expert educational content curator.
 Suggest ONE real, publicly available, EMBEDDABLE YouTube video about "${subject}" suitable for ${educationLevel} students (~${videoDurationMin} min).
 CRITICAL: The videoId must be a real, currently live YouTube video that allows embedding.
 Prefer: TED-Ed, National Geographic, BBC, SciShow Kids, Kurzgesagt, Khan Academy, Crash Course.
@@ -476,19 +599,20 @@ Return ONLY valid JSON (no markdown):
   "description": "One sentence about this video for a ${educationLevel} student",
   "channel": "Channel name"
 }`;
-            const raw = await callGemini([{ text: prompt }]);
-            const m = raw.match(/\{[\s\S]*\}/);
-            if (!m) continue;
-            let parsed;
-            try { parsed = JSON.parse(m[0]); } catch { continue; }
-            if (!parsed.videoId) continue;
-            const ok = await validateYT(parsed.videoId);
-            console.log(`[comp video] attempt=${attempt} id=${parsed.videoId} valid=${ok}`);
-            if (ok) { videoData = parsed; break; }
+              const raw = await callGemini([{ text: prompt }]);
+              const m = raw.match(/\{[\s\S]*\}/);
+              if (!m) continue;
+              let parsedVid;
+              try { parsedVid = JSON.parse(m[0]); } catch { continue; }
+              if (!parsedVid.videoId) continue;
+              const ok = await validateYT(parsedVid.videoId);
+              console.log(`[comp video] Gemini attempt=${attempt} id=${parsedVid.videoId} valid=${ok}`);
+              if (ok) { videoData = parsedVid; break; }
+            }
           }
 
           if (!videoData) {
-            // All 3 attempts failed — return a graceful error flag
+            // All paths failed — return a graceful error flag
             res.status(200).json({ medium: 'video', error: 'no_valid_video', videoId: null, youtubeUrl: null, title: 'No video found' });
           } else {
             res.status(200).json({
@@ -496,6 +620,7 @@ Return ONLY valid JSON (no markdown):
               ...videoData,
               youtubeUrl: `https://www.youtube.com/watch?v=${videoData.videoId}`,
               durationMin: videoDurationMin,
+              source: ytKey ? 'youtube_api' : 'gemini', // for debugging
             });
           }
 
@@ -564,10 +689,15 @@ Return ONLY valid JSON:
         const videoUrl  = videoId ? `https://www.youtube.com/watch?v=${videoId}` : null;
         const imageUrl  = mediaContent?.imageUrl || null;
 
-        // ── Fetch YouTube transcript as supplementary grounding ──────────────
-        // Gemini natively watches the video AND sees the transcript below —
-        // double-grounding ensures questions are about this specific content.
+        // ── Fix C: Transcript-first, metadata fallback ──────────────────────
+        // We no longer rely on Gemini "watching" the video via fileData (unreliable).
+        // PRIMARY: use the transcript (most accurate, grounded questions).
+        // FALLBACK: if no transcript, use video title/description from oEmbed to generate
+        //           topic-relevant questions about the video's subject matter.
         let transcript = null;
+        let videoMetaTitle = null;
+        let videoMetaChannel = null;
+        const allowMetadataFallback = req.body.allowMetadataFallback !== false; // default: true
         if (isVideo && videoId) {
           const rawTranscript = await fetchYouTubeTranscript(videoId);
           // If a time limit is set, estimate how many characters correspond to
@@ -578,6 +708,30 @@ Return ONLY valid JSON:
             console.log(`[comp questions] Trimmed transcript to ${transcript.length} chars for ${videoTimeLimitSec}s time limit`);
           } else {
             transcript = rawTranscript;
+          }
+
+          if (!transcript || transcript.trim().length < 50) {
+            if (!allowMetadataFallback) {
+              // Strict mode — caller explicitly opted out of the metadata fallback
+              console.warn(`[comp questions] No transcript for videoId=${videoId} and allowMetadataFallback=false — returning error`);
+              res.status(200).json({
+                error: 'no_transcript',
+                videoId,
+                message: 'This video does not have captions. Please try a different video that has captions enabled.',
+              });
+              return;
+            }
+            // Metadata fallback: fetch title/channel via oEmbed so questions are topic-relevant
+            console.warn(`[comp questions] No transcript for videoId=${videoId} — using metadata fallback`);
+            try {
+              const oembed = await fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`);
+              if (oembed.ok) {
+                const od = await oembed.json();
+                videoMetaTitle   = od.title       || null;
+                videoMetaChannel = od.author_name || null;
+              }
+            } catch { /* metadata fetch failed — generate from videoId only */ }
+            console.log(`[comp questions] Metadata fallback — title: "${videoMetaTitle}", channel: "${videoMetaChannel}"`);
           }
         }
 
@@ -668,7 +822,8 @@ Return ONLY valid JSON:
           `5. The "explanation" field must describe the SPECIFIC visual detail in the image that proves the answer\n` +
           `6. Language and complexity appropriate for: ${educationLevel}\n` +
           `7. Do NOT ask questions answerable by general knowledge alone — anchor every question in what's visually present\n` +
-          `8. Answer text must be plain English only — no Chinese characters or non-Latin scripts\n\n` +
+          `8. Answer text must be plain English only — no Chinese characters or non-Latin scripts\n` +
+          `9. ⚠️ COUNTING RULE — If you include a counting question (e.g. "How many X are visible?"): count EVERY item individually in the image before writing the answer. Only ask a counting question if you are CERTAIN of the exact number. If you are not 100% sure of the count, ask a different type of question instead. NEVER guess a count.\n\n` +
 
           `Return ONLY valid JSON (no markdown, no commentary):\n` +
           `{\n` +
@@ -688,6 +843,57 @@ Return ONLY valid JSON:
           `}`
         );
 
+        // ── Counting-question verifier ──────────────────────────────────────────
+        // After initial generation, re-check any question that involves counting.
+        // Gemini vision models are notoriously poor at counting objects; this
+        // second pass sends the image back with a focused count-verification prompt
+        // and patches the correctId / answer text if the count disagrees.
+        const verifyCounts = async (questions, imgB64, mimeType) => {
+          const countingKeywords = /\bhow many\b|\bcount\b|\bnumber of\b|\btotal.*\b/i;
+          const needsVerify = questions.filter(q => countingKeywords.test(q.question));
+          if (!needsVerify.length) return questions; // nothing to verify
+
+          console.log(`[comp questions] Verifying ${needsVerify.length} counting question(s) against image`);
+
+          const verifyPrompt =
+            `Look carefully at the image. For each question below, count the relevant objects/items ` +
+            `one by one (do not guess) and return the verified correct answer ID.\n\n` +
+            `Questions to verify:\n` +
+            needsVerify.map((q, i) =>
+              `Q${i + 1}: ${q.question}\n` +
+              q.answers.map(a => `  ${a.id}) ${a.text}`).join('\n')
+            ).join('\n\n') +
+            `\n\nReturn ONLY valid JSON — an array in the same order as the questions above:\n` +
+            `[{ "verifiedCorrectId": "a" }, ...]`;
+
+          try {
+            const verifyRaw = await callGemini([
+              { inlineData: { mimeType, data: imgB64 } },
+              { text: verifyPrompt },
+            ]);
+            const arrMatch = verifyRaw.match(/\[[\s\S]*\]/);
+            if (!arrMatch) throw new Error('No JSON array in verify response');
+            const verified = JSON.parse(arrMatch[0]);
+
+            // Patch correctId if verification disagrees
+            let patchCount = 0;
+            needsVerify.forEach((q, i) => {
+              const v = verified[i];
+              if (!v?.verifiedCorrectId) return;
+              if (v.verifiedCorrectId !== q.correctId && q.answers.some(a => a.id === v.verifiedCorrectId)) {
+                console.log(`[comp questions] Count mismatch — patching Q "${q.question.slice(0, 60)}..." correctId ${q.correctId} → ${v.verifiedCorrectId}`);
+                q.correctId = v.verifiedCorrectId;
+                patchCount++;
+              }
+            });
+            if (patchCount > 0) console.log(`[comp questions] Patched ${patchCount} counting answer(s)`);
+          } catch (verifyErr) {
+            console.warn('[comp questions] Count verification failed (using original answers):', verifyErr.message);
+          }
+
+          return questions;
+        };
+
         // ── Call Gemini ───────────────────────────────────────────────────────
         // Primary: pass the media as fileData so Gemini natively analyses it.
         // For video: Gemini watches visuals + audio + captions + metadata.
@@ -696,38 +902,60 @@ Return ONLY valid JSON:
         let raw;
 
         if (isVideo && videoUrl) {
-          const prompt = buildVideoPrompt();
-          console.log('[comp questions] VIDEO prompt (first 300 chars):', prompt.slice(0, 300));
-          try {
-            raw = await callGemini([
-              { fileData: { fileUri: videoUrl } },
-              { text: prompt },
-            ]);
-            console.log(`[comp questions] Native video analysis succeeded for ${videoId}`);
-          } catch (videoErr) {
-            console.warn(`[comp questions] Native video analysis failed (${videoErr.message}), using transcript fallback`);
-            // Fallback: use the transcript as the content source.
-            // If we have no transcript, refuse to generate rather than hallucinate.
-            if (!transcript || transcript.trim().length < 50) {
-              throw new Error('Could not analyse the video (native analysis failed and no transcript available). Please try a different video.');
-            }
-            const fallbackPrompt =
+          if (transcript && transcript.trim().length >= 50) {
+            // ── PATH A: Transcript-grounded (most accurate) ──────────────────
+            console.log('[comp questions] Generating VIDEO questions from transcript');
+            const transcriptPrompt =
               `You are an expert educational content creator for ${educationLevel} students.\n\n` +
-              `Below is the full transcript of a YouTube video. Read it carefully — your questions MUST be based ONLY on what is stated in this transcript.\n\n` +
-              `TRANSCRIPT:\n"""\n${transcript.slice(0, 8000)}\n"""\n\n` +
+              (videoTimeLimitSec && videoTimeLimitSec > 0
+                ? `The student watched ONLY the first ${videoTimeLimitSec} seconds of this video. Questions must relate to that portion only.\n\n`
+                : '') +
+              `Below is the transcript of the YouTube video (video ID: ${videoId}). ` +
+              `Read it carefully — every question MUST be based ONLY on what is stated in this transcript.\n\n` +
+              `TRANSCRIPT:\n"""\n${transcript.slice(0, 10000)}\n"""\n\n` +
               `Generate exactly ${numQuestions} multiple-choice comprehension questions that test understanding of the content in the transcript above.\n\n` +
               `Strict rules:\n` +
-              `1. Every question must be directly and uniquely answerable from the transcript text above\n` +
-              `2. Do NOT add questions from general knowledge — only from the transcript\n` +
+              `1. Every question must be directly and uniquely answerable from the transcript text — not from general knowledge\n` +
+              `2. Include a mix of: recall ("What was said about..."), inference ("Why did..."), sequence ("What happened after..."), vocabulary\n` +
               `3. Each question has exactly 4 answer options (A, B, C, D)\n` +
               `4. Only ONE answer is correct; distractors must be plausible to someone who skimmed the text\n` +
               `5. The "explanation" must quote or paraphrase the specific transcript line that proves the answer\n` +
-              `6. Language appropriate for ${educationLevel}\n` +
-              `7. Answer text must be in English only — no Chinese characters, no symbols\n\n` +
+              `6. Language and cognitive complexity appropriate for: ${educationLevel}\n` +
+              `7. Answer text must be in English only — no Chinese characters, no symbols\n` +
+              `8. No meta-questions ("What is the title?") — ask about the CONTENT\n\n` +
               `Return ONLY valid JSON:\n` +
               `{ "questions": [{ "question": "?", "answers": [{"id":"a","text":""},{"id":"b","text":""},{"id":"c","text":""},{"id":"d","text":""}], "correctId": "a", "explanation": "" }] }`;
-            raw = await callGemini([{ text: fallbackPrompt }]);
+            raw = await callGemini([{ text: transcriptPrompt }]);
+            console.log(`[comp questions] Transcript-based generation complete for ${videoId}`);
+
+          } else {
+            // ── PATH B: Metadata/topic fallback (no transcript available) ────
+            // Generate questions about the video's EDUCATIONAL TOPIC using its title.
+            // The key is asking about the subject matter, NOT about YouTube or the video itself.
+            console.log('[comp questions] Generating VIDEO questions from metadata (no transcript)');
+            const topicHint = videoMetaTitle
+              ? `The video is titled "${videoMetaTitle}"${videoMetaChannel ? ` by ${videoMetaChannel}` : ''}.`
+              : `The video ID is ${videoId}.`;
+            const metadataPrompt =
+              `You are an expert educational content creator for ${educationLevel} students.\n\n` +
+              `${topicHint}\n` +
+              `Based on the topic of this educational video, generate exactly ${numQuestions} multiple-choice comprehension questions ` +
+              `that a student could answer after watching a video on this topic.\n\n` +
+              `Important rules:\n` +
+              `1. Extract the EDUCATIONAL TOPIC from the title (e.g. "The Water Cycle" → ask about evaporation, condensation, precipitation)\n` +
+              `2. Generate questions that test UNDERSTANDING of the topic — facts, causes, effects, definitions\n` +
+              `3. Do NOT ask meta-questions about YouTube, the video format, or "what is this video about?"\n` +
+              `4. Each question has exactly 4 answer options (A, B, C, D)\n` +
+              `5. Only ONE answer is correct; wrong options must be plausible but clearly incorrect to someone who knows the topic\n` +
+              `6. The "explanation" must explain WHY the correct answer is right based on the topic\n` +
+              `7. Language and cognitive complexity appropriate for: ${educationLevel}\n` +
+              `8. Answer text must be in English only — no Chinese characters, no symbols\n\n` +
+              `Return ONLY valid JSON:\n` +
+              `{ "questions": [{ "question": "?", "answers": [{"id":"a","text":""},{"id":"b","text":""},{"id":"c","text":""},{"id":"d","text":""}], "correctId": "a", "explanation": "" }] }`;
+            raw = await callGemini([{ text: metadataPrompt }]);
+            console.log(`[comp questions] Metadata-based generation complete for ${videoId} (title: "${videoMetaTitle}")`);
           }
+
 
         } else if (isImage && imageUrl) {
           const prompt = buildImagePrompt();
@@ -735,14 +963,15 @@ Return ONLY valid JSON:
 
           // Attempt to download the image so Gemini can actually see it.
           // If this fails for any reason, we refuse to generate guessed questions.
-          let imgB64, mimeType;
+          // imgB64/mimeType declared in outer block so verifyCounts can reuse them.
+          let imgB64 = null, mimeType = null;
           try {
             const imgResp = await fetch(imageUrl, { signal: AbortSignal.timeout(10000) });
             if (!imgResp.ok) throw new Error(`HTTP ${imgResp.status} ${imgResp.statusText}`);
             const contentType = imgResp.headers.get('content-type') || '';
             if (!contentType.startsWith('image/')) throw new Error(`URL returned non-image content (${contentType})`);
             const imgBuf = await imgResp.arrayBuffer();
-            imgB64  = Buffer.from(imgBuf).toString('base64');
+            imgB64   = Buffer.from(imgBuf).toString('base64');
             mimeType = contentType.split(';')[0].trim();
             console.log(`[comp questions] Image fetched OK (${imgBuf.byteLength} bytes, ${mimeType})`);
           } catch (fetchErr) {
@@ -758,6 +987,9 @@ Return ONLY valid JSON:
             { text: prompt },
           ]);
           console.log(`[comp questions] Native image analysis succeeded for ${imageUrl}`);
+          // Store for later use by verifyCounts
+          raw._imgB64   = imgB64;
+          raw._mimeType = mimeType;
 
         } else {
           // Legacy text/passage path
@@ -787,6 +1019,12 @@ Return ONLY valid JSON:
             err.reason = 'INVALID_CORRECT_ID';
             throw err;
           }
+
+          // For image mode: run a second Gemini pass to verify counting questions.
+          // raw._imgB64 / raw._mimeType are set earlier only in the isImage branch.
+          if (isImage && raw._imgB64 && raw._mimeType) {
+            qData.questions = await verifyCounts(qData.questions, raw._imgB64, raw._mimeType);
+          }
         }
 
         res.status(200).json(qData);
@@ -803,3 +1041,182 @@ Return ONLY valid JSON:
   }
 );
 
+
+// -- YouTube Video Search endpoint ------------------------------------------
+// Used by the "Find a Video" button in Quiz Settings.
+// Strategy:
+//   1. Ask Gemini to generate 3 focused educational search queries (text only � Gemini is
+//      good at creative query generation but BAD at knowing real current video IDs)
+//   2. For each query, call YouTube Data API v3 (returns real, current results)
+//   3. Validate each candidate via oEmbed before returning
+// This guarantees a real, live, embeddable video every time.
+exports.youtubeVideoSearch = onRequest(
+  {
+    secrets: [geminiApiKey, youtubeApiKey],
+    cors: true,
+    invoker: 'public',
+    timeoutSeconds: 60,
+    memory: '256MiB',
+    region: 'us-central1',
+  },
+  async (req, res) => {
+    res.set('Access-Control-Allow-Origin', '*');
+    if (req.method === 'OPTIONS') {
+      res.set('Access-Control-Allow-Methods', 'POST');
+      res.set('Access-Control-Allow-Headers', 'Content-Type');
+      res.status(204).send('');
+      return;
+    }
+    if (req.method !== 'POST') { res.status(405).json({ error: 'Method Not Allowed' }); return; }
+
+    const apiKey = geminiApiKey.value();
+    const ytKey  = youtubeApiKey.value();
+    if (!apiKey) { res.status(503).json({ error: 'GEMINI_API_KEY not configured' }); return; }
+    if (!ytKey)  { res.status(503).json({ error: 'YOUTUBE_API_KEY not configured' }); return; }
+
+    const { educationLevel = 'P2', subject = null, maxDurationMin = 10, exclude = [],
+            requireCaption = false } = req.body;
+
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+    const callGemini = async (parts) => {
+      const r = await fetch(geminiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(30000),
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts }],
+          generationConfig: { thinkingConfig: { thinkingBudget: 0 }, maxOutputTokens: 1024 },
+        }),
+      });
+      const d = await r.json();
+      return d?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    };
+
+    // Step 1: Ask Gemini to generate 3 search query strings.
+    // When requireCaption is true, bias queries toward channels that are known
+    // to always publish with accurate captions (TED-Ed, National Geographic Kids,
+    // BBC Earth, SciShow Kids, Kurzgesagt, Khan Academy, Crash Course Kids).
+    // This dramatically increases the hit rate before the YouTube API even runs.
+    const captionGuidance = requireCaption
+      ? `IMPORTANT: Bias your queries toward channels that ALWAYS have captions/subtitles, such as:\n` +
+        `TED-Ed, National Geographic Kids, BBC Earth, SciShow Kids, Kurzgesagt, Khan Academy, Crash Course Kids, PBS Kids, DW Documentary, Vox.\n` +
+        `Include the channel name in the query where appropriate, e.g. "TED-Ed how volcanoes work" or "National Geographic kids ocean life".\n`
+      : '';
+
+    const subjectNote = subject ? ` about "${subject}"` : '';
+    const queryPrompt =
+      `You are an educational content curator for ${educationLevel} students.\n` +
+      `Generate 5 different YouTube search queries that would find great educational videos${subjectNote}.\n` +
+      `The videos should teach something interesting (science, animals, nature, space, history, ` +
+      `art, geography, how everyday things work), and be suitable for children.\n` +
+      `${captionGuidance}` +
+      `Each query should be 3-6 words, specific, and likely to find quality content on YouTube.\n` +
+      `Return ONLY valid JSON (no markdown):\n` +
+      `{"queries": ["query one here", "query two here", "query three here", "query four here", "query five here"]}`;
+
+    let queries = [];
+    try {
+      const raw = await callGemini([{ text: queryPrompt }]);
+      const m = raw.match(/\{[\s\S]*\}/);
+      if (m) {
+        const parsed = JSON.parse(m[0]);
+        queries = (parsed.queries || []).filter(q => typeof q === 'string' && q.length > 2);
+      }
+    } catch (err) {
+      console.warn('[ytVideoSearch] Query generation failed:', err.message);
+    }
+
+    // Hardcoded fallbacks if Gemini fails
+    if (!queries.length) {
+      queries = requireCaption
+        ? [
+            'TED-Ed science explained kids',
+            'National Geographic Kids animals nature',
+            'Kurzgesagt how things work',
+          ]
+        : [
+            'educational science for kids',
+            'nature animals documentary children',
+            'how things work kids educational',
+          ];
+    }
+    console.log(`[ytVideoSearch] Search queries (requireCaption=${requireCaption}):`, queries);
+
+    // Step 2: Search YouTube Data API and validate results
+    let videoDuration = 'medium';
+    if (maxDurationMin <= 4)    videoDuration = 'short';
+    else if (maxDurationMin > 20) videoDuration = 'long';
+
+    const excludeSet = new Set(exclude);
+    // Use videoCaption=any to include high-quality auto-generated captions, 
+    // which fetchYouTubeTranscript will verify server-side.
+    const captionParam = requireCaption ? '&videoCaption=any' : '';
+
+    for (const query of queries) {
+      // Add a small delay between queries to avoid hitting rate limits
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      try {
+        const searchUrl =
+          `https://www.googleapis.com/youtube/v3/search` +
+          `?part=snippet&type=video&q=${encodeURIComponent(query)}` +
+          `&videoDuration=${videoDuration}&videoEmbeddable=true` +
+          `&safeSearch=strict&maxResults=15&key=${ytKey}${captionParam}`;
+
+        const ytResp = await fetch(searchUrl);
+        if (!ytResp.ok) {
+          const body = await ytResp.text();
+          console.warn('[ytVideoSearch] YouTube API error:', ytResp.status, body.slice(0, 200));
+          continue;
+        }
+        const ytData = await ytResp.json();
+        const items  = ytData.items || [];
+        console.log(`[ytVideoSearch] Query "${query}" => ${items.length} results`);
+
+        for (const item of items) {
+          const videoId = item.id?.videoId;
+          if (!videoId || videoId.length !== 11) continue;
+          if (excludeSet.has(videoId)) continue;
+
+          // oEmbed confirms the video is live and embeddable right now
+          try {
+            const oResp = await fetch(
+              `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`
+            );
+            if (!oResp.ok) {
+              console.log(`[ytVideoSearch] oEmbed rejected ${videoId} (${oResp.status})`);
+              continue;
+            }
+            const oData = await oResp.json();
+
+            // When transcript is required, verify it's actually fetchable before returning.
+            // This is done server-side to avoid expensive client round-trips.
+            if (requireCaption) {
+              const transcript = await fetchYouTubeTranscript(videoId);
+              if (!transcript || transcript.trim().length < 100) {
+                console.log(`[ytVideoSearch] ${videoId} has no usable transcript — skipping`);
+                continue;
+              }
+              console.log(`[ytVideoSearch] ${videoId} transcript OK (${transcript.length} chars)`);
+            }
+
+            console.log(`[ytVideoSearch] FOUND ${videoId} -- "${oData.title}"`);
+            res.status(200).json({
+              videoId,
+              title:       oData.title        || item.snippet?.title        || 'Educational Video',
+              channelName: oData.author_name   || item.snippet?.channelTitle || '',
+              description: item.snippet?.description?.slice(0, 200) || '',
+              searchQuery: query,
+              hasCaption:  requireCaption, // transcript was verified server-side
+            });
+            return;
+          } catch { continue; }
+        }
+      } catch (err) {
+        console.warn(`[ytVideoSearch] Query "${query}" failed:`, err.message);
+      }
+    }
+
+    console.error('[ytVideoSearch] No embeddable video found after all queries');
+    res.status(200).json({ error: 'no_video_found' });
+  }
+);

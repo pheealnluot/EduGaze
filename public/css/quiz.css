@@ -79,7 +79,7 @@ body.quiz-comp-img #global-header {
   border-radius: 2rem;
   padding: 2.5rem;
   width: 100%;
-  max-width: 540px;
+  max-width: 1080px;
   max-height: 90vh;
   overflow-y: auto;
   text-align: left;
@@ -914,7 +914,7 @@ body.quiz-active .quiz-score-row {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 2rem;
   width: 100%;
-  max-width: 550px;
+  max-width: 1080px;
   max-height: 90vh;
   overflow-y: auto;
   padding: 2.5rem;
@@ -1284,26 +1284,27 @@ body.quiz-comp-img #comp-answers-grid {
 
 /* â”€â”€ Quiz / Comprehension mode toggle (top of settings panel) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .qs-mode-btn {
-  padding: 0.65rem 0.5rem;
-  font-size: 0.82rem;
+  padding: 0.75rem 0.5rem;
+  font-size: 0.85rem;
   font-weight: 800;
   cursor: pointer;
-  background: rgba(15, 23, 42, 0.5);
-  color: #64748b;
+  background: rgba(15, 23, 42, 0.4);
+  color: #475569;
   border: none;
-  transition: all 0.2s;
+  transition: all 0.25s ease;
   letter-spacing: 0.01em;
 }
 .qs-mode-btn:first-child { border-radius: 0.65rem 0 0 0.65rem; }
 .qs-mode-btn:last-child  { border-radius: 0 0.65rem 0.65rem 0; }
 .qs-mode-btn.active {
-  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  background: linear-gradient(135deg, #7c3aed, #5b21b6);
   color: #fff;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.15);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.2), 0 0 18px rgba(124,58,237,0.45);
+  text-shadow: 0 1px 2px rgba(0,0,0,0.3);
 }
 .qs-mode-btn:hover:not(.active) {
-  background: rgba(30, 41, 59, 0.8);
-  color: #e2e8f0;
+  background: rgba(30, 41, 59, 0.75);
+  color: #94a3b8;
 }
 
 /* Comprehension URL input in settings */

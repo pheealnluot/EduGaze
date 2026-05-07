@@ -19,7 +19,7 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 
 // Gemini API helper (direct REST, no extra SDK needed)
-const GEMINI_MODEL = 'gemini-1.5-flash';
+const GEMINI_MODEL = 'gemini-2.5-flash';
 const GEMINI_API_KEY = firebaseConfig.apiKey;
 window._cqRenderGen = 0; // Global for state tracking
 async function callGeminiJSON(prompt) {
@@ -49,8 +49,9 @@ const googleProvider = new GoogleAuthProvider();
 const STORAGE_KEY = 'eduApp_data_v2';
 
 // ── Comp prefs: hoisted declarations (needed early by loadQuizSettings) ────
-let _qsCurrentMode   = 'quiz'; // 'quiz' | 'comp'  — persisted across sessions
-let _qsTimeLimitSec  = 0;      // stop-video-at seconds (0 = no limit)
+let _qsCurrentMode        = 'quiz'; // 'quiz' | 'comp'  — persisted across sessions
+let _qsTimeLimitSec       = 0;      // stop-video-at seconds (0 = no limit)
+let _qsRequireTranscript  = true;   // only use videos with transcripts available
 const _COMP_HISTORY_KEY = 'comp_url_history';
 const _COMP_HISTORY_MAX = 10;
 function _qsHistoryLoad() {
@@ -1864,10 +1865,11 @@ function _saveQuizPrefsToFirestore() {
       const { doc: _doc, updateDoc: _upd } = await import('https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore.js');
       const prefs = {
         ...quizSettings,
-        compMode:         _qsCurrentMode || 'quiz',
-        compUrl:          (() => { const el = document.getElementById('qs-comp-url'); return el ? el.value : ''; })(),
-        compUrlHistory:   _qsHistoryLoad(),
-        compTimeLimitSec: _qsTimeLimitSec || 0,
+        compMode:              _qsCurrentMode || 'quiz',
+        compUrl:               (() => { const el = document.getElementById('qs-comp-url'); return el ? el.value : ''; })(),
+        compUrlHistory:        _qsHistoryLoad(),
+        compTimeLimitSec:      _qsTimeLimitSec || 0,
+        compRequireTranscript: _qsRequireTranscript,
       };
       await _upd(_doc(db, 'users', user.uid), { quizPrefs: prefs });
     } catch (e) { /* non-critical */ }
@@ -1879,10 +1881,11 @@ function saveCompPrefs() {
   // Always mirror to localStorage so guest / offline path is covered
   try {
     const existing = JSON.parse(localStorage.getItem('quizSettings_v2') || '{}');
-    existing.compMode         = _qsCurrentMode || 'quiz';
-    existing.compUrl          = (() => { const el = document.getElementById('qs-comp-url'); return el ? el.value : ''; })();
-    existing.compUrlHistory   = _qsHistoryLoad();
-    existing.compTimeLimitSec = _qsTimeLimitSec || 0;
+    existing.compMode              = _qsCurrentMode || 'quiz';
+    existing.compUrl               = (() => { const el = document.getElementById('qs-comp-url'); return el ? el.value : ''; })();
+    existing.compUrlHistory        = _qsHistoryLoad();
+    existing.compTimeLimitSec      = _qsTimeLimitSec || 0;
+    existing.compRequireTranscript = _qsRequireTranscript;
     localStorage.setItem('quizSettings_v2', JSON.stringify(existing));
   } catch {}
   _saveQuizPrefsToFirestore();
@@ -1909,6 +1912,7 @@ function loadQuizPrefsFromFirestore(data) {
   // --- Comp-specific state ---
   if (prefs.compMode) _qsCurrentMode = prefs.compMode;
   if (prefs.compTimeLimitSec !== undefined) _qsTimeLimitSec = prefs.compTimeLimitSec;
+  if (prefs.compRequireTranscript !== undefined) _qsRequireTranscript = prefs.compRequireTranscript;
   // Mirror URL history to localStorage so _qsHistoryLoad() picks it up
   if (Array.isArray(prefs.compUrlHistory) && prefs.compUrlHistory.length) {
     try { localStorage.setItem(_COMP_HISTORY_KEY, JSON.stringify(prefs.compUrlHistory)); } catch {}
@@ -1929,10 +1933,11 @@ function saveQuizSettings() {
       ...existing,
       ...quizSettings,
       // Always keep comp fields current; fall back to whatever was already stored
-      compMode:         _qsCurrentMode || existing.compMode || 'quiz',
-      compUrl:          (() => { const el = document.getElementById('qs-comp-url'); return el ? el.value : (existing.compUrl || ''); })(),
-      compUrlHistory:   _qsHistoryLoad().length ? _qsHistoryLoad() : (existing.compUrlHistory || []),
-      compTimeLimitSec: _qsTimeLimitSec != null ? _qsTimeLimitSec : (existing.compTimeLimitSec || 0),
+      compMode:              _qsCurrentMode || existing.compMode || 'quiz',
+      compUrl:               (() => { const el = document.getElementById('qs-comp-url'); return el ? el.value : (existing.compUrl || ''); })(),
+      compUrlHistory:        _qsHistoryLoad().length ? _qsHistoryLoad() : (existing.compUrlHistory || []),
+      compTimeLimitSec:      _qsTimeLimitSec != null ? _qsTimeLimitSec : (existing.compTimeLimitSec || 0),
+      compRequireTranscript: _qsRequireTranscript,
     };
     localStorage.setItem('quizSettings_v2', JSON.stringify(payload));
   } catch { }
@@ -1948,6 +1953,7 @@ function loadQuizSettings() {
     // Restore comp prefs from localStorage too
     if (parsed.compMode)         _qsCurrentMode   = parsed.compMode;
     if (parsed.compTimeLimitSec !== undefined) _qsTimeLimitSec = parsed.compTimeLimitSec;
+    if (parsed.compRequireTranscript !== undefined) _qsRequireTranscript = parsed.compRequireTranscript;
     if (parsed.compUrl)          parsed._compUrl  = parsed.compUrl;
     if (Array.isArray(parsed.compUrlHistory) && parsed.compUrlHistory.length) {
       try { localStorage.setItem(_COMP_HISTORY_KEY, JSON.stringify(parsed.compUrlHistory)); } catch {}
@@ -2156,6 +2162,16 @@ function initQuizSettingsUI() {
   if (_tlSlider && _qsTimeLimitSec) {
     _tlSlider.value = _qsTimeLimitSec;
     window._qsTimeLimitSync(_qsTimeLimitSec);
+  }
+  // Restore "Require transcript" checkbox
+  const _rtChk = document.getElementById('qs-require-transcript');
+  if (_rtChk && !_rtChk._compPersistBound) {
+    _rtChk._compPersistBound = true;
+    _rtChk.checked = _qsRequireTranscript;
+    _rtChk.addEventListener('change', () => {
+      _qsRequireTranscript = _rtChk.checked;
+      saveCompPrefs();
+    });
   }
   // Restore URL input oninput → persist on change
   if (_urlInput && !_urlInput._compPersistBound) {
@@ -2866,8 +2882,8 @@ window.openQuizSettings = () => {
   // Clear any inline display:none set by startComprehensionFromQuizSettings so the CSS .show class wins
   if (_settingsOv) { _settingsOv.style.display = ''; }
   _settingsOv.classList.add('show');
-  // Restore last active mode tab (quiz vs comprehension)
-  setTimeout(() => window._qsModeSwitch(_qsCurrentMode || 'quiz'), 20);
+  // Restore last active mode tab immediately (no delay avoids flash of wrong tab)
+  window._qsModeSwitch(_qsCurrentMode || 'quiz');
 };
 window.closeQuizSettings = () => {
   document.getElementById('quiz-settings-overlay').classList.remove('show');
@@ -6871,7 +6887,358 @@ window._qsCompUrlClear = () => {
   if (input) { input.value = ''; window._qsCompUrlCheck(''); input.focus(); }
 };
 
-// Helper: detect YouTube URL and extract videoId
+// ── Find a Video / Find a Picture helpers ──────────────────────────────────
+
+// Tracks IDs returned so far this session so repeated presses give a new pick
+let _qsFoundVideoIds = [];
+// Tracks picture index offset for variety
+let _qsFindPicOffset = 0;
+// Metadata cache keyed by videoId — populated by _qsFindVideo, read by _qsCompUrlCheck
+window._qsVideoMetaCache = {};
+
+// Module-level timer handle for search elapsed counter
+let _qsSearchTimerInterval = null;
+let _qsSearchStartTime = 0;
+
+function _qsFindStopTimer() {
+  if (_qsSearchTimerInterval) {
+    clearInterval(_qsSearchTimerInterval);
+    _qsSearchTimerInterval = null;
+  }
+}
+
+function _qsFindSetStatus(htmlContent, type) {
+  // type: 'loading' | 'ok' | 'err'
+  _qsFindStopTimer(); // Always stop any running timer first
+  const el = document.getElementById('qs-find-status');
+  if (!el) return;
+
+  if (type === 'loading') {
+    // Prominent pulsing banner with live elapsed counter
+    _qsSearchStartTime = Date.now();
+    el.style.cssText = `display:block;background:linear-gradient(135deg,#1a1a2e,#0f2027);border:1.5px solid rgba(245,158,11,0.5);border-radius:0.75rem;overflow:hidden;box-shadow:0 0 18px rgba(245,158,11,0.15);`;
+    const render = () => {
+      const secs = Math.floor((Date.now() - _qsSearchStartTime) / 1000);
+      const secsStr = secs > 0 ? ` <span style="color:#fbbf24;font-weight:900;">(${secs}s)</span>` : '';
+      el.innerHTML = `
+        <div style="padding:13px 14px;display:flex;align-items:center;gap:10px;">
+          <div style="flex-shrink:0;width:22px;height:22px;border-radius:50%;border:2.5px solid #f59e0b;border-top-color:transparent;animation:quizSpin 0.75s linear infinite;"></div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:0.8rem;font-weight:800;color:#fde68a;letter-spacing:0.01em;">${htmlContent}${secsStr}</div>
+            <div style="font-size:0.62rem;color:#92400e;margin-top:2px;font-weight:600;">Please wait — this may take a few seconds…</div>
+          </div>
+        </div>`;
+    };
+    render();
+    _qsSearchTimerInterval = setInterval(render, 1000);
+  } else if (type === 'ok') {
+    el.style.cssText = `display:block;background:linear-gradient(135deg,#052e16,#064e3b);border:1.5px solid rgba(16,185,129,0.45);border-radius:0.75rem;overflow:hidden;box-shadow:0 0 14px rgba(16,185,129,0.12);`;
+    el.innerHTML = htmlContent;
+  } else {
+    el.style.cssText = `display:block;background:#1e293b;border:1px solid rgba(239,68,68,0.3);border-radius:0.75rem;overflow:hidden;`;
+    el.innerHTML = htmlContent;
+  }
+}
+
+function _qsFindSetBusy(busy) {
+  if (!busy) _qsFindStopTimer(); // Always stop the elapsed timer when done
+  const vBtn = document.getElementById('qs-find-video-btn');
+  const pBtn = document.getElementById('qs-find-picture-btn');
+  [vBtn, pBtn].forEach(b => { if (b) b.style.opacity = busy ? '0.55' : '1'; });
+  [vBtn, pBtn].forEach(b => { if (b) b.style.pointerEvents = busy ? 'none' : ''; });
+}
+
+function _qsFmtDuration(sec) {
+  sec = Math.round(+sec || 0);
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return m > 0 ? (s > 0 ? `${m} min ${s} sec` : `${m} min`) : `${s} sec`;
+}
+
+/**
+ * Finds a real, embeddable, child-friendly educational YouTube video.
+ * Uses the /api/youtube-video-search endpoint which:
+ *   1. Asks Gemini to generate search query words (not video IDs)
+ *   2. Searches YouTube Data API v3 for real, current results
+ *   3. Validates each result via oEmbed before returning it
+ * When "Require transcript" is ON, additionally verifies a transcript exists
+ * before accepting the video (retries up to 5 times to find one that qualifies).
+ */
+window._qsFindVideo = async () => {
+  const maxMinsSlider   = document.getElementById('qs-max-video-len-slider');
+  const maxMins         = maxMinsSlider ? parseInt(maxMinsSlider.value) || 10 : 10;
+  const timelimitSlider = document.getElementById('qs-comp-timelimit-slider');
+  const eduLevel        = (window.quizSettings?.eduLevel) || 'P2';
+  const subjects        = (window.quizSettings?.subjects)  || [];
+  const requireTranscript = _qsRequireTranscript;
+
+  _qsFindSetBusy(true);
+  _qsFindSetStatus(`Searching YouTube for a child-friendly video${requireTranscript ? ' with captions' : ''}…`, 'loading');
+
+  // Collect IDs to exclude this session
+  const excludeThisCall = [..._qsFoundVideoIds];
+
+  try {
+    let accepted = null;
+
+    // The backend now validates transcripts server-side when requireCaption=true,
+    // so a single call will return only a video that has a usable transcript.
+    // We increase MAX_ATTEMPTS to 4 when transcript is required to widen the search net.
+    const MAX_ATTEMPTS = requireTranscript ? 4 : 1;
+
+    for (let attempt = 0; attempt < MAX_ATTEMPTS && !accepted; attempt++) {
+      if (attempt > 0) {
+        const extra = attempt >= 2 ? ' even harder' : '';
+        _qsFindSetStatus(`Searching${extra} again for a video${requireTranscript ? ' with captions' : ''}…`, 'loading');
+      }
+
+      const resp = await fetch('/api/youtube-video-search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          educationLevel: eduLevel,
+          subject: subjects.join(', '), // passing subjects to help backend generate relevant queries
+          maxDurationMin: maxMins,
+          exclude: [...excludeThisCall],
+          requireCaption: requireTranscript, // when true, backend validates transcript before returning
+        }),
+      });
+
+      if (!resp.ok) throw new Error(`Server error ${resp.status}`);
+      const data = await resp.json();
+
+      if (data.error === 'no_video_found' || !data.videoId) break; // no suitable video found
+
+      const vid = data.videoId;
+      excludeThisCall.push(vid);
+
+      // Backend has already verified the transcript when requireCaption=true
+      accepted = { videoId: vid, url: `https://www.youtube.com/watch?v=${vid}` };
+    }
+
+    if (!accepted) {
+      _qsFindSetStatus(
+        `<div style="padding:9px 12px;font-size:0.72rem;color:#94a3b8;font-weight:600;">
+          ⚠ Could not find a suitable video${requireTranscript ? ' with captions' : ''} — try unchecking "Require transcript" or press again.
+         </div>`, 'err');
+      _qsFindSetBusy(false);
+      return;
+    }
+
+    const { videoId: vid, url } = accepted;
+
+    // Inject into URL input and trigger preview
+    const urlInput = document.getElementById('qs-comp-url');
+    if (urlInput) { urlInput.value = url; window._qsCompUrlCheck(url); }
+
+    if (timelimitSlider) { timelimitSlider.value = 0; window._qsTimeLimitSync(0); }
+
+    _qsFoundVideoIds.push(vid);
+    if (_qsFoundVideoIds.length > 20) _qsFoundVideoIds.shift();
+
+    const foundSecs = Math.floor((Date.now() - _qsSearchStartTime) / 1000);
+    const foundSecsStr = foundSecs > 0 ? ` in ${foundSecs}s` : '';
+    _qsFindSetStatus(
+      `<div style="padding:10px 13px;display:flex;align-items:center;gap:10px;">
+         <span style="font-size:1.3rem;line-height:1;">🎬</span>
+         <div>
+           <div style="font-size:0.78rem;font-weight:800;color:#6ee7b7;">Video found${requireTranscript ? ' · captions verified ✔' : ''}${foundSecsStr}</div>
+           <div style="font-size:0.64rem;color:#34d399;margin-top:1px;">See preview below · press again for a different one</div>
+         </div>
+       </div>`, 'ok');
+
+  } catch (err) {
+    console.error('[_qsFindVideo]', err.message);
+    _qsFindSetStatus(
+      `<div style="padding:9px 12px;font-size:0.72rem;color:#94a3b8;font-weight:600;">⚠ Search failed — please try again. (${err.message})</div>`, 'err');
+  }
+
+  _qsFindSetBusy(false);
+};
+
+
+
+/**
+ * Searches Pixabay (then Unsplash as fallback) for a child-friendly, content-rich image.
+ * Each call asks Gemini to generate a fresh, diverse search query drawn from one of four
+ * category types — action/event, cause-and-effect, narrative scene, objects, or scenery —
+ * so every press returns something genuinely different and quiz-worthy.
+ */
+window._qsFindPicture = async () => {
+  _qsFindSetBusy(true);
+  _qsFindSetStatus(`Finding a great picture for you…`, 'loading');
+
+  // ── Category pool — rotate category type so consecutive presses feel varied ──
+  const categoryTypes = [
+    // Action / Event — people or animals actively doing something
+    { type: 'action',        hint: 'a vivid scene where people or animals are actively doing something (sport, rescue, celebration, cooking, building, harvesting, performing)' },
+    { type: 'action',        hint: 'a dynamic moment captured mid-action — jumping, running, working, playing, dancing, flying, swimming' },
+    // Cause & Effect — visible outcomes or processes
+    { type: 'cause_effect',  hint: 'a scene that shows a visible cause-and-effect: eruption, flood, fire, construction, demolition, weather event, melting ice, growing plant' },
+    { type: 'cause_effect',  hint: 'a transformation in progress: caterpillar to butterfly, seed sprouting, ice melting, bridge being built, storm approaching city' },
+    // Narrative / Story scene — a moment that implies a story
+    { type: 'narrative',     hint: 'a scene that tells a story at a glance: a person reading to children, a market crowded with activity, villagers working together, an explorer discovering something' },
+    { type: 'narrative',     hint: 'a moment full of human interest: farmers at harvest, scientists in a lab, artists painting a mural, children learning in an outdoor classroom' },
+    // Objects — fascinating close-ups or collections
+    { type: 'objects',       hint: 'a striking close-up or collection of interesting objects: exotic fruits, ancient artefacts, colourful spices, scientific equipment, unusual tools, musical instruments' },
+    { type: 'objects',       hint: 'a beautifully arranged set of objects that invite curiosity: gems and minerals, sea shells, fossils, world currencies, traditional clothing' },
+    // Scenery / Nature — dramatic or beautiful environments
+    { type: 'scenery',       hint: 'a dramatic natural landscape or weather event that is visually stunning and educational: volcanic landscape, coral reef, aurora, rainforest canopy, glacier' },
+    { type: 'scenery',       hint: 'a unique environment or ecosystem: mangrove forest, salt flats, bioluminescent bay, desert oasis, mountain valley with wildlife' },
+  ];
+  const catEntry = categoryTypes[_qsFindPicOffset % categoryTypes.length];
+  _qsFindPicOffset++;
+
+  // Track recent queries this session to avoid repeats
+  if (!window._qsPicRecentQueries) window._qsPicRecentQueries = [];
+
+  // ── Ask Gemini for a fresh, specific Pixabay search query ──────────────────
+  let topic = null;
+  try {
+    const recentList = window._qsPicRecentQueries.slice(-8).join(', ');
+    const geminiPrompt =
+      `You are helping choose a Pixabay photo for a children's comprehension activity.\n\n` +
+      `Generate ONE short Pixabay image search query (3–5 words) that will find ${catEntry.hint}.\n\n` +
+      `Rules:\n` +
+      `- The query must be child-safe and educational\n` +
+      `- Prefer queries that return photos with clear subjects and visible activity\n` +
+      `- Be SPECIFIC and creative — avoid generic terms like "nature" or "landscape"\n` +
+      `- Do NOT repeat any of these recent queries: ${recentList || 'none yet'}\n\n` +
+      `Return ONLY the search query as a plain string — no quotes, no JSON, no explanation.`;
+
+    const gResp = await fetch('/api/quiz-generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: geminiPrompt }] }],
+        generationConfig: { temperature: 1.0, maxOutputTokens: 32 },
+      }),
+    });
+    if (gResp.ok) {
+      const gData = await gResp.json();
+      const raw = (gData?.candidates?.[0]?.content?.parts?.[0]?.text || '').trim()
+        .replace(/^["']|["']$/g, '')  // strip wrapping quotes if any
+        .replace(/\n.*/s, '')          // take first line only
+        .trim();
+      if (raw && raw.length >= 4 && raw.length <= 80) {
+        topic = raw;
+        window._qsPicRecentQueries.push(topic);
+        if (window._qsPicRecentQueries.length > 30) window._qsPicRecentQueries.shift();
+        console.log(`[findPicture] Gemini query (${catEntry.type}): "${topic}"`);
+      }
+    }
+  } catch (e) {
+    console.warn('[findPicture] Gemini query generation failed, using fallback:', e.message);
+  }
+
+  // ── Fallback bank per category — used if Gemini is unavailable ─────────────
+  if (!topic) {
+    const fallbacks = {
+      action:       ['children planting trees school', 'firefighters rescuing flood victim', 'athletes competing track race',
+                     'fishermen hauling nets boat', 'baker kneading bread dough', 'surgeon performing operation hospital',
+                     'dancer performing stage spotlight', 'astronaut floating space station'],
+      cause_effect: ['volcanic lava flowing village', 'flood rescue emergency boat', 'deforestation rainforest cleared land',
+                     'caterpillar becoming butterfly metamorphosis', 'wildfire smoke dramatic landscape', 'dam releasing water turbines'],
+      narrative:    ['market vendors selling spices asia', 'grandmother teaching grandchild cooking', 'explorer discovering cave paintings',
+                     'scientists collecting ocean samples', 'children outdoor classroom africa', 'rescue team saving stranded hiker'],
+      objects:      ['colorful exotic tropical fruits', 'ancient roman artefacts museum', 'scientific lab glassware experiment',
+                     'traditional musical instruments world', 'sea shells collection macro', 'precious gems minerals collection'],
+      scenery:      ['bioluminescent bay glowing ocean', 'mangrove forest aerial roots water', 'volcanic crater steaming dramatic',
+                     'aurora borealis mountain reflection', 'salt flats bolivia mirror reflection', 'coral reef diverse fish colorful'],
+    };
+    const pool = fallbacks[catEntry.type] || fallbacks.scenery;
+    topic = pool[Math.floor(Math.random() * pool.length)];
+    console.log(`[findPicture] Fallback query (${catEntry.type}): "${topic}"`);
+  }
+
+  // Randomise Pixabay page (1–3) for variety within the same query
+  const page = Math.floor(Math.random() * 3) + 1;
+
+  try {
+    let imageUrl = null;
+    let picMeta = { tags: '', user: '', source: '', width: 0, height: 0 };
+
+    // Try Pixabay first
+    const pixResp = await fetch(
+      `/api/pixabay-search?q=${encodeURIComponent(topic)}&image_type=photo&orientation=horizontal&safesearch=true&min_width=800&per_page=12&page=${page}`
+    );
+    if (pixResp.ok) {
+      const pixData = await pixResp.json();
+      const hits = pixData.hits || [];
+      if (hits.length > 0) {
+        const hit = hits[Math.floor(Math.random() * Math.min(hits.length, 6))];
+        imageUrl = hit.largeImageURL || hit.webformatURL;
+        picMeta = {
+          tags:   (hit.tags || '').split(',').map(t => t.trim()).filter(Boolean).slice(0, 5).join(', '),
+          user:   hit.user || '',
+          source: 'Pixabay',
+          width:  hit.imageWidth  || hit.webformatWidth  || 0,
+          height: hit.imageHeight || hit.webformatHeight || 0,
+        };
+      }
+    }
+
+    // Fallback: Unsplash
+    if (!imageUrl) {
+      const unResp = await fetch(
+        `/api/unsplash-search?q=${encodeURIComponent(topic)}&orientation=landscape&per_page=10`
+      );
+      if (unResp.ok) {
+        const unData = await unResp.json();
+        const hits = unData.hits || [];
+        if (hits.length > 0) {
+          const hit = hits[Math.floor(Math.random() * Math.min(hits.length, 5))];
+          imageUrl = hit.webformatURL;
+          picMeta = {
+            tags:   hit.tags || topic.replace(/ /g, ', '),
+            user:   hit.credit ? hit.credit.replace(/^Photo by /, '').replace(/ on Unsplash$/, '') : '',
+            source: 'Unsplash',
+            width:  0,
+            height: 0,
+          };
+        }
+      }
+    }
+
+    if (!imageUrl) throw new Error('No images found');
+
+    const urlInput = document.getElementById('qs-comp-url');
+    if (urlInput) { urlInput.value = imageUrl; window._qsCompUrlCheck(imageUrl); }
+
+    // Build a human-readable description from the topic and tags
+    const topicLabel = topic.replace(/\b\w/g, c => c.toUpperCase());
+    const tagsLine   = picMeta.tags || topicLabel;
+    const dimsLine   = (picMeta.width && picMeta.height) ? ` · ${picMeta.width}×${picMeta.height}` : '';
+    const catLabel   = { action: '🏃 Action', cause_effect: '⚡ Cause & Effect', narrative: '📖 Narrative', objects: '🔍 Objects', scenery: '🌄 Scenery' }[catEntry.type] || catEntry.type;
+
+    const picFoundSecs = Math.floor((Date.now() - _qsSearchStartTime) / 1000);
+    const picFoundSecsStr = picFoundSecs > 0 ? ` in ${picFoundSecs}s` : '';
+    _qsFindSetStatus(`
+      <div style="padding:10px 13px;display:flex;flex-direction:column;gap:5px;">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span style="font-size:1.2rem;line-height:1;">🖼</span>
+          <span style="font-size:0.78rem;font-weight:800;color:#6ee7b7;">Picture found${picFoundSecsStr}</span>
+          <span style="font-size:0.62rem;font-weight:700;color:#a78bfa;background:rgba(124,58,237,0.18);border-radius:4px;padding:1px 6px;">${catLabel}</span>
+          <span style="font-size:0.62rem;font-weight:700;color:#34d399;background:rgba(16,185,129,0.12);border-radius:4px;padding:1px 6px;">${picMeta.source}${dimsLine}</span>
+          ${picMeta.user ? `<span style="font-size:0.62rem;font-weight:700;color:#64748b;background:#0f172a;border-radius:4px;padding:1px 6px;">📷 ${picMeta.user}</span>` : ''}
+        </div>
+        <div style="font-size:0.65rem;color:#6ee7b7;line-height:1.4;">
+          <span style="font-weight:700;color:#a7f3d0;">Query:</span> ${topicLabel}
+        </div>
+        <div style="font-size:0.65rem;color:#64748b;line-height:1.4;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">
+          <span style="font-weight:700;color:#6ee7b7;">Tags:</span> ${tagsLine}
+        </div>
+        <div style="font-size:0.6rem;color:#34d399;margin-top:1px;">Press again for a different picture</div>
+      </div>`, 'ok');
+  } catch (err) {
+    console.error('[_qsFindPicture]', err);
+    _qsFindSetStatus(
+      `<div style="padding:9px 12px;font-size:0.72rem;color:#94a3b8;font-weight:600;">⚠ Could not find a picture — please try again. (${err.message})</div>`, 'err');
+  } finally {
+    _qsFindSetBusy(false);
+  }
+};
+
 function _parseQsUrl(url) {
   if (!url || !url.trim()) return null;
   const s = url.trim();
@@ -6955,38 +7322,85 @@ window._qsCompUrlCheck = (val) => {
   }
 
   if (isYt) {
-    // Always rebuild the YouTube card structure so stale image HTML is cleared
+    // Column layout: top row = thumbnail + info badges; bottom row = description
     const thumbUrl = `https://img.youtube.com/vi/${parsed.videoId}/mqdefault.jpg`;
-    preview.style.flexDirection = 'row';
+    preview.style.flexDirection = 'column';
     preview.innerHTML = `
-      <div id="qs-comp-preview-thumb" style="flex-shrink:0;width:120px;min-height:68px;background:#0f172a;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;">
-        <img src="${thumbUrl}" alt="Thumbnail"
-          style="width:100%;height:100%;object-fit:cover;display:block;"
-          onerror="this.style.display='none'">
-        <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
-          background:rgba(239,68,68,0.85);border-radius:50%;width:28px;height:28px;
-          display:flex;align-items:center;justify-content:center;pointer-events:none;">
-          <svg width='12' height='12' viewBox='0 0 24 24' fill='white'><polygon points='5,3 19,12 5,21'/></svg>
+      <div style="display:flex;flex-direction:row;align-items:stretch;">
+        <div id="qs-comp-preview-thumb" style="flex-shrink:0;width:130px;min-height:73px;background:#0f172a;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;border-radius:10px 0 0 0;">
+          <img src="${thumbUrl}" alt="Thumbnail"
+            style="width:100%;height:100%;object-fit:cover;display:block;"
+            onerror="this.style.display='none'">
+          <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+            background:rgba(239,68,68,0.85);border-radius:50%;width:28px;height:28px;
+            display:flex;align-items:center;justify-content:center;pointer-events:none;">
+            <svg width='12' height='12' viewBox='0 0 24 24' fill='white'><polygon points='5,3 19,12 5,21'/></svg>
+          </div>
+        </div>
+        <div style="flex:1;padding:10px 12px;display:flex;flex-direction:column;justify-content:center;gap:5px;min-width:0;">
+          <div id="qs-comp-preview-title" style="font-size:0.82rem;font-weight:700;color:#e2e8f0;line-height:1.3;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">Loading title…</div>
+          <div id="qs-comp-preview-meta" style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;">
+            <span style="font-size:0.62rem;color:#64748b;">youtube.com/watch?v=${parsed.videoId}</span>
+          </div>
         </div>
       </div>
-      <div style="flex:1;padding:10px 12px;display:flex;flex-direction:column;justify-content:center;gap:4px;min-width:0;">
-        <div id="qs-comp-preview-title" style="font-size:0.78rem;font-weight:700;color:#e2e8f0;line-height:1.3;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">Loading title…</div>
-        <div id="qs-comp-preview-meta" style="font-size:0.65rem;color:#64748b;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">youtube.com/watch?v=${parsed.videoId}</div>
-      </div>`;
+      <div id="qs-comp-preview-desc" style="display:none;padding:7px 12px 9px;font-size:0.7rem;color:#94a3b8;line-height:1.55;border-top:1px solid rgba(148,163,184,0.08);"></div>`;
     preview.style.display = 'flex';
 
     // Re-query after rebuild
     const newTitle = document.getElementById('qs-comp-preview-title');
     const newMeta  = document.getElementById('qs-comp-preview-meta');
+    const newDesc  = document.getElementById('qs-comp-preview-desc');
 
-    // Fetch title via oEmbed (no API key needed)
+    // Fetch title via oEmbed, then enrich preview with duration + description
     const oEmbedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent('https://www.youtube.com/watch?v=' + parsed.videoId)}&format=json`;
     fetch(oEmbedUrl)
       .then(r => r.ok ? r.json() : null)
-      .then(data => {
+      .then(async data => {
         if (abortId !== _qsPreviewAbort) return; // stale
-        if (newTitle) newTitle.textContent = data?.title || `Video ID: ${parsed.videoId}`;
-        if (newMeta && data?.author_name) newMeta.textContent = `▶ ${data.author_name}`;
+        const realTitle   = data?.title       || `Video ID: ${parsed.videoId}`;
+        const realChannel = data?.author_name || '';
+        if (newTitle) newTitle.textContent = realTitle;
+
+        // Build meta badges immediately with what we have
+        const cached = window._qsVideoMetaCache?.[parsed.videoId];
+        const cachedDur = cached?.durationSec ? _qsFmtDuration(cached.durationSec) : '';
+        const buildMeta = (dur) => [
+          realChannel ? `<span style="background:#0f172a;border-radius:4px;padding:2px 6px;font-size:0.62rem;font-weight:700;color:#64748b;">▶ ${realChannel}</span>` : '',
+          dur         ? `<span style="background:#0f172a;border-radius:4px;padding:2px 6px;font-size:0.62rem;font-weight:700;color:#64748b;">⏱ ${dur}</span>` : '',
+        ].filter(Boolean).join('');
+        if (newMeta) newMeta.innerHTML = buildMeta(cachedDur);
+
+        // Async Gemini enrichment: duration estimate + description (grounded in real title)
+        if (abortId !== _qsPreviewAbort) return;
+        const descPrompt = `For the YouTube video titled "${realTitle}"${realChannel ? ` by "${realChannel}"` : ''}, provide:
+1. The approximate video duration in minutes as an integer
+2. One sentence describing what the video is about and what viewers learn
+
+Respond with ONLY this JSON (no markdown):
+{"durationMin":5,"description":"Short sentence here."}`;
+
+        try {
+          const gResp = await fetch('/api/quiz-generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: descPrompt }] }],
+              generationConfig: { temperature: 0.3, maxOutputTokens: 128, responseMimeType: 'application/json' },
+            }),
+          });
+          if (!gResp.ok || abortId !== _qsPreviewAbort) return;
+          const gData = await gResp.json();
+          const gRaw  = gData?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          const gJson = JSON.parse(gRaw.replace(/```[a-z]*\n?/gi, '').trim());
+          if (abortId !== _qsPreviewAbort) return;
+
+          const gDurStr = (!cachedDur && gJson.durationMin) ? `${Math.round(gJson.durationMin)} min` : cachedDur;
+          const gDesc   = (gJson.description || '').trim();
+
+          if (newMeta) newMeta.innerHTML = buildMeta(gDurStr);
+          if (newDesc && gDesc) { newDesc.textContent = gDesc; newDesc.style.display = 'block'; }
+        } catch { /* silent — description is best-effort */ }
       })
       .catch(() => {
         if (abortId !== _qsPreviewAbort) return;
@@ -7293,6 +7707,9 @@ window.startComprehensionFromQuizSettings = () => {
 
   const numQ     = quizSettings.correctTarget || 5;
   const eduLevel = quizSettings.eduLevel || 'P2';
+  const eduLevels = window._EDU_LEVELS || [];
+  const eduInfo   = eduLevels.find(l => l.id === eduLevel);
+  const targetAge = eduInfo?.age || 8;
   const timeLimitSec = _qsTimeLimitSec || 0;
 
   // State flags
@@ -7312,9 +7729,68 @@ window.startComprehensionFromQuizSettings = () => {
     // else: questionsPromise.then will call _proceedToTransition again once ready
   };
 
-  // ── Background question generation ────────────────────────────────────────
+  // Full-screen "Generating questions…" shown when video ends before questions ready
+  const _showCompWaitOverlay = () => {
+    if (document.getElementById('comp-wait-overlay')) return;
+    const ov = document.createElement('div');
+    ov.id = 'comp-wait-overlay';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:9000;background:rgba(2,6,23,0.97);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;font-family:inherit;';
+    ov.innerHTML = `
+      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#0d9488" stroke-width="2" style="animation:quizSpin 1s linear infinite"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+      <div style="font-size:1rem;font-weight:700;color:#e2e8f0;">Generating questions\u2026</div>
+      <div style="font-size:0.78rem;color:#64748b;max-width:300px;text-align:center;">The AI is analysing the video. This usually takes about 20 seconds.</div>`;
+    document.body.appendChild(ov);
+  };
+
+  // Auto-fallback: retry comprehension-generate when Cloud Function times out.
+  // The backend now handles missing transcripts via metadata fallback — always generates questions.
+  const _runGeminiFallback = async (reason) => {
+    console.warn('[compFromQuiz] Retrying comprehension-generate after timeout:', reason);
+
+    try {
+      const fbResp = await fetch('/api/comprehension-generate', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phase: 'questions',
+          medium: 'video',
+          subject: 'the video content',
+          educationLevel: eduLevel,
+          numQuestions: numQ,
+          mediaContent: { videoId: parsed.videoId },
+          videoTimeLimitSec: timeLimitSec > 0 ? timeLimitSec : null,
+          allowMetadataFallback: true,
+        }),
+      });
+      const fbData = await fbResp.json();
+      if (!fbData?.questions?.length) throw new Error(fbData?.error || 'No questions');
+      document.getElementById('comp-wait-overlay')?.remove();
+      questionsReady = fbData.questions;
+      generationFailed = false;
+      if (proceedCalled) { proceedCalled = false; _proceedToTransition(); }
+      const skipBtn2 = document.getElementById('cqv-skip-btn');
+      if (skipBtn2) { skipBtn2.innerHTML = '\u23ed Skip to Quiz'; skipBtn2.disabled = false; skipBtn2.style.borderColor = 'rgba(52,211,153,0.6)'; skipBtn2.style.color = '#34d399'; skipBtn2.style.cursor = 'pointer'; }
+    } catch (e2) {
+      console.error('[compFromQuiz] Fallback retry failed:', e2);
+      document.getElementById('comp-wait-overlay')?.remove();
+      generationFailed = true;
+      const skipBtn2 = document.getElementById('cqv-skip-btn');
+      if (skipBtn2) {
+        skipBtn2.innerHTML = '\u26a0 Generation failed — try again';
+        skipBtn2.style.color = '#f87171'; skipBtn2.disabled = false; skipBtn2.style.cursor = 'pointer';
+      }
+    }
+  };
+
+  // ── Background question generation (45-second AbortController timeout) ────
+  const _genAbort = new AbortController();
+  const _genTimeout = setTimeout(() => {
+    _genAbort.abort();
+    _runGeminiFallback('Cloud Function timed out');
+  }, 45000);
+
   fetch('/api/comprehension-generate', {
     method: 'POST',
+    signal: _genAbort.signal,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       phase: 'questions',
@@ -7326,8 +7802,184 @@ window.startComprehensionFromQuizSettings = () => {
       videoTimeLimitSec: timeLimitSec > 0 ? timeLimitSec : null,
     }),
   })
-  .then(r => r.json())
+  .then(r => { clearTimeout(_genTimeout); return r.json(); })
   .then(data => {
+
+    // ── Handle no_transcript error ────────────────────────────────────────────
+    if (data?.error === 'no_transcript') {
+      generationFailed = true;
+      console.warn('[compFromQuiz] No transcript available for video:', parsed.videoId);
+      // Keep video overlay up while we show the warning
+      window.removeEventListener('message', _ytMsgHandler);
+
+      // Gather whatever metadata we have for this video
+      const noTransVid     = parsed.videoId;
+      const noTransUrl     = `https://www.youtube.com/watch?v=${noTransVid}`;
+      const noTransThumb   = `https://img.youtube.com/vi/${noTransVid}/mqdefault.jpg`;
+      const cachedMeta     = window._qsVideoMetaCache?.[noTransVid] || {};
+      const cachedDurStr   = cachedMeta.durationSec ? _qsFmtDuration(cachedMeta.durationSec) : '';
+
+      const errOv = document.createElement('div');
+      errOv.id = 'comp-notranscript-overlay';
+      errOv.style.cssText = 'position:fixed;inset:0;z-index:9100;background:rgba(2,6,23,0.94);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;font-family:inherit;';
+      errOv.innerHTML = `
+        <div style="max-width:600px;width:100%;background:rgba(15,23,42,0.95);border:1px solid rgba(251,191,36,0.35);border-radius:20px;overflow:hidden;display:flex;flex-direction:column;gap:0;">
+          <!-- Header -->
+          <div style="display:flex;align-items:center;gap:12px;padding:20px 24px 16px;">
+            <span style="font-size:2rem;">⚠️</span>
+            <div>
+              <div style="font-size:1rem;font-weight:800;color:#fbbf24;">No captions available</div>
+              <div style="font-size:0.72rem;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;margin-top:2px;">Comprehension Adventure</div>
+            </div>
+          </div>
+          <!-- Video info card -->
+          <div style="margin:0 20px 16px;background:#0f172a;border-radius:12px;overflow:hidden;">
+            <div style="display:flex;flex-direction:row;align-items:stretch;">
+              <div style="flex-shrink:0;width:120px;min-height:68px;position:relative;overflow:hidden;background:#1e293b;">
+                <img src="${noTransThumb}" alt="" style="width:100%;height:100%;object-fit:cover;display:block;" onerror="this.style.display='none'">
+              </div>
+              <div style="flex:1;padding:10px 14px;display:flex;flex-direction:column;justify-content:center;gap:4px;min-width:0;">
+                <div id="notrans-title" style="font-size:0.82rem;font-weight:700;color:#e2e8f0;line-height:1.3;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">Loading title…</div>
+                <div id="notrans-meta" style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;">
+                  <span style="font-size:0.62rem;color:#64748b;">${noTransUrl}</span>
+                  ${cachedDurStr ? `<span style="background:#1e293b;border-radius:4px;padding:1px 5px;font-size:0.6rem;color:#64748b;">⏱ ${cachedDurStr}</span>` : ''}
+                </div>
+              </div>
+            </div>
+            <div id="notrans-desc" style="display:none;padding:7px 14px 10px;font-size:0.7rem;color:#94a3b8;line-height:1.55;border-top:1px solid rgba(148,163,184,0.08);"></div>
+          </div>
+          <!-- Warning text -->
+          <div style="padding:0 24px 14px;font-size:0.82rem;color:#cbd5e1;line-height:1.6;">
+            This video doesn't have captions or subtitles. Without a transcript, comprehension questions will be generated from the video title and topic — they may be less accurate.
+          </div>
+          <!-- Buttons -->
+          <div style="display:flex;gap:10px;padding:0 24px 22px;flex-wrap:wrap;">
+            <button id="comp-notrans-continue-btn"
+              style="flex:1;min-width:140px;padding:10px 20px;border:none;border-radius:10px;background:linear-gradient(135deg,#7c3aed,#4f46e5);color:#fff;font-size:0.85rem;font-weight:700;cursor:pointer;">
+              ▶ Continue Anyway
+            </button>
+            <button id="comp-notrans-change-btn"
+              style="flex:1;min-width:120px;padding:10px 20px;border:none;border-radius:10px;background:rgba(100,116,139,0.15);color:#94a3b8;font-size:0.85rem;font-weight:700;cursor:pointer;border:1px solid rgba(100,116,139,0.3);">
+              🔄 Change Video
+            </button>
+            <button id="comp-notrans-close-btn"
+              style="padding:10px 18px;border:1px solid rgba(100,116,139,0.2);border-radius:10px;background:transparent;color:#64748b;font-size:0.85rem;font-weight:700;cursor:pointer;">
+              ✕
+            </button>
+          </div>
+        </div>`;
+      document.body.appendChild(errOv);
+
+      // Populate title/channel/description asynchronously via oEmbed + Gemini
+      (async () => {
+        try {
+          const oResp = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(noTransUrl)}&format=json`);
+          if (!oResp.ok) return;
+          const oData = await oResp.json();
+          const realTitle   = oData.title       || `Video ID: ${noTransVid}`;
+          const realChannel = oData.author_name || '';
+          const titleEl = document.getElementById('notrans-title');
+          const metaEl  = document.getElementById('notrans-meta');
+          if (titleEl) titleEl.textContent = realTitle;
+          if (metaEl) metaEl.innerHTML = [
+            `<span style="font-size:0.62rem;color:#64748b;">${noTransUrl}</span>`,
+            realChannel ? `<span style="background:#1e293b;border-radius:4px;padding:1px 5px;font-size:0.62rem;font-weight:700;color:#64748b;">📺 ${realChannel}</span>` : '',
+            cachedDurStr ? `<span style="background:#1e293b;border-radius:4px;padding:1px 5px;font-size:0.6rem;color:#64748b;">⏱ ${cachedDurStr}</span>` : '',
+          ].filter(Boolean).join('');
+
+          // Gemini description
+          const gResp = await fetch('/api/quiz-generate', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({
+              contents:[{parts:[{text:`For the YouTube video titled "${realTitle}"${realChannel?' by "'+realChannel+'"':''}, write one sentence describing what it teaches.`}]}],
+              generationConfig:{temperature:0.3,maxOutputTokens:80,responseMimeType:'application/json'},
+            }),
+          });
+          if (!gResp.ok) return;
+          const gData = await gResp.json();
+          const gRaw  = (gData?.candidates?.[0]?.content?.parts?.[0]?.text||'').trim();
+          let gDesc = '';
+          try { gDesc = JSON.parse(gRaw.replace(/```[a-z]*\n?/gi,'').trim())?.description || gRaw; } catch { gDesc = gRaw; }
+          const descEl = document.getElementById('notrans-desc');
+          if (descEl && gDesc) { descEl.textContent = gDesc; descEl.style.display = 'block'; }
+        } catch {}
+      })();
+
+      // Button handlers
+      document.getElementById('comp-notrans-close-btn').onclick = () => {
+        errOv.remove();
+        _removeCompVideoOverlay();
+      };
+      document.getElementById('comp-notrans-change-btn').onclick = () => {
+        errOv.remove();
+        _removeCompVideoOverlay();
+        const qsOv = document.getElementById('quiz-settings-overlay');
+        if (qsOv) { qsOv.style.display = 'flex'; qsOv.classList.add('show'); }
+        if (window._qsModeSwitch) window._qsModeSwitch('comp');
+      };
+      document.getElementById('comp-notrans-continue-btn').onclick = async () => {
+        // Dismiss the warning overlay only — keep the video playing
+        errOv.remove();
+
+        // Re-register the YT end handler (it was removed when no_transcript fired)
+        window.addEventListener('message', _ytMsgHandler);
+
+        generationFailed = false;
+
+        // Update the skip button to show questions are being prepared
+        const skipBtnNoTrans = document.getElementById('cqv-skip-btn');
+        if (skipBtnNoTrans) {
+          skipBtnNoTrans.innerHTML = '⏳ Preparing questions…';
+          skipBtnNoTrans.disabled = true;
+        }
+
+        // Call comprehension-generate — backend uses metadata fallback when no transcript.
+        try {
+          const fbResp = await fetch('/api/comprehension-generate', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              phase: 'questions',
+              medium: 'video',
+              subject: 'the video content',
+              educationLevel: eduLevel,
+              numQuestions: numQ,
+              mediaContent: { videoId: noTransVid },
+              videoTimeLimitSec: timeLimitSec > 0 ? timeLimitSec : null,
+              allowMetadataFallback: true,
+            }),
+          });
+          const fbData = await fbResp.json();
+          if (!fbData?.questions?.length) throw new Error(fbData?.error || 'No questions returned');
+
+          // Questions ready — update skip button and let the video flow handle the rest
+          questionsReady = fbData.questions;
+          generationFailed = false;
+          const sb = document.getElementById('cqv-skip-btn');
+          if (sb) {
+            sb.innerHTML = '⏭ Skip to Quiz';
+            sb.disabled  = false;
+            sb.style.borderColor = 'rgba(52,211,153,0.6)';
+            sb.style.color       = '#34d399';
+            sb.style.cursor      = 'pointer';
+          }
+          // If video already ended while questions were generating, proceed now
+          if (proceedCalled) { proceedCalled = false; _proceedToTransition(); }
+        } catch (e) {
+          console.error('[notrans-continue]', e);
+          generationFailed = true;
+          const sb = document.getElementById('cqv-skip-btn');
+          if (sb) {
+            sb.innerHTML = '⚠ Generation failed — try again';
+            sb.style.borderColor = 'rgba(248,113,113,0.5)';
+            sb.style.color       = '#f87171';
+            sb.disabled = false;
+            sb.style.cursor = 'pointer';
+          }
+        }
+      };
+      return;
+    }
+
     if (!data?.questions?.length) throw new Error(data?.error || 'No questions returned');
     questionsReady = data.questions;
     // Update skip button UI
@@ -7339,12 +7991,18 @@ window.startComprehensionFromQuizSettings = () => {
       skipBtn.style.color       = '#34d399';
       skipBtn.style.cursor      = 'pointer';
     }
+    // Remove wait overlay if video had already ended while waiting
+    document.getElementById('comp-wait-overlay')?.remove();
     // If video already ended / skip already pressed before questions arrived
     if (proceedCalled) { proceedCalled = false; _proceedToTransition(); }
   })
   .catch(err => {
+    clearTimeout(_genTimeout);
+    // AbortError = our 45s timeout fired — fallback already running, ignore here
+    if (err.name === 'AbortError') return;
     generationFailed = true;
     console.error('[compFromQuiz] Generation failed:', err);
+    document.getElementById('comp-wait-overlay')?.remove();
     const skipBtn = document.getElementById('cqv-skip-btn');
     if (skipBtn) {
       skipBtn.innerHTML = '⚠ Generation failed — try again';
@@ -7359,27 +8017,29 @@ window.startComprehensionFromQuizSettings = () => {
   // YT state 0 = ended naturally; state 2 = paused (fired when &end= time is reached).
   // We treat state=2 as end ONLY when a time limit is configured, to avoid false triggers
   // from the user manually pausing.
-  let _videoEndedByLimit = false; // guard against double-trigger for the timer path
+  let _videoEndedByLimit = false;
+  // YT postMessage handler: ONLY trigger on natural video end (state=0).
+  // For time-limited videos, the JS setTimeout below is the reliable trigger.
+  // Treating pause (state=2) as video-end caused false triggers when user manually paused.
   const _ytMsgHandler = (e) => {
+    // Guard: only process messages from youtube.com embeds
+    if (typeof e.data !== 'string') return;
     try {
       const d = JSON.parse(e.data);
-      if (d.event === 'onStateChange') {
-        const isEnded = d.info === 0; // natural end
-        const isPaused = d.info === 2; // paused — happens when &end= param is hit
-        const triggerOnPause = isPaused && timeLimitSec > 0;
-        if (isEnded || triggerOnPause) {
-          if (questionsReady) {
-            _videoEndedByLimit = true;
-            _proceedToTransition();
-          } else if (!generationFailed) {
-            // Mark as "waiting for questions"
-            proceedCalled = true;
-            const skipBtn = document.getElementById('cqv-skip-btn');
-            if (skipBtn) { skipBtn.innerHTML = '⏳ Finalising questions…'; skipBtn.disabled = true; }
-          }
+      if (d.event === 'onStateChange' && d.info === 0) {
+        // State 0 = video ended naturally
+        if (questionsReady) {
+          _videoEndedByLimit = true;
+          _proceedToTransition();
+        } else if (!generationFailed) {
+          // Video ended but questions still generating -- show wait screen
+          proceedCalled = true;
+          window.removeEventListener('message', _ytMsgHandler);
+          _removeCompVideoOverlay();
+          _showCompWaitOverlay();
         }
       }
-    } catch { /* non-JSON postMessage — ignore */ }
+    } catch { /* non-JSON postMessage -- ignore */ }
   };
   window.addEventListener('message', _ytMsgHandler);
 
@@ -7389,14 +8049,15 @@ window.startComprehensionFromQuizSettings = () => {
   let _timeLimitTimer = null;
   if (timeLimitSec > 0) {
     _timeLimitTimer = setTimeout(() => {
-      if (proceedCalled || _videoEndedByLimit) return; // already triggered
+      if (proceedCalled || _videoEndedByLimit) return;
       if (questionsReady) {
         _videoEndedByLimit = true;
         _proceedToTransition();
       } else if (!generationFailed) {
         proceedCalled = true;
-        const skipBtn = document.getElementById('cqv-skip-btn');
-        if (skipBtn) { skipBtn.innerHTML = '⏳ Finalising questions…'; skipBtn.disabled = true; }
+        window.removeEventListener('message', _ytMsgHandler);
+        _removeCompVideoOverlay();
+        _showCompWaitOverlay();
       }
     }, (timeLimitSec + 1) * 1000);
   }
@@ -7581,9 +8242,36 @@ function _compShowCompView(questions) {
   mode = 'comprehension';
 }
 
+// ── Normalize question format ─────────────────────────────────────────────
+// The primary backend (/api/comprehension-generate) returns:
+//   { question, answers:[{id,text},...], correctId, explanation }
+// The Gemini fallback (/api/quiz-generate) returns:
+//   { question, options:["A. text","B. text",...], correctAnswer:0, explanation }
+// This normalizes the fallback format so the renderer always gets answers+correctId.
+function _compNormalizeQuestions(questions) {
+  const idLetters = ['a','b','c','d','e','f'];
+  return (questions || []).map(q => {
+    // Already in correct format
+    if (Array.isArray(q.answers) && q.answers.length && q.correctId !== undefined) return q;
+    // Fallback format: options[] + correctAnswer (0-based index)
+    if (Array.isArray(q.options) && q.options.length) {
+      const answers = q.options.map((opt, i) => ({
+        id: idLetters[i] || String(i),
+        // Strip leading "A. ", "B. " etc. if present
+        text: opt.replace(/^[A-Da-d][.)]\s*/, '').trim(),
+      }));
+      const correctIdx = typeof q.correctAnswer === 'number' ? q.correctAnswer : 0;
+      const correctId  = idLetters[correctIdx] || idLetters[0];
+      return { question: q.question, answers, correctId, explanation: q.explanation || '' };
+    }
+    // Unknown format — return as-is and let renderer skip gracefully
+    return q;
+  });
+}
+
 // ── Text quiz (called after transition slide) ─────────────────────────────
 function _compQuizRunTextQuiz(questions) {
-  _compShowCompView(questions);
+  _compShowCompView(_compNormalizeQuestions(questions));
   _compQuizRenderQuestion();
 }
 
@@ -7609,7 +8297,7 @@ function _compQuizRenderQuestion() {
     const winOv    = document.getElementById('comp-win-overlay');
     const winMsg   = document.getElementById('comp-win-message');
     const winScore = document.getElementById('comp-win-score');
-    if (winMsg)   winMsg.textContent   = '🎉 Adventure Complete!';
+    if (winMsg)   winMsg.textContent   = 'Adventure Complete!';
     if (winScore) winScore.textContent = `You answered ${score} out of ${total} correctly!`;
 
     // Theme character on win screen
@@ -7629,7 +8317,7 @@ function _compQuizRenderQuestion() {
       if (cUrl) {
         const img = document.createElement('img');
         img.src = cUrl;
-        img.style.cssText = 'width:130px;height:130px;object-fit:contain;animation:successBounce 1.2s infinite;filter:drop-shadow(0 0 16px rgba(16,185,129,0.5));';
+        img.style.cssText = 'max-width:220px;max-height:240px;width:auto;height:100%;object-fit:contain;animation:successBounce 1.2s infinite;filter:drop-shadow(0 0 16px rgba(16,185,129,0.5));background:transparent;';
         img.onerror = () => { winChar.innerHTML = '<span style="font-size:4rem">🎉</span>'; };
         winChar.appendChild(img);
       }

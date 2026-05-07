@@ -484,12 +484,11 @@
 
           <!-- Win overlay -->
           <div id="comp-win-overlay"
-            style="display:none;position:absolute;inset:0;z-index:300;background:rgba(2,6,23,0.92);flex-direction:column;align-items:center;justify-content:flex-start;gap:24px;text-align:center;padding-top:8vh;padding-left:24px;padding-right:24px;">
-            <div id="comp-win-char-box" style="width:300px;height:300px;display:flex;align-items:center;justify-content:center;"></div>
+            style="display:none;position:absolute;inset:0;z-index:300;background:rgba(2,6,23,0.92);flex-direction:column;align-items:center;justify-content:flex-start;gap:20px;text-align:center;padding-top:4vh;padding-left:24px;padding-right:24px;">
 
             <div style="font-size:3rem;font-weight:900;color:#f1f5f9;" id="comp-win-message">Adventure Complete!</div>
             <div style="font-size:1.5rem;color:#0d9488;font-weight:700;" id="comp-win-score">You answered X out of Y correctly!</div>
-            <div style="display:flex;gap:16px;margin-top:8px;">
+            <div style="display:flex;gap:16px;margin-top:4px;">
               <button onclick="window.compPlayAgain()"
                 style="padding:18px 40px;border:none;border-radius:14px;background:linear-gradient(135deg,#0d9488,#0284c7);color:#fff;font-weight:800;font-size:1.4rem;cursor:pointer;">
                 🔄 Play Again
@@ -499,6 +498,7 @@
                 🏠 Exit
               </button>
             </div>
+            <div id="comp-win-char-box" style="flex:1;min-height:0;max-height:280px;display:flex;align-items:center;justify-content:center;"></div>
           </div>
         </div>
       </div>
@@ -808,12 +808,70 @@
 
           <!-- ── Mode Toggle: Quiz / Comprehension ── -->
           <div id="qs-mode-toggle-wrap" class="flex rounded-xl overflow-hidden border border-slate-700">
-            <button id="qs-mode-quiz" class="qs-mode-btn active flex-1" onclick="window._qsModeSwitch('quiz')">🎯 Quiz</button>
+            <button id="qs-mode-quiz" class="qs-mode-btn flex-1" onclick="window._qsModeSwitch('quiz')">🎯 Quiz</button>
             <button id="qs-mode-comp" class="qs-mode-btn flex-1" onclick="window._qsModeSwitch('comp')">🎬 Comprehension</button>
           </div>
 
           <!-- ── Comprehension URL section (hidden unless comp mode) ── -->
           <div id="qs-comp-section" class="hidden space-y-3">
+
+            <!-- ── Begin Adventure (top shortcut) ── -->
+            <button id="qs-start-btn-top" onclick="window._qsStartAction()"
+              class="w-full py-4 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white font-black rounded-2xl transition-all shadow-lg shadow-violet-500/20 active:scale-95 text-base">
+              🎬 Begin Adventure
+            </button>
+
+            <!-- ── Find a Video / Find a Picture buttons ── -->
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              <div style="display:flex;gap:8px;">
+                <button id="qs-find-video-btn" onclick="window._qsFindVideo()"
+                  style="flex:1;display:flex;align-items:center;justify-content:center;gap:7px;
+                         padding:9px 12px;border-radius:0.85rem;font-size:0.8rem;font-weight:800;
+                         background:#1e293b;
+                         border:1.5px solid rgba(148,163,184,0.2);color:#94a3b8;cursor:pointer;
+                         transition:all 0.2s;"
+                  onmouseenter="this.style.background='#334155';this.style.borderColor='rgba(148,163,184,0.45)';this.style.color='#f1f5f9'"
+                  onmouseleave="this.style.background='#1e293b';this.style.borderColor='rgba(148,163,184,0.2)';this.style.color='#94a3b8'">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                  Find a Video
+                </button>
+                <button id="qs-find-picture-btn" onclick="window._qsFindPicture()"
+                  style="flex:1;display:flex;align-items:center;justify-content:center;gap:7px;
+                         padding:9px 12px;border-radius:0.85rem;font-size:0.8rem;font-weight:800;
+                         background:#1e293b;
+                         border:1.5px solid rgba(148,163,184,0.2);color:#94a3b8;cursor:pointer;
+                         transition:all 0.2s;"
+                  onmouseenter="this.style.background='#334155';this.style.borderColor='rgba(148,163,184,0.45)';this.style.color='#f1f5f9'"
+                  onmouseleave="this.style.background='#1e293b';this.style.borderColor='rgba(148,163,184,0.2)';this.style.color='#94a3b8'">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                  Find a Picture
+                </button>
+              </div>
+              <!-- Max video length row -->
+              <div id="qs-max-video-len-row" style="display:flex;align-items:center;gap:10px;padding:6px 10px;
+                   background:#1e293b;border-radius:0.75rem;border:1px solid rgba(148,163,184,0.12);">
+                <label style="font-size:0.7rem;font-weight:700;color:#94a3b8;white-space:nowrap;flex-shrink:0;">🎞 Max video length:</label>
+                <input type="range" id="qs-max-video-len-slider" min="1" max="30" step="1" value="10"
+                  style="flex:1;height:4px;accent-color:#64748b;"
+                  oninput="document.getElementById('qs-max-video-len-display').textContent=this.value+' min'">
+                <span id="qs-max-video-len-display"
+                  style="font-size:0.75rem;font-weight:900;color:#cbd5e1;width:52px;text-align:right;flex-shrink:0;">10 min</span>
+              </div>
+              <!-- Require transcript checkbox -->
+              <label id="qs-require-transcript-row"
+                style="display:flex;align-items:center;gap:8px;padding:7px 10px;
+                       background:#1e293b;border-radius:0.75rem;border:1px solid rgba(148,163,184,0.12);
+                       cursor:pointer;user-select:none;"
+                title="Only find videos that have captions — ensures questions are grounded in actual video content">
+                <input type="checkbox" id="qs-require-transcript" checked
+                  style="width:14px;height:14px;accent-color:#0d9488;flex-shrink:0;">
+                <span style="font-size:0.7rem;font-weight:700;color:#94a3b8;">Require transcript (captions)</span>
+                <span style="font-size:0.62rem;color:#475569;flex:1;text-align:right;">Better questions</span>
+              </label>
+              <!-- Status label -->
+              <div id="qs-find-status" style="display:none;border-radius:0.75rem;overflow:hidden;"></div>
+            </div>
+
             <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">🔗 YouTube or Image URL</label>
             <!-- Input row with history button -->
             <div style="position:relative;">

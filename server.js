@@ -99,6 +99,26 @@ app.post('/api/comprehension-generate', async (req, res) => {
 });
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ── YouTube Video Search proxy ────────────────────────────────────────────────
+// Forwards to the deployed Cloud Function so "Find a Video" works locally.
+const YOUTUBE_VIDEO_SEARCH_URL = 'https://us-central1-edugaze-50cdb.cloudfunctions.net/youtubeVideoSearch';
+
+app.post('/api/youtube-video-search', async (req, res) => {
+  try {
+    const response = await fetch(YOUTUBE_VIDEO_SEARCH_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body),
+    });
+    const data = await response.json().catch(() => ({}));
+    res.status(response.status).json(data);
+  } catch (err) {
+    console.error('[youtube-video-search proxy error]', err.message);
+    res.status(502).json({ error: err.message });
+  }
+});
+// ─────────────────────────────────────────────────────────────────────────────
+
 // ── Admin Action proxy ───────────────────────────────────────────────────────
 // Forwards to the deployed Cloud Function so admin features work locally.
 const ADMIN_FUNCTION_URL = 'https://adminaction-xclutmzc7a-uc.a.run.app';
