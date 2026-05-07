@@ -8067,7 +8067,7 @@ window.startComprehensionFromQuizSettings = () => {
   if (oldOv) oldOv.remove();
 
   const endParam = timeLimitSec > 0 ? `&end=${timeLimitSec}` : '';
-  const ytSrc = `https://www.youtube.com/embed/${parsed.videoId}?autoplay=1&rel=0&modestbranding=1&enablejsapi=1${endParam}`;
+  const ytSrc = `https://www.youtube.com/embed/${parsed.videoId}?autoplay=1&rel=0&modestbranding=1&enablejsapi=1&cc_load_policy=1${endParam}`;
 
   const videoOv = document.createElement('div');
   videoOv.id = 'comp-quiz-video-overlay';
@@ -8519,10 +8519,10 @@ function _compQuizRenderQuestion() {
         const ansItem = q.answers[ai];
         const card = cards[ai];
         const spanEl = card?.querySelector('span');
-        if (card) card.style.outline = '2px solid rgba(139,92,246,0.7)';
+        if (card) card.classList.add('vo-reading');
         ai++;
         quizSpeak(ansItem.text, { rate: 0.9, targetElement: spanEl || undefined, onEnd: () => {
-          if (card) card.style.outline = '';
+          if (card) card.classList.remove('vo-reading');
           readNext();
           if (ai >= q.answers.length && gen === window._cqRenderGen) {
             aElapsed = _aReadTime; onAGateDone();
@@ -8820,7 +8820,7 @@ function _compQuizSelectAnswer(ans, q, allAnswers, grid, isCorrect, gen) {
     // Clear previous wrong highlights
     Array.from(grid.children).forEach(c => {
       if (c.dataset.state === 'wrong') {
-        c.dataset.state = ''; c.style.background = '#20293a'; c.style.outline = '';
+        c.dataset.state = ''; c.style.background = '#20293a'; c.style.boxShadow = '';
         const old = c.querySelector('.wrong-cross'); if (old) old.remove();
       }
     });
@@ -8829,7 +8829,7 @@ function _compQuizSelectAnswer(ans, q, allAnswers, grid, isCorrect, gen) {
       wrongCard.dataset.state = 'wrong';
       // Red flash overlay
       wrongCard.style.background = 'rgba(239,68,68,0.35)';
-      wrongCard.style.outline = '2px solid rgba(239,68,68,0.7)';
+      wrongCard.style.boxShadow = '0 0 0 2px rgba(239,68,68,0.7)';
       const cross = document.createElement('div');
       cross.className = 'wrong-cross'; cross.style.pointerEvents = 'none';
       wrongCard.appendChild(cross);
@@ -8944,6 +8944,8 @@ function setQuizMode() {
 
   // Show settings first, let user configure before starting
   initQuizSettingsUI();
+  // Restore last active mode tab so it's highlighted immediately
+  window._qsModeSwitch(_qsCurrentMode || 'quiz');
   quizScore = 0;
   quizCurrentQ = null;
   // DO NOT clear quizAskedQuestions here — it is persisted across sessions
@@ -10647,6 +10649,52 @@ window.renderAdminReportsPanel = async () => {
   }
 };
 
+// ── Report image retry — re-fetches from Pixabay when stored URLs expire ────
+window._reportImgRetry = async function(img) {
+  if (img.dataset.retried) {
+    // Already retried once — show fallback
+    img.style.display = 'none';
+    if (img.nextElementSibling) img.nextElementSibling.style.display = 'flex';
+    return;
+  }
+  img.dataset.retried = '1';
+  const kw = img.dataset.keyword;
+  const src = img.dataset.source || '';
+  if (!kw) {
+    img.style.display = 'none';
+    if (img.nextElementSibling) img.nextElementSibling.style.display = 'flex';
+    return;
+  }
+  // Try re-fetching from the appropriate source
+  try {
+    let freshUrl = null;
+    if (src === 'pixabay' || !src) {
+      const resp = await fetch(`/api/pixabay-search?q=${encodeURIComponent(kw)}&per_page=5&image_type=photo`);
+      if (resp.ok) {
+        const data = await resp.json();
+        const hits = data?.hits || [];
+        if (hits.length > 0) freshUrl = hits[0]?.webformatURL;
+      }
+    } else if (src === 'unsplash') {
+      const resp = await fetch(`/api/unsplash-search?q=${encodeURIComponent(kw)}&per_page=3`);
+      if (resp.ok) {
+        const data = await resp.json();
+        const hits = data?.hits || [];
+        if (hits.length > 0) freshUrl = hits[0]?.webformatURL;
+      }
+    }
+    if (freshUrl) {
+      img.src = freshUrl;
+    } else {
+      img.style.display = 'none';
+      if (img.nextElementSibling) img.nextElementSibling.style.display = 'flex';
+    }
+  } catch {
+    img.style.display = 'none';
+    if (img.nextElementSibling) img.nextElementSibling.style.display = 'flex';
+  }
+};
+
 // ── Shared report modal renderer ────────────────────────────────
 function _renderReportModal(data, docId, isAdminView) {
   const modal = document.getElementById('admin-report-modal');
@@ -10762,7 +10810,7 @@ function _renderReportModal(data, docId, isAdminView) {
       if (qi.svg) {
         qiImg = `<div style="width:100%;max-height:320px;background:#070d1a;border-radius:10px;overflow:hidden;display:flex;align-items:center;justify-content:center;">${qi.svg}</div>`;
       } else if (qi.url) {
-        qiImg = `<img src="${qi.url}" style="width:100%;max-height:320px;object-fit:contain;background:#070d1a;border-radius:10px;display:block;" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" /><div style="display:none;width:100%;height:180px;background:#070d1a;border-radius:10px;align-items:center;justify-content:center;color:#334155;font-size:0.7rem;">Image unavailable</div>`;
+        qiImg = `<img src="${qi.url}" data-keyword="${(q.questionImageKeyword || '').replace(/"/g, '&quot;')}" data-source="${qiSrc}" style="width:100%;max-height:320px;object-fit:contain;background:#070d1a;border-radius:10px;display:block;" onerror="window._reportImgRetry(this)" /><div style="display:none;width:100%;height:180px;background:#070d1a;border-radius:10px;align-items:center;justify-content:center;color:#334155;font-size:0.7rem;">Image unavailable</div>`;
       } else {
         qiImg = `<div style="width:100%;height:180px;background:#070d1a;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#334155;font-size:0.75rem;">Image not saved for older report — keyword: <em style="color:#475569;margin-left:4px;">${q.questionImageKeyword || '?'}</em></div>`;
       }
@@ -10803,7 +10851,7 @@ function _renderReportModal(data, docId, isAdminView) {
         if (a.url && a.url.trim().startsWith('<svg')) {
           imgHtml = `<div style="width:100%;height:180px;background:#070d1a;border-radius:8px;overflow:hidden;display:flex;align-items:center;justify-content:center;">${a.url}</div>`;
         } else if (a.url) {
-          imgHtml = `<img src="${a.url}" style="width:100%;height:180px;object-fit:contain;background:#070d1a;border-radius:8px;display:block;" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" /><div style="display:none;width:100%;height:180px;background:#070d1a;border-radius:8px;align-items:center;justify-content:center;color:#334155;font-size:0.7rem;">Image unavailable</div>`;
+          imgHtml = `<img src="${a.url}" data-keyword="${(a.imageKeyword || '').replace(/"/g, '&quot;')}" data-source="${a.source || ''}" style="width:100%;height:180px;object-fit:contain;background:#070d1a;border-radius:8px;display:block;" onerror="window._reportImgRetry(this)" /><div style="display:none;width:100%;height:180px;background:#070d1a;border-radius:8px;align-items:center;justify-content:center;color:#334155;font-size:0.7rem;">Image unavailable</div>`;
         } else {
           imgHtml = `<div style="width:100%;height:180px;background:#070d1a;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#334155;font-size:0.7rem;">No image saved</div>`;
         }

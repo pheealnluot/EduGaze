@@ -694,20 +694,40 @@ Return ONLY valid JSON:
         // PRIMARY: use the transcript (most accurate, grounded questions).
         // FALLBACK: if no transcript, use video title/description from oEmbed to generate
         //           topic-relevant questions about the video's subject matter.
+        //
+        // CRITICAL: The proxy (server.js) pre-fetches the transcript from a residential/dev
+        // IP where YouTube doesn't block. If prefetchedTranscript is provided, use it
+        // directly instead of trying to scrape YouTube from Cloud Run (which gets blocked).
         let transcript = null;
         let videoMetaTitle = null;
         let videoMetaChannel = null;
         const allowMetadataFallback = req.body.allowMetadataFallback !== false; // default: true
+        const prefetchedTranscript = req.body.prefetchedTranscript || null;
+
         if (isVideo && videoId) {
-          const rawTranscript = await fetchYouTubeTranscript(videoId);
-          // If a time limit is set, estimate how many characters correspond to
-          // the watched portion using ~2.5 words/sec × ~5 chars/word = ~12.5 chars/sec.
-          if (rawTranscript && videoTimeLimitSec && videoTimeLimitSec > 0) {
-            const estimatedChars = Math.round(videoTimeLimitSec * 12.5);
-            transcript = rawTranscript.slice(0, estimatedChars);
-            console.log(`[comp questions] Trimmed transcript to ${transcript.length} chars for ${videoTimeLimitSec}s time limit`);
+          if (prefetchedTranscript && prefetchedTranscript.trim().length >= 50) {
+            // Use the transcript pre-fetched by the proxy server
+            console.log(`[comp questions] Using pre-fetched transcript (${prefetchedTranscript.length} chars) for ${videoId}`);
+            // If a time limit is set, trim to the watched portion
+            if (videoTimeLimitSec && videoTimeLimitSec > 0) {
+              const estimatedChars = Math.round(videoTimeLimitSec * 12.5);
+              transcript = prefetchedTranscript.slice(0, estimatedChars);
+              console.log(`[comp questions] Trimmed pre-fetched transcript to ${transcript.length} chars for ${videoTimeLimitSec}s time limit`);
+            } else {
+              transcript = prefetchedTranscript;
+            }
           } else {
-            transcript = rawTranscript;
+            // No pre-fetched transcript — try fetching ourselves (may fail on Cloud Run)
+            const rawTranscript = await fetchYouTubeTranscript(videoId);
+            // If a time limit is set, estimate how many characters correspond to
+            // the watched portion using ~2.5 words/sec × ~5 chars/word = ~12.5 chars/sec.
+            if (rawTranscript && videoTimeLimitSec && videoTimeLimitSec > 0) {
+              const estimatedChars = Math.round(videoTimeLimitSec * 12.5);
+              transcript = rawTranscript.slice(0, estimatedChars);
+              console.log(`[comp questions] Trimmed transcript to ${transcript.length} chars for ${videoTimeLimitSec}s time limit`);
+            } else {
+              transcript = rawTranscript;
+            }
           }
 
           if (!transcript || transcript.trim().length < 50) {

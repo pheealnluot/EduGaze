@@ -1078,6 +1078,17 @@ body.quiz-active .quiz-score-row {
   user-select: none !important;
 }
 
+/* Suppress iOS VoiceOver native focus ring — the JS TTS code uses .vo-reading instead */
+#comp-answers-grid > div.quiz-answer-card:focus,
+#comp-answers-grid > div.quiz-answer-card:focus-visible {
+  outline: none !important;
+}
+
+/* Purple border shown ONLY while TTS is actively reading this specific answer */
+#comp-answers-grid > div.quiz-answer-card.vo-reading {
+  box-shadow: 0 0 0 2px rgba(139,92,246,0.7) !important;
+}
+
 #comp-answers-grid > div.quiz-answer-card:not([data-answered]):hover {
   background: #364154 !important;
   transform: scale(1.02) !important;

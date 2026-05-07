@@ -32,8 +32,8 @@ app.use(express.static(path.join(__dirname, 'public'), {
    lastModified: false,
 }));
 
-// Parse JSON request bodies (needed for the Gemini proxy)
-app.use(express.json({ limit: '64kb' }));
+// Parse JSON request bodies (needed for the Gemini proxy + transcript injection)
+app.use(express.json({ limit: '1mb' }));
 
 // ── Gemini API proxy ─────────────────────────────────────────────────────────
 // The Firebase API key has API_KEY_SERVICE_BLOCKED for generativelanguage API.
@@ -81,14 +81,110 @@ app.post('/api/quiz-generate', async (req, res) => {
 
 // ── Comprehension Generate proxy ─────────────────────────────────────────────
 // Forwards to the deployed Cloud Function so Comprehension Adventure works locally.
+// CRITICAL FIX: The Cloud Function's transcript scraper fails on Cloud Run IPs
+// (YouTube bot-detection blocks server-side fetches from Google Cloud).
+// We fetch the transcript HERE on the local/dev server (where it works) and
+// inject it into the request body so the Cloud Function uses it directly.
 const COMPREHENSION_FUNCTION_URL = 'https://comprehensiongenerate-xclutmzc7a-uc.a.run.app';
+
+/**
+ * Fetch the full transcript text for a YouTube video.
+ * Reuses extractTranscriptData() for caption track discovery,
+ * then downloads and flattens the JSON3 caption segments.
+ */
+async function fetchYouTubeTranscriptLocal(videoId) {
+  const MAX_RETRIES = 3;
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const pageRes = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+          'Accept-Language': 'en-US,en;q=0.9',
+        },
+      });
+
+      if (pageRes.status === 429) {
+        const delay = attempt * 2000; // 2s, 4s, 6s
+        console.log(`[local-transcript] YouTube rate limited (429) for ${videoId}, retry ${attempt}/${MAX_RETRIES} in ${delay}ms...`);
+        await new Promise(r => setTimeout(r, delay));
+        continue;
+      }
+
+      if (!pageRes.ok) {
+        console.log(`[local-transcript] HTTP ${pageRes.status} for ${videoId}`);
+        return null;
+      }
+      const html = await pageRes.text();
+      const trackData = extractTranscriptData(html, videoId);
+      if (!trackData) {
+        console.log(`[local-transcript] No caption tracks found for ${videoId}`);
+        return null;
+      }
+
+      // Fetch captions in JSON3 format (segments with timestamps)
+      const captRes = await fetch(trackData.baseUrl + '&fmt=json3');
+      if (captRes.status === 429 && attempt < MAX_RETRIES) {
+        const delay = attempt * 2000;
+        console.log(`[local-transcript] Caption URL rate limited (429), retry ${attempt}/${MAX_RETRIES} in ${delay}ms...`);
+        await new Promise(r => setTimeout(r, delay));
+        continue;
+      }
+      if (!captRes.ok) {
+        console.log(`[local-transcript] Caption fetch failed: HTTP ${captRes.status}`);
+        return null;
+      }
+      const captData = await captRes.json();
+
+      // Flatten all segments into a plain text string
+      const events = captData?.events || [];
+      const transcript = events
+        .filter(e => e.segs)
+        .map(e => e.segs.map(s => (s.utf8 || '').replace(/\n/g, ' ')).join(''))
+        .join(' ')
+        .replace(/\[.*?\]/g, '')   // strip [Music], [Applause] etc.
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      if (transcript.length < 100) {
+        console.log(`[local-transcript] Transcript too short (${transcript.length} chars) for ${videoId}`);
+        return null;
+      }
+      console.log(`[local-transcript] ✅ Fetched ${transcript.length} chars for ${videoId} (lang: ${trackData.langCode})`);
+      return transcript;
+    } catch (err) {
+      console.warn(`[local-transcript] Attempt ${attempt} failed for ${videoId}:`, err.message);
+      if (attempt < MAX_RETRIES) {
+        await new Promise(r => setTimeout(r, attempt * 2000));
+      }
+    }
+  }
+  console.warn(`[local-transcript] All ${MAX_RETRIES} retries failed for ${videoId}`);
+  return null;
+}
 
 app.post('/api/comprehension-generate', async (req, res) => {
   try {
+    const body = { ...req.body };
+
+    // For video question generation: fetch transcript locally and inject it
+    if (body.phase === 'questions' && body.medium === 'video' && body.mediaContent?.videoId) {
+      const videoId = body.mediaContent.videoId;
+      console.log(`[comprehension-proxy] Fetching transcript locally for ${videoId}...`);
+      const transcript = await fetchYouTubeTranscriptLocal(videoId);
+      if (transcript) {
+        // Inject transcript into the request so the Cloud Function uses it directly
+        body.prefetchedTranscript = transcript;
+        console.log(`[comprehension-proxy] Injected ${transcript.length} chars of transcript into request`);
+      } else {
+        console.log(`[comprehension-proxy] No transcript available locally for ${videoId}`);
+      }
+    }
+
     const response = await fetch(COMPREHENSION_FUNCTION_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(req.body),
+      body: JSON.stringify(body),
     });
     const data = await response.json().catch(() => ({}));
     res.status(response.status).json(data);
@@ -97,6 +193,7 @@ app.post('/api/comprehension-generate', async (req, res) => {
     res.status(502).json({ error: err.message });
   }
 });
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── YouTube Video Search (local implementation) ──────────────────────────────
@@ -319,6 +416,69 @@ app.post('/api/youtube-video-search', async (req, res) => {
 
   console.error('[ytVideoSearch] No suitable video found');
   res.status(200).json({ error: 'no_video_found' });
+});
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── YouTube Video Info (duration, channel, description) ──────────────────
+// Scrapes the YouTube watch page to extract accurate video metadata.
+// Used by the preview card instead of relying on Gemini AI estimates.
+app.get('/api/youtube-video-info', async (req, res) => {
+  const videoId = req.query.v;
+  if (!videoId || !/^[A-Za-z0-9_-]{11}$/.test(videoId)) {
+    return res.status(400).json({ error: 'Invalid video ID' });
+  }
+
+  try {
+    const pageRes = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+    });
+    if (!pageRes.ok) {
+      return res.status(502).json({ error: `YouTube returned HTTP ${pageRes.status}` });
+    }
+    const html = await pageRes.text();
+
+    // Extract duration from lengthSeconds in playerMicroformatRenderer or videoDetails
+    let durationSec = 0;
+    const lenMatch = html.match(/"lengthSeconds"\s*:\s*"(\d+)"/);
+    if (lenMatch) durationSec = parseInt(lenMatch[1]);
+
+    // Extract channel name from videoDetails or microformat
+    let channelName = '';
+    const channelMatch = html.match(/"ownerChannelName"\s*:\s*"([^"]+)"/);
+    if (channelMatch) channelName = channelMatch[1];
+    if (!channelName) {
+      const authorMatch = html.match(/"author"\s*:\s*"([^"]+)"/);
+      if (authorMatch) channelName = authorMatch[1];
+    }
+
+    // Extract short description
+    let description = '';
+    const descMatch = html.match(/"shortDescription"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+    if (descMatch) {
+      description = descMatch[1]
+        .replace(/\\n/g, ' ')
+        .replace(/\\"/g, '"')
+        .replace(/\\\\/g, '\\')
+        .slice(0, 300)
+        .trim();
+    }
+
+    // Extract title
+    let title = '';
+    const titleMatch = html.match(/"title"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+    if (titleMatch) {
+      title = titleMatch[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+    }
+
+    console.log(`[ytVideoInfo] ${videoId}: ${durationSec}s, channel="${channelName}"`);
+    res.json({ videoId, durationSec, channelName, description, title });
+  } catch (err) {
+    console.error('[ytVideoInfo] Error:', err.message);
+    res.status(502).json({ error: err.message });
+  }
 });
 // ─────────────────────────────────────────────────────────────────────────────
 
