@@ -7322,29 +7322,29 @@ window._qsCompUrlCheck = (val) => {
   }
 
   if (isYt) {
-    // Column layout: top row = thumbnail + info badges; bottom row = description
+    // Column layout: top row = large thumbnail + info; bottom row = description
     const thumbUrl = `https://img.youtube.com/vi/${parsed.videoId}/mqdefault.jpg`;
     preview.style.flexDirection = 'column';
     preview.innerHTML = `
-      <div style="display:flex;flex-direction:row;align-items:stretch;">
-        <div id="qs-comp-preview-thumb" style="flex-shrink:0;width:130px;min-height:73px;background:#0f172a;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;border-radius:10px 0 0 0;">
+      <div style="display:flex;flex-direction:row;align-items:stretch;min-height:146px;">
+        <div id="qs-comp-preview-thumb" style="flex-shrink:0;width:260px;min-height:146px;background:#0f172a;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;border-radius:10px 0 0 0;">
           <img src="${thumbUrl}" alt="Thumbnail"
             style="width:100%;height:100%;object-fit:cover;display:block;"
             onerror="this.style.display='none'">
           <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
-            background:rgba(239,68,68,0.85);border-radius:50%;width:28px;height:28px;
+            background:rgba(239,68,68,0.85);border-radius:50%;width:36px;height:36px;
             display:flex;align-items:center;justify-content:center;pointer-events:none;">
-            <svg width='12' height='12' viewBox='0 0 24 24' fill='white'><polygon points='5,3 19,12 5,21'/></svg>
+            <svg width='14' height='14' viewBox='0 0 24 24' fill='white'><polygon points='5,3 19,12 5,21'/></svg>
           </div>
         </div>
-        <div style="flex:1;padding:10px 12px;display:flex;flex-direction:column;justify-content:center;gap:5px;min-width:0;">
-          <div id="qs-comp-preview-title" style="font-size:0.82rem;font-weight:700;color:#e2e8f0;line-height:1.3;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">Loading title…</div>
-          <div id="qs-comp-preview-meta" style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;">
+        <div style="flex:1;padding:14px 16px;display:flex;flex-direction:column;justify-content:center;gap:8px;min-width:0;">
+          <div id="qs-comp-preview-title" style="font-size:0.92rem;font-weight:700;color:#e2e8f0;line-height:1.35;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">Loading title…</div>
+          <div id="qs-comp-preview-meta" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
             <span style="font-size:0.62rem;color:#64748b;">youtube.com/watch?v=${parsed.videoId}</span>
           </div>
         </div>
       </div>
-      <div id="qs-comp-preview-desc" style="display:none;padding:7px 12px 9px;font-size:0.7rem;color:#94a3b8;line-height:1.55;border-top:1px solid rgba(148,163,184,0.08);"></div>`;
+      <div id="qs-comp-preview-desc" style="display:none;padding:10px 16px 12px;font-size:0.75rem;color:#94a3b8;line-height:1.6;border-top:1px solid rgba(148,163,184,0.1);overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;"></div>`;
     preview.style.display = 'flex';
 
     // Re-query after rebuild
@@ -7352,60 +7352,54 @@ window._qsCompUrlCheck = (val) => {
     const newMeta  = document.getElementById('qs-comp-preview-meta');
     const newDesc  = document.getElementById('qs-comp-preview-desc');
 
-    // Fetch title via oEmbed, then enrich preview with duration + description
+    const buildMeta = (channel, dur) => [
+      channel ? `<span style="background:#0f172a;border-radius:4px;padding:2px 8px;font-size:0.68rem;font-weight:700;color:#94a3b8;">▶ ${channel}</span>` : '',
+      dur     ? `<span style="background:#0f172a;border-radius:4px;padding:2px 8px;font-size:0.68rem;font-weight:700;color:#94a3b8;">⏱ ${dur}</span>` : '',
+    ].filter(Boolean).join('');
+
+    // Fetch title via oEmbed (fast, lightweight)
     const oEmbedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent('https://www.youtube.com/watch?v=' + parsed.videoId)}&format=json`;
     fetch(oEmbedUrl)
       .then(r => r.ok ? r.json() : null)
-      .then(async data => {
-        if (abortId !== _qsPreviewAbort) return; // stale
+      .then(data => {
+        if (abortId !== _qsPreviewAbort) return;
         const realTitle   = data?.title       || `Video ID: ${parsed.videoId}`;
         const realChannel = data?.author_name || '';
         if (newTitle) newTitle.textContent = realTitle;
-
-        // Build meta badges immediately with what we have
-        const cached = window._qsVideoMetaCache?.[parsed.videoId];
-        const cachedDur = cached?.durationSec ? _qsFmtDuration(cached.durationSec) : '';
-        const buildMeta = (dur) => [
-          realChannel ? `<span style="background:#0f172a;border-radius:4px;padding:2px 6px;font-size:0.62rem;font-weight:700;color:#64748b;">▶ ${realChannel}</span>` : '',
-          dur         ? `<span style="background:#0f172a;border-radius:4px;padding:2px 6px;font-size:0.62rem;font-weight:700;color:#64748b;">⏱ ${dur}</span>` : '',
-        ].filter(Boolean).join('');
-        if (newMeta) newMeta.innerHTML = buildMeta(cachedDur);
-
-        // Async Gemini enrichment: duration estimate + description (grounded in real title)
-        if (abortId !== _qsPreviewAbort) return;
-        const descPrompt = `For the YouTube video titled "${realTitle}"${realChannel ? ` by "${realChannel}"` : ''}, provide:
-1. The approximate video duration in minutes as an integer
-2. One sentence describing what the video is about and what viewers learn
-
-Respond with ONLY this JSON (no markdown):
-{"durationMin":5,"description":"Short sentence here."}`;
-
-        try {
-          const gResp = await fetch('/api/quiz-generate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: descPrompt }] }],
-              generationConfig: { temperature: 0.3, maxOutputTokens: 128, responseMimeType: 'application/json' },
-            }),
-          });
-          if (!gResp.ok || abortId !== _qsPreviewAbort) return;
-          const gData = await gResp.json();
-          const gRaw  = gData?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-          const gJson = JSON.parse(gRaw.replace(/```[a-z]*\n?/gi, '').trim());
-          if (abortId !== _qsPreviewAbort) return;
-
-          const gDurStr = (!cachedDur && gJson.durationMin) ? `${Math.round(gJson.durationMin)} min` : cachedDur;
-          const gDesc   = (gJson.description || '').trim();
-
-          if (newMeta) newMeta.innerHTML = buildMeta(gDurStr);
-          if (newDesc && gDesc) { newDesc.textContent = gDesc; newDesc.style.display = 'block'; }
-        } catch { /* silent — description is best-effort */ }
+        if (newMeta) newMeta.innerHTML = buildMeta(realChannel, '');
       })
       .catch(() => {
         if (abortId !== _qsPreviewAbort) return;
         if (newTitle) newTitle.textContent = `YouTube — ID: ${parsed.videoId}`;
       });
+
+    // Fetch accurate duration + channel from server-side scraper
+    fetch(`/api/youtube-video-info?v=${parsed.videoId}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(info => {
+        if (!info || abortId !== _qsPreviewAbort) return;
+        const channel = info.channelName || '';
+        const durSec  = info.durationSec || 0;
+        const durStr  = durSec > 0 ? _qsFmtDuration(durSec) : '';
+        const desc    = (info.description || '').trim();
+        const title   = info.title || '';
+
+        // Update title if oEmbed hasn't set it yet or was empty
+        if (title && newTitle && newTitle.textContent === 'Loading title…') {
+          newTitle.textContent = title;
+        }
+
+        if (newMeta) newMeta.innerHTML = buildMeta(channel, durStr);
+        if (newDesc && desc) {
+          newDesc.textContent = desc;
+          newDesc.style.display = '-webkit-box';
+        }
+
+        // Cache for later use
+        if (!window._qsVideoMetaCache) window._qsVideoMetaCache = {};
+        window._qsVideoMetaCache[parsed.videoId] = { durationSec: durSec, channelName: channel };
+      })
+      .catch(() => { /* silent — duration is best-effort */ });
 
   } else {
     // Image URL — render the image as its own full-width preview

@@ -95,6 +95,10 @@ const COMPREHENSION_FUNCTION_URL = 'https://comprehensiongenerate-xclutmzc7a-uc.
 async function fetchYouTubeTranscriptLocal(videoId) {
   const MAX_RETRIES = 3;
 
+  // Initial cooldown — the video search pipeline may have hit YouTube's watch
+  // page recently, which can trigger rate limiting on subsequent requests.
+  await new Promise(r => setTimeout(r, 3000));
+
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       const pageRes = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
@@ -105,7 +109,7 @@ async function fetchYouTubeTranscriptLocal(videoId) {
       });
 
       if (pageRes.status === 429) {
-        const delay = attempt * 2000; // 2s, 4s, 6s
+        const delay = attempt * 3000; // 3s, 6s, 9s
         console.log(`[local-transcript] YouTube rate limited (429) for ${videoId}, retry ${attempt}/${MAX_RETRIES} in ${delay}ms...`);
         await new Promise(r => setTimeout(r, delay));
         continue;
@@ -125,7 +129,7 @@ async function fetchYouTubeTranscriptLocal(videoId) {
       // Fetch captions in JSON3 format (segments with timestamps)
       const captRes = await fetch(trackData.baseUrl + '&fmt=json3');
       if (captRes.status === 429 && attempt < MAX_RETRIES) {
-        const delay = attempt * 2000;
+        const delay = attempt * 3000;
         console.log(`[local-transcript] Caption URL rate limited (429), retry ${attempt}/${MAX_RETRIES} in ${delay}ms...`);
         await new Promise(r => setTimeout(r, delay));
         continue;
@@ -155,7 +159,7 @@ async function fetchYouTubeTranscriptLocal(videoId) {
     } catch (err) {
       console.warn(`[local-transcript] Attempt ${attempt} failed for ${videoId}:`, err.message);
       if (attempt < MAX_RETRIES) {
-        await new Promise(r => setTimeout(r, attempt * 2000));
+        await new Promise(r => setTimeout(r, attempt * 3000));
       }
     }
   }
@@ -167,20 +171,77 @@ app.post('/api/comprehension-generate', async (req, res) => {
   try {
     const body = { ...req.body };
 
-    // For video question generation: fetch transcript locally and inject it
-    if (body.phase === 'questions' && body.medium === 'video' && body.mediaContent?.videoId) {
+    // For video question generation: fetch transcript locally and generate questions
+    // directly using the local Gemini API key — bypasses Cloud Run's YouTube blocking
+    if (body.phase === 'questions' && body.medium === 'video' && body.mediaContent?.videoId && GEMINI_API_KEY) {
       const videoId = body.mediaContent.videoId;
-      console.log(`[comprehension-proxy] Fetching transcript locally for ${videoId}...`);
-      const transcript = await fetchYouTubeTranscriptLocal(videoId);
-      if (transcript) {
-        // Inject transcript into the request so the Cloud Function uses it directly
-        body.prefetchedTranscript = transcript;
-        console.log(`[comprehension-proxy] Injected ${transcript.length} chars of transcript into request`);
+      const { educationLevel = 'P2', numQuestions = 5, videoTimeLimitSec = null } = body;
+      console.log(`[comprehension-local] Fetching transcript locally for ${videoId}...`);
+      const rawTranscript = await fetchYouTubeTranscriptLocal(videoId);
+
+      if (rawTranscript) {
+        // Trim to watched portion if time limit is set
+        let transcript = rawTranscript;
+        if (videoTimeLimitSec && videoTimeLimitSec > 0) {
+          const estimatedChars = Math.round(videoTimeLimitSec * 12.5);
+          transcript = rawTranscript.slice(0, estimatedChars);
+          console.log(`[comprehension-local] Trimmed transcript to ${transcript.length} chars for ${videoTimeLimitSec}s limit`);
+        }
+
+        // Build transcript-grounded prompt (mirrors the Cloud Function's PATH A prompt)
+        const transcriptPrompt =
+          `You are an expert educational content creator for ${educationLevel} students.\n\n` +
+          (videoTimeLimitSec && videoTimeLimitSec > 0
+            ? `The student watched ONLY the first ${videoTimeLimitSec} seconds of this video. Questions must relate to that portion only.\n\n`
+            : '') +
+          `Below is the transcript of the YouTube video (video ID: ${videoId}). ` +
+          `Read it carefully — every question MUST be based ONLY on what is stated in this transcript.\n\n` +
+          `TRANSCRIPT:\n"""\n${transcript.slice(0, 10000)}\n"""\n\n` +
+          `Generate exactly ${numQuestions} multiple-choice comprehension questions that test understanding of the content in the transcript above.\n\n` +
+          `Strict rules:\n` +
+          `1. Every question must be directly and uniquely answerable from the transcript text — not from general knowledge\n` +
+          `2. Include a mix of: recall ("What was said about..."), inference ("Why did..."), sequence ("What happened after..."), vocabulary\n` +
+          `3. Each question has exactly 4 answer options (A, B, C, D)\n` +
+          `4. Only ONE answer is correct; distractors must be plausible to someone who skimmed the text\n` +
+          `5. The "explanation" must quote or paraphrase the specific transcript line that proves the answer\n` +
+          `6. Language and cognitive complexity appropriate for: ${educationLevel}\n` +
+          `7. Answer text must be in English only — no Chinese characters, no symbols\n` +
+          `8. No meta-questions ("What is the title?") — ask about the CONTENT\n\n` +
+          `Return ONLY valid JSON:\n` +
+          `{ "questions": [{ "question": "?", "answers": [{"id":"a","text":""},{"id":"b","text":""},{"id":"c","text":""},{"id":"d","text":""}], "correctId": "a", "explanation": "" }] }`;
+
+        console.log(`[comprehension-local] Generating questions from ${transcript.length} chars of transcript...`);
+        const geminiResp = await fetch(GEMINI_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: AbortSignal.timeout(55000),
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: transcriptPrompt }] }],
+            generationConfig: {
+              thinkingConfig: { thinkingBudget: 0 },
+              maxOutputTokens: 4096,
+            },
+          }),
+        });
+
+        const geminiData = await geminiResp.json();
+        const rawText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+
+        if (jsonMatch) {
+          const qData = JSON.parse(jsonMatch[0]);
+          if (qData?.questions?.length) {
+            console.log(`[comprehension-local] ✅ Generated ${qData.questions.length} transcript-grounded questions for ${videoId}`);
+            return res.status(200).json(qData);
+          }
+        }
+        console.warn(`[comprehension-local] Gemini returned no valid questions — falling back to Cloud Function`);
       } else {
-        console.log(`[comprehension-proxy] No transcript available locally for ${videoId}`);
+        console.log(`[comprehension-local] No transcript available — forwarding to Cloud Function`);
       }
     }
 
+    // Fallback: proxy to Cloud Function for non-video requests, image analysis, etc.
     const response = await fetch(COMPREHENSION_FUNCTION_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
