@@ -237,7 +237,132 @@ app.post('/api/comprehension-generate', async (req, res) => {
         }
         console.warn(`[comprehension-local] Gemini returned no valid questions — falling back to Cloud Function`);
       } else {
-        console.log(`[comprehension-local] No transcript available — forwarding to Cloud Function`);
+        // No transcript — handle metadata fallback locally instead of forwarding
+        // to Cloud Function (which also can't fetch transcripts from Cloud Run IPs).
+        console.log(`[comprehension-local] No transcript available for ${videoId}`);
+
+        const allowMetadataFallback = body.allowMetadataFallback !== false;
+        if (!allowMetadataFallback) {
+          console.warn(`[comprehension-local] allowMetadataFallback=false — returning no_transcript error`);
+          return res.status(200).json({
+            error: 'no_transcript',
+            videoId,
+            message: 'This video does not have captions. Please try a different video that has captions enabled.',
+          });
+        }
+
+        // Fetch metadata directly from YouTube (avoid self-referencing localhost)
+        let metaTitle = '', metaChannel = '', metaDesc = '';
+        try {
+          // oEmbed for title/channel (lightweight, reliable)
+          const oResp = await fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`);
+          if (oResp.ok) {
+            const oData = await oResp.json();
+            metaTitle   = oData.title || '';
+            metaChannel = oData.author_name || '';
+          }
+        } catch {}
+
+        // Fetch full description from watch page
+        try {
+          const pageRes = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+              'Accept-Language': 'en-US,en;q=0.9',
+            },
+          });
+          if (pageRes.ok) {
+            const html = await pageRes.text();
+            // Extract description
+            const descMatch = html.match(/"shortDescription"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+            if (descMatch) {
+              metaDesc = descMatch[1]
+                .replace(/\\n/g, ' ').replace(/\\"/g, '"').replace(/\\\\/g, '\\')
+                .slice(0, 500).trim();
+            }
+            // Fallback title from watch page if oEmbed failed
+            if (!metaTitle) {
+              const titleMatch = html.match(/"title"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+              if (titleMatch) metaTitle = titleMatch[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+            }
+            if (!metaChannel) {
+              const channelMatch = html.match(/"ownerChannelName"\s*:\s*"([^"]+)"/);
+              if (channelMatch) metaChannel = channelMatch[1];
+            }
+          }
+        } catch (e) {
+          console.warn(`[comprehension-local] Watch page metadata fetch failed:`, e.message);
+        }
+
+        if (!metaTitle) {
+          console.warn(`[comprehension-local] Could not even fetch video metadata — returning error`);
+          return res.status(200).json({
+            error: 'no_transcript',
+            videoId,
+            message: 'Could not access video captions or metadata.',
+          });
+        }
+
+        console.log(`[comprehension-local] Generating questions from metadata — title: "${metaTitle}", desc: ${metaDesc.length} chars`);
+
+        // Build a metadata-grounded prompt that uses ALL available info (title + description + channel)
+        // This is much better than the Cloud Function's fallback which only uses the title.
+        const metadataPrompt =
+          `You are an expert educational content creator for ${educationLevel} students.\n\n` +
+          `A student just watched a YouTube video. Here is everything we know about it:\n` +
+          `- Title: "${metaTitle}"\n` +
+          (metaChannel ? `- Channel: "${metaChannel}"\n` : '') +
+          (metaDesc ? `- Description: "${metaDesc}"\n` : '') +
+          `\n` +
+          (videoTimeLimitSec && videoTimeLimitSec > 0
+            ? `The student watched only the first ${videoTimeLimitSec} seconds.\n\n`
+            : '') +
+          `Based on the video's title${metaDesc ? ' and description' : ''}, determine the SPECIFIC educational topic. ` +
+          `Then generate exactly ${numQuestions} multiple-choice comprehension questions that:\n` +
+          `- Test understanding of SPECIFIC facts, concepts, and details that would be covered in a video with this title and description\n` +
+          `- Are phrased as "In the video, ..." or "According to the video, ..." to make clear they reference watched content\n` +
+          `- Ask about concrete details (names, numbers, processes, cause-and-effect) rather than vague generalities\n\n` +
+          `Strict rules:\n` +
+          `1. Extract the educational topic from the title and description — do NOT generate generic questions\n` +
+          `2. Questions must be specific enough that only someone who watched the video could confidently answer\n` +
+          `3. Each question has exactly 4 answer options (A, B, C, D)\n` +
+          `4. Only ONE answer is correct; distractors must be plausible but clearly wrong\n` +
+          `5. The "explanation" must explain why the correct answer fits the video's topic\n` +
+          `6. Language and cognitive complexity appropriate for: ${educationLevel}\n` +
+          `7. Answer text must be in English only — no Chinese characters, no symbols\n` +
+          `8. No meta-questions ("What is the title?") — ask about the CONTENT of the topic\n\n` +
+          `Return ONLY valid JSON:\n` +
+          `{ "questions": [{ "question": "?", "answers": [{"id":"a","text":""},{"id":"b","text":""},{"id":"c","text":""},{"id":"d","text":""}], "correctId": "a", "explanation": "" }] }`;
+
+        const geminiResp = await fetch(GEMINI_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: AbortSignal.timeout(55000),
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: metadataPrompt }] }],
+            generationConfig: {
+              thinkingConfig: { thinkingBudget: 0 },
+              maxOutputTokens: 4096,
+            },
+          }),
+        });
+
+        const geminiData = await geminiResp.json();
+        const rawText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const qData = JSON.parse(jsonMatch[0]);
+          if (qData?.questions?.length) {
+            console.log(`[comprehension-local] ✅ Generated ${qData.questions.length} metadata-based questions for ${videoId}`);
+            return res.status(200).json(qData);
+          }
+        }
+        console.warn(`[comprehension-local] Metadata-based generation failed — returning error`);
+        return res.status(200).json({
+          error: 'generation_failed',
+          videoId,
+          message: 'Could not generate questions from video metadata.',
+        });
       }
     }
 
@@ -338,10 +463,27 @@ async function checkVideoCaptions(videoId) {
 /**
  * Search YouTube using the public search page (no API key needed).
  * Returns array of {videoId} objects.
+ * @param {string} query - Search terms
+ * @param {number} maxResults - Max number of video IDs to return
+ * @param {number} maxDurationMin - Max video duration in minutes (used to pick duration filter bucket)
  */
-async function searchYouTubePublic(query, maxResults = 10) {
+async function searchYouTubePublic(query, maxResults = 10, maxDurationMin = 0) {
   try {
-    const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}&sp=EgIQAQ%3D%3D`;
+    // YouTube search page `sp` param encodes filters.
+    // EgIQAQ== → type=video (base)
+    // Duration buckets (combined with type=video):
+    //   short (<4 min):  EgIYAQ== → combined with type=video: EgQQARgB
+    //   medium (4-20):   EgIYAw== → combined: EgQQARgD
+    //   long (>20):      EgIYAg== → combined: EgQQARgC
+    let sp = 'EgIQAQ%3D%3D'; // default: type=video only
+    if (maxDurationMin > 0 && maxDurationMin <= 4) {
+      sp = 'EgQQARgB'; // type=video + short (<4 min)
+    } else if (maxDurationMin > 4 && maxDurationMin <= 20) {
+      sp = 'EgQQARgD'; // type=video + medium (4-20 min)
+    }
+    // For maxDurationMin > 20 or 0 (no limit), don't restrict duration bucket
+
+    const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}&sp=${sp}`;
     const resp = await fetch(url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
@@ -368,17 +510,42 @@ async function searchYouTubePublic(query, maxResults = 10) {
   }
 }
 
+/**
+ * Fetch the actual duration (in seconds) of a YouTube video from its watch page.
+ * Returns the duration in seconds, or 0 if it could not be determined.
+ */
+async function fetchVideoDurationSec(videoId) {
+  try {
+    const pageRes = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+    });
+    if (!pageRes.ok) return 0;
+    const html = await pageRes.text();
+    const lenMatch = html.match(/"lengthSeconds"\s*:\s*"(\d+)"/);
+    return lenMatch ? parseInt(lenMatch[1]) : 0;
+  } catch {
+    return 0;
+  }
+}
+
 app.post('/api/youtube-video-search', async (req, res) => {
   if (!GEMINI_API_KEY) {
     return res.status(503).json({ error: 'GEMINI_API_KEY not configured' });
   }
 
-  const { educationLevel = 'P2', subject = null,
+  const { educationLevel = 'P2', subject = null, maxDurationMin = 0,
           exclude = [], requireCaption = false } = req.body;
 
-  console.log(`[ytVideoSearch] Starting (requireCaption=${requireCaption}, subject=${subject || 'any'})`);
+  const maxDurSec = maxDurationMin > 0 ? maxDurationMin * 60 : 0;
+  console.log(`[ytVideoSearch] Starting (requireCaption=${requireCaption}, maxDurationMin=${maxDurationMin}, subject=${subject || 'any'})`);
 
   // Step 1: Ask Gemini for search queries
+  const durationGuidance = maxDurationMin > 0
+    ? `Videos should be ${maxDurationMin} minutes or shorter. Prefer short-form content.\n`
+    : '';
   const captionGuidance = requireCaption
     ? `IMPORTANT: Bias queries toward channels that ALWAYS have captions:\n` +
       `TED-Ed, National Geographic Kids, BBC Earth, SciShow Kids, Kurzgesagt, Khan Academy, Crash Course Kids.\n` +
@@ -390,6 +557,7 @@ app.post('/api/youtube-video-search', async (req, res) => {
     `You are an educational content curator for ${educationLevel} students.\n` +
     `Generate 5 different YouTube search queries for great educational videos${subjectNote}.\n` +
     `Suitable for children, interesting topics.\n` +
+    `${durationGuidance}` +
     `${captionGuidance}` +
     `Each query: 3-6 words, specific.\n` +
     `Return ONLY valid JSON:\n{"queries":["q1","q2","q3","q4","q5"]}`;
@@ -426,12 +594,12 @@ app.post('/api/youtube-video-search', async (req, res) => {
   console.log(`[ytVideoSearch] Queries:`, queries);
 
   const excludeSet = new Set(exclude);
-  // CRITICAL: Only check 2 candidates per query to avoid YouTube rate limiting (429).
-  // Each check = 1 watch page fetch + 1 caption URL fetch = 2 HTTP requests.
-  const MAX_CHECKS_PER_QUERY = 2;
+  // CRITICAL: Only check 3 candidates per query to avoid YouTube rate limiting (429).
+  // Increased from 2 to 3 to give duration filtering more chances to find a match.
+  const MAX_CHECKS_PER_QUERY = 3;
 
   for (const query of queries) {
-    const results = await searchYouTubePublic(query, 8);
+    const results = await searchYouTubePublic(query, 10, maxDurationMin);
     console.log(`[ytVideoSearch] "${query}" => ${results.length} results`);
 
     let checksThisQuery = 0;
@@ -446,6 +614,24 @@ app.post('/api/youtube-video-search', async (req, res) => {
         );
         if (!oResp.ok) continue;
         const oData = await oResp.json();
+
+        // ── Duration enforcement ─────────────────────────────────────────
+        // YouTube's coarse duration buckets (short/medium/long) are unreliable
+        // — a "short" bucket can still return 3:59 when user wants ≤3:00.
+        // Fetch the exact duration and reject if it exceeds the user's max.
+        if (maxDurSec > 0) {
+          checksThisQuery++;
+          await new Promise(r => setTimeout(r, 800));
+          const actualDur = await fetchVideoDurationSec(item.videoId);
+          if (actualDur > 0 && actualDur > maxDurSec) {
+            const durMin = Math.round(actualDur / 60 * 10) / 10;
+            console.log(`[ytVideoSearch] ${item.videoId} too long (${durMin}min > ${maxDurationMin}min max) — skipping`);
+            continue;
+          }
+          if (actualDur > 0) {
+            console.log(`[ytVideoSearch] ${item.videoId} duration OK: ${Math.round(actualDur/60*10)/10}min ≤ ${maxDurationMin}min`);
+          }
+        }
 
         if (requireCaption) {
           checksThisQuery++;
