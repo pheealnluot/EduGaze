@@ -578,6 +578,7 @@ async function logUserActivity(type, detail, metadata = {}) {
 
 async function handleAuthStateChanged(u) {
   user = u;
+  window.currentUser = u; // expose for cross-module access (e.g. spot-char-persist.js)
   if (user) {
     // Hide overlay INSTANTLY and DEFINITIVELY
     loginOverlay.classList.add('hidden', 'opacity-0', 'pointer-events-none');
@@ -910,9 +911,14 @@ function setLandingMode() {
     viewComp.style.display = 'none'; // Force hide
     viewComp.style.cssText = 'display:none;'; 
   }
+  const viewSpotChar = document.getElementById('view-spot-char');
+  if (viewSpotChar) viewSpotChar.style.display = 'none';
   // Also close the fixed comprehension settings overlay if open
   const compSettingsOv = document.getElementById('comp-settings-overlay');
   if (compSettingsOv) compSettingsOv.style.display = 'none';
+  // Restore global header (may have been hidden by spot-char or other fullscreen modes)
+  const _hdr = document.getElementById('global-header');
+  if (_hdr) _hdr.style.display = '';
   restoreHeaderFromQuizMode();
   btnEducation.classList.replace('bg-blue-600', 'bg-slate-800');
   btnEdit.classList.replace('bg-blue-600', 'bg-slate-800');
@@ -981,6 +987,29 @@ function setMathGameMode() {
   categoryTabs.classList.add('hidden');
   stopQuizMusic();
   initMathGame();
+}
+
+function setSpotCharMode() {
+  mode = 'spot-char';
+  isEditMode = false;
+  document.body.classList.remove('quiz-active', 'education-active');
+  viewLanding.classList.add('hidden');
+  viewEducation.classList.add('hidden');
+  viewEdit.classList.add('hidden');
+  viewMathGame.classList.add('hidden');
+  viewPeppaGame.classList.add('hidden');
+  if (viewQuiz) viewQuiz.classList.add('hidden');
+  const viewComp = document.getElementById('view-comprehension');
+  if (viewComp) { viewComp.classList.add('hidden'); viewComp.style.display = 'none'; }
+  const viewSpotChar = document.getElementById('view-spot-char');
+  if (viewSpotChar) viewSpotChar.style.display = 'flex';
+  // Hide global header — spot-char is a fullscreen game
+  const hdr = document.getElementById('global-header');
+  if (hdr) hdr.style.display = 'none';
+  categoryTabs.classList.add('hidden');
+  stopQuizMusic();
+  // Initialise game UI
+  if (window.initSpotChar) window.initSpotChar();
 }
 
 let mathScore = 0;
@@ -1834,6 +1863,7 @@ function setMode(newMode) {
   else if (mode === 'admin') setAdminMode();
   else if (mode === 'my-reports') setMyReportsMode();
   else if (mode === 'comprehension') { if (window.setComprehensionMode) window.setComprehensionMode(); }
+  else if (mode === 'spot-char') setSpotCharMode();
 }
 window.setMode = setMode;
 
@@ -7411,6 +7441,9 @@ window._qsCompUrlCheck = (val) => {
         const realChannel = data?.author_name || '';
         if (newTitle) newTitle.textContent = realTitle;
         if (newMeta) newMeta.innerHTML = buildMeta(realChannel, '');
+        // Cache title for report saving
+        if (!window._qsCompUrlMeta) window._qsCompUrlMeta = {};
+        window._qsCompUrlMeta[parsed.videoId] = { ...(window._qsCompUrlMeta[parsed.videoId] || {}), title: realTitle };
       })
       .catch(() => {
         if (abortId !== _qsPreviewAbort) return;
@@ -7439,7 +7472,16 @@ window._qsCompUrlCheck = (val) => {
           newDesc.style.display = '-webkit-box';
         }
 
-        // Cache for later use
+        // Cache title + description for report saving
+        if (!window._qsCompUrlMeta) window._qsCompUrlMeta = {};
+        const existing = window._qsCompUrlMeta[parsed.videoId] || {};
+        window._qsCompUrlMeta[parsed.videoId] = {
+          ...existing,
+          title:       title || existing.title || '',
+          description: desc  || '',
+        };
+
+        // Also cache duration for reference
         if (!window._qsVideoMetaCache) window._qsVideoMetaCache = {};
         window._qsVideoMetaCache[parsed.videoId] = { durationSec: durSec, channelName: channel };
       })
@@ -8223,12 +8265,16 @@ function _compShowCompView(questions) {
     startedAt: new Date().toISOString(),
     quizSettings: (typeof quizSettings !== 'undefined') ? JSON.parse(JSON.stringify(quizSettings)) : {},
     sessionType: 'comprehension',
-    media: _media ? {
-      type:    _media.type    || null,
-      videoId: _media.videoId || null,
-      url:     _media.url     || null,
-      title:   _media.title   || null,
-    } : null,
+    media: _media ? (() => {
+      const meta = (window._qsCompUrlMeta || {})[_media.videoId] || {};
+      return {
+        type:        _media.type    || null,
+        videoId:     _media.videoId || null,
+        url:         _media.url     || null,
+        title:       meta.title       || _media.title       || null,
+        description: meta.description || _media.description || null,
+      };
+    })() : null,
     questions: questions.map(q => ({
       question:         q.question || '',
       answers:          (q.answers || []).map(a => ({ id: a.id, text: a.text || '' })),

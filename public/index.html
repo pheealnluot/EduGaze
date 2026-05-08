@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="css/totoro.css">
   <link rel="stylesheet" href="css/turning-red.css">
   <link rel="stylesheet" href="css/zootopia.css">
+  <link rel="stylesheet" href="css/spot-char.css">
   <style>
     @keyframes compLoadPulse {
       0%   { transform: translateX(-100%); }
@@ -134,6 +135,21 @@
           </div>
           <h3>Math Game</h3>
           <p>Challenge your brain with exciting math puzzles and quick calculations.</p>
+        </div>
+
+        <!-- Spot the Character Card -->
+        <div onclick="setMode('spot-char')" class="hub-card group"
+          style="--tw-gradient-from: #06b6d4; --tw-gradient-to: #8b5cf6;">
+          <div class="icon-box text-cyan-400 group-hover:text-white">
+            <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            </svg>
+          </div>
+          <h3>Spot the Character</h3>
+          <p>Find the hidden character in a busy AI-generated scene — train your eyes!</p>
         </div>
 
         <!-- My Reports Card (hidden for guests, handled in JS) -->
@@ -572,6 +588,146 @@
 
     </div>
     <!-- END COMPREHENSION ADVENTURE VIEW -->
+
+    <!-- ══════════════════════════════════════════════════════════ -->
+    <!-- SPOT THE CHARACTER VIEW                                  -->
+    <!-- ══════════════════════════════════════════════════════════ -->
+    <div id="view-spot-char" style="display:none;">
+
+      <!-- Settings Panel -->
+      <div id="stc-settings-view" class="w-full flex flex-col items-center" style="display:flex;">
+        <div class="stc-settings-card">
+          <h2 class="stc-game-title">🔍 Spot the Character</h2>
+          <p class="stc-game-subtitle">AI-powered hidden character game for sharp eyes!</p>
+
+          <!-- Number of Characters to Find (NEW — at top) -->
+          <div class="stc-field-group">
+            <label class="stc-field-label">Number of Characters to Find</label>
+            <div class="stc-slider-row">
+              <input type="range" id="stc-find-slider" class="stc-slider"
+                min="1" max="5" step="1" value="1" style="--pct:0%">
+              <div class="stc-slider-value" id="stc-find-value">1</div>
+            </div>
+            <div class="stc-slider-labels">
+              <span>1 (Easy)</span>
+              <span>3</span>
+              <span>5 (Hard)</span>
+            </div>
+          </div>
+
+          <!-- Theme of characters to find -->
+          <div class="stc-field-group">
+            <label class="stc-field-label" for="stc-char-input">Theme of Characters to Find</label>
+            <div class="stc-input-row">
+              <div class="stc-dropdown-wrap" style="flex:1;position:relative;">
+                <input type="text" id="stc-char-input" class="stc-text-input"
+                  placeholder="e.g. Peppa Pig, SpongeBob, Pokémon…"
+                  autocomplete="off" spellcheck="false">
+                <div id="stc-char-dropdown" class="stc-history-dropdown"></div>
+              </div>
+              <button id="stc-char-clear" class="stc-clear-btn" title="Clear">✕ Clear</button>
+            </div>
+          </div>
+
+          <!-- Background Scene -->
+          <div class="stc-field-group">
+            <label class="stc-field-label" for="stc-scene-input">Background Scene</label>
+            <div class="stc-input-row">
+              <div class="stc-dropdown-wrap" style="flex:1;position:relative;">
+                <input type="text" id="stc-scene-input" class="stc-text-input"
+                  placeholder="e.g. My Neighbour Totoro, a snowy park…"
+                  autocomplete="off" spellcheck="false">
+                <div id="stc-scene-dropdown" class="stc-history-dropdown"></div>
+              </div>
+              <button id="stc-scene-clear" class="stc-clear-btn" title="Clear">✕ Clear</button>
+            </div>
+          </div>
+
+          <!-- Number of Other Characters -->
+          <div class="stc-field-group">
+            <label class="stc-field-label">Number of Background Characters</label>
+            <div class="stc-slider-row">
+              <input type="range" id="stc-count-slider" class="stc-slider"
+                min="2" max="50" step="1" value="10" style="--pct:16.7%">
+              <div class="stc-slider-value" id="stc-count-value">10</div>
+            </div>
+            <div class="stc-slider-labels">
+              <span>2 (Easy)</span>
+              <span>25 (Medium)</span>
+              <span>50 (Hard)</span>
+            </div>
+          </div>
+
+          <!-- Dwell Time -->
+          <div class="stc-field-group" style="border-top:1px solid rgba(99,102,241,0.1);padding-top:20px;margin-top:4px;">
+            <label class="stc-field-label">Hold-to-Select Duration
+              <span style="font-weight:500;color:#475569;text-transform:none;letter-spacing:0;margin-left:6px;">(hover over a character to find them)</span>
+            </label>
+            <div class="stc-slider-row">
+              <input type="range" id="stc-dwell-slider" class="stc-slider"
+                min="500" max="5000" step="100" value="2000" style="--pct:31.6%">
+              <div class="stc-slider-value" id="stc-dwell-value">2.0s</div>
+            </div>
+            <div class="stc-slider-labels">
+              <span>0.5s (Fast)</span>
+              <span>2.5s</span>
+              <span>5s (Slow)</span>
+            </div>
+          </div>
+
+          <!-- AI Tier Toggle -->
+          <div class="stc-field-group" style="border-top:1px solid rgba(99,102,241,0.1);padding-top:18px;margin-top:4px;">
+            <label class="stc-checkbox-row" for="stc-paid-tier-chk" style="display:flex;align-items:center;gap:12px;cursor:pointer;user-select:none;">
+              <span style="position:relative;flex-shrink:0;">
+                <input type="checkbox" id="stc-paid-tier-chk"
+                  style="width:18px;height:18px;accent-color:#8b5cf6;cursor:pointer;">
+              </span>
+              <span>
+                <span style="font-size:0.82rem;font-weight:700;color:#c4b5fd;letter-spacing:0.04em;text-transform:uppercase;">⚡ Use Paid AI Tier</span>
+                <br>
+                <span style="font-size:0.72rem;color:#475569;font-weight:500;">Paid: Imagen 4 (~$0.13/image) &nbsp;·&nbsp; Free: Gemini 3.1 Flash Image 🍌</span>
+              </span>
+            </label>
+          </div>
+
+          <!-- Start Button -->
+          <button id="stc-start-btn" class="stc-start-btn">🎮 Start Game</button>
+
+          <!-- Error Box -->
+          <div id="stc-error-box" class="stc-error-box"></div>
+        </div>
+      </div>
+
+      <!-- Loading View -->
+      <div id="stc-loading-view" style="display:none;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:24px;text-align:center;width:100%;">
+        <div class="stc-spinner-ring"></div>
+        <div class="stc-loading-title">🎨 Creating your scene…</div>
+        <div class="stc-loading-tip" id="stc-loading-tip">Painting the world, please wait…</div>
+      </div>
+
+      <!-- Game View -->
+      <div id="stc-game-view" style="display:none;flex-direction:column;align-items:center;gap:12px;width:100%;">
+        <!-- Header bar -->
+        <div class="stc-game-header">
+          <div class="stc-game-header-left">
+            <span class="stc-game-label" id="stc-game-char-label">Find: ?</span>
+            <span class="stc-game-attempts" id="stc-attempts-display">Attempts: 0</span>
+          </div>
+          <div class="stc-game-btns">
+            <button class="stc-hint-btn" onclick="window.stcOpenSettings()" style="border-color:rgba(99,102,241,0.3);color:#818cf8;">⚙️ Settings</button>
+            <button class="stc-hint-btn" onclick="window.stcShowHint()" title="Show a hint">💡 Hint</button>
+            <button class="stc-playagain-btn" onclick="window.stcPlayAgain()">🔄 Play Again</button>
+            <button class="stc-playagain-btn" onclick="window.stcGoHome()" style="border-color:rgba(148,163,184,0.2);color:#64748b;">🏠 Home</button>
+          </div>
+        </div>
+
+        <!-- Canvas (image + overlay drawn here) -->
+        <div class="stc-canvas-wrap" id="stc-canvas-wrap">
+          <canvas id="stc-game-canvas" class="stc-game-canvas"></canvas>
+        </div>
+      </div>
+    </div>
+    <!-- END SPOT THE CHARACTER VIEW -->
 
     <!-- Math Game View -->
     <div id="view-math-game" class="w-full flex flex-col items-center gap-8 hidden transition-opacity">
@@ -1853,6 +2009,8 @@
 
   <script type="module" src="js/app.js?v=41"></script>
   <script type="module" src="js/comprehension.js?v=9"></script>
+  <script type="module" src="js/spot-char.js?v=3"></script>
+  <script type="module" src="js/spot-char-persist.js?v=1"></script>
 </body>
 
 </html>

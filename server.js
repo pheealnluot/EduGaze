@@ -810,10 +810,243 @@ app.get('/api/unsplash-search', async (req, res) => {
 });
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ── Spot the Character — Image Generation + Bbox Locator ─────────────────────
+// Uses gemini-2.0-flash-preview-image-generation to create the scene, then
+// uses gemini-2.5-flash (vision) to locate the hidden character's bounding box.
+
+// Image generation model URLs:
+// FREE  — gemini-3.1-flash-image-preview 🍌 (Nano Banana, supports aspectRatio param)
+// PAID  — imagen-4.0-generate-001 (highest quality, uses /predict endpoint)
+const GEMINI_IMAGE_GEN_URL =
+  `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent?key=${GEMINI_API_KEY}`;
+const IMAGEN4_URL =
+  `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${GEMINI_API_KEY}`;
+
+app.post('/api/spot-char-generate', async (req, res) => {
+  if (!GEMINI_API_KEY) return res.status(503).json({ error: 'GEMINI_API_KEY not configured' });
+
+  const { theme, scene, otherCount = 10, findCount = 1, usePaidTier = false } = req.body || {};
+  if (!theme || !scene) return res.status(400).json({ error: 'theme and scene are required' });
+
+  const bgCount   = Math.min(Math.max(parseInt(otherCount) || 10, 2), 50);
+  const findN     = Math.min(Math.max(parseInt(findCount)  || 1,  1), 5);
+  const isPaid    = usePaidTier === true || usePaidTier === 'true';
+
+  console.log(`[SpotChar] Model tier: ${isPaid ? 'PAID (Imagen 3)' : 'FREE (Gemini Flash Image)'}`);
+
+  // ── Step 1: Generate landscape scene ──────────────────────────────────────
+  // IMPORTANT: The aspectRatio: '16:9' config param enforces the true landscape
+  // output at the API level. The text prompt also reinforces this.
+  const imagePrompt =
+    `HORIZONTAL WIDESCREEN LANDSCAPE IMAGE ONLY — 16:9 aspect ratio like a cinema screen. ` +
+    `DO NOT generate a portrait or square image under any circumstances. ` +
+    `This is for a children's "Where's Waldo" / "Where's Wally" style hidden-picture game. ` +
+    `Draw an original, richly detailed background scene inspired by the visual style and world of "${scene}". ` +
+    `Fill this scene with ${bgCount} unique original characters whose visual design is inspired by the world of "${scene}" — ` +
+    `each clearly different from one another, no two alike. ` +
+    `CRITICALLY IMPORTANT: Scattered across DIFFERENT locations in the scene (left third, centre, and right third), ` +
+    `draw exactly ${findN} CHARACTER(S) that are CLEARLY and OBVIOUSLY inspired by "${theme}". ` +
+    `These "${theme}"-inspired characters MUST:\n` +
+    `- Be clearly recognisable and visible to a 9-year-old child\n` +
+    `- Be at least medium-sized (not tiny or partially hidden)\n` +
+    `- Look NOTICEABLY different in colour, shape, or costume from the "${scene}" background characters\n` +
+    `- NOT be obscured, blended into backgrounds, or hidden behind objects\n` +
+    `- Be placed in the FOREGROUND or MID-GROUND of the scene, NOT far in the background\n` +
+    `- Be ENTIRELY AND COMPLETELY INSIDE the image — NO character body parts cropped by the frame edge\n` +
+    `- Be placed at least 15% away from ALL four edges of the image (top, bottom, left, right)\n` +
+    `- NEVER be placed in a corner or along any image border\n` +
+    `Keep the top-left 15% of the image free of any "${theme}"-inspired characters (reserved for UI). ` +
+    `No text, no labels, no watermarks. High detail, colourful, crowded, joyful.`;
+
+  console.log(`[SpotChar] Generating: ${findN}x "${theme}"-style in "${scene}"-style + ${bgCount} bg chars`);
+
+  // ── Helper: human-readable PROHIBITED_CONTENT explanation ──────────────────
+  const _buildProhibitedMsg = (rawReason) => {
+    // Common reasons the content filter blocks image generation:
+    const tips = [
+      `“${theme}” or “${scene}” may reference a copyrighted character or brand name`,
+      `The combination may depict real-world people, celebrities, or public figures`,
+      `The prompt may contain content perceived as violent, sexual, or unsafe for children`,
+      `Named franchises (Disney, Peppa Pig, etc.) are often blocked — try describing the visual style instead (e.g. “a pink cartoon pig in a dress” rather than “Peppa Pig”)`,
+    ];
+    return (
+      `❌ Blocked by AI content filter for Theme: “${theme}” / Scene: “${scene}”.\n` +
+      `Reason code: ${rawReason}.\n` +
+      `Common causes:\n` +
+      tips.map((t, i) => `  ${i+1}. ${t}`).join('\n')
+    );
+  };
+
+  let imageBase64 = null, mimeType = 'image/png';
+  try {
+    if (isPaid) {
+      // ── Paid: Imagen 4 — /predict endpoint ────────────────────────────────────
+      const imgResp = await fetch(IMAGEN4_URL, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(120000),
+        body: JSON.stringify({
+          instances: [{ prompt: imagePrompt }],
+          parameters: { sampleCount: 1, aspectRatio: '16:9' },
+        }),
+      });
+      const imgData = await imgResp.json();
+      if (!imgResp.ok) {
+        const errMsg = imgData?.error?.message || 'Imagen 4 generation failed';
+        const friendly = errMsg.includes('PROHIBITED_CONTENT') || errMsg.includes('prohibited')
+          ? _buildProhibitedMsg(errMsg)
+          : errMsg;
+        return res.status(502).json({ error: friendly });
+      }
+      const prediction = imgData?.predictions?.[0];
+      if (!prediction?.bytesBase64Encoded) {
+        const rawReason = imgData?.error?.message || JSON.stringify(imgData).slice(0, 120);
+        const reason = rawReason.includes('PROHIBITED_CONTENT') || rawReason.includes('prohibited')
+          ? _buildProhibitedMsg(rawReason)
+          : `Imagen 4 returned no image: ${rawReason}`;
+        console.error('[SpotChar] Imagen 4: no image in response:', rawReason);
+        return res.status(502).json({ error: reason });
+      }
+      imageBase64 = prediction.bytesBase64Encoded;
+      mimeType    = prediction.mimeType || 'image/png';
+      console.log(`[SpotChar] ✅ Imagen 4 image generated (${Math.round(imageBase64.length/1024)}KB)`);
+
+    } else {
+      // ── Free: Gemini 3.1 Flash Image 🍌 — /generateContent endpoint ──────────
+      const imgResp = await fetch(GEMINI_IMAGE_GEN_URL, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(90000),
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: imagePrompt }] }],
+          generationConfig: {
+            responseModalities: ['IMAGE', 'TEXT'],
+            // aspectRatio is the correct param for gemini-2.0-flash-preview-image-generation
+            aspectRatio: '16:9',
+          },
+        }),
+      });
+      const imgData = await imgResp.json();
+      if (!imgResp.ok) {
+        const errMsg = imgData?.error?.message || 'Image generation failed';
+        const friendly = errMsg.includes('PROHIBITED_CONTENT') || errMsg.includes('prohibited')
+          ? _buildProhibitedMsg(errMsg)
+          : errMsg;
+        return res.status(502).json({ error: friendly });
+      }
+      const parts   = imgData?.candidates?.[0]?.content?.parts || [];
+      const imgPart = parts.find(p => p.inlineData?.mimeType?.startsWith('image/'));
+      if (!imgPart) {
+        const textPart     = parts.find(p => p.text);
+        const finishReason = imgData?.candidates?.[0]?.finishReason || '';
+        const rawReason    = textPart?.text || finishReason || 'No image returned';
+        const isBlocked    = rawReason.includes('PROHIBITED_CONTENT') || rawReason.includes('prohibited')
+                          || finishReason === 'SAFETY' || finishReason === 'OTHER';
+        const reason = isBlocked ? _buildProhibitedMsg(rawReason) : rawReason;
+        console.error('[SpotChar] No image in response. Reason:', rawReason, JSON.stringify(imgData).slice(0,300));
+        return res.status(502).json({ error: isBlocked ? reason : `Image not generated: ${reason}. Try different theme/scene names.` });
+      }
+      imageBase64 = imgPart.inlineData.data;
+      mimeType    = imgPart.inlineData.mimeType || 'image/png';
+      console.log(`[SpotChar] ✅ Gemini 3.1 Flash Image 🍌 generated (${Math.round(imageBase64.length/1024)}KB)`);
+    }
+  } catch (err) {
+    return res.status(502).json({ error: `Image generation failed: ${err.message}` });
+  }
+
+  // ── Step 2: Locate all findN theme characters via vision ──────────────────
+  let bboxes = [];
+  try {
+    // Ask for CENTER x/y + width/height — Gemini vision is more accurate with
+    // center-point coordinates than top-left corner estimates.
+    const visionPrompt =
+      `This "Spot the Character" game image contains exactly ${findN} character(s) inspired by "${theme}" ` +
+      `hidden among "${scene}"-style background characters. ` +
+      `Your job: find ALL ${findN} "${theme}"-inspired character(s) and report where each one is. ` +
+      `For each character, give the CENTER of the character body (cx, cy) and the ` +
+      `full WIDTH (w) and HEIGHT (h) of the character — all as fractions from 0.0 to 1.0. ` +
+      `RULES:\n` +
+      `- cx and cy are the CENTER of the character (not the top-left corner)\n` +
+      `- w and h include the full character body with a small padding around it\n` +
+      `- All values must be between 0.05 and 0.95 (no character should be at the very edge)\n` +
+      `- Return ONLY valid JSON, no other text:\n` +
+      `[{"cx":0.5,"cy":0.5,"w":0.1,"h":0.2},...]\n` +
+      `Return exactly ${findN} entries. If a character is hard to find, give your best estimate for its center.`;
+
+    const vResp = await fetch(GEMINI_URL, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(35000),
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [
+          { inlineData: { mimeType, data: imageBase64 } },
+          { text: visionPrompt },
+        ]}],
+        generationConfig: { thinkingConfig: { thinkingBudget: 0 }, maxOutputTokens: 512 },
+      }),
+    });
+    const vData  = await vResp.json();
+    const rawText = vData?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const arrMatch = rawText.match(/\[[\s\S]*?\]/);
+    if (arrMatch) {
+      const parsed = JSON.parse(arrMatch[0]);
+
+      // Safe margins: character center must be within [0.12, 0.88] in both axes
+      // so the character is fully visible and not near any edge.
+      const MARGIN = 0.12;
+
+      const raw = parsed.filter(b => typeof b.cx === 'number' && typeof b.cy === 'number');
+
+      // Support both center-format {cx,cy,w,h} and legacy top-left format {x,y,w,h}
+      const normalised = raw.map(b => {
+        let cx, cy, w, h;
+        if (typeof b.cx === 'number') {
+          // Preferred center format
+          cx = b.cx; cy = b.cy;
+          w  = b.w || 0.08; h = b.h || 0.12;
+        } else {
+          // Legacy top-left format — convert to center
+          w = b.w || 0.08; h = b.h || 0.12;
+          cx = b.x + w / 2; cy = b.y + h / 2;
+        }
+        // Clamp center to safe zone
+        cx = Math.max(MARGIN, Math.min(1 - MARGIN, cx));
+        cy = Math.max(MARGIN, Math.min(1 - MARGIN, cy));
+        // Clamp size
+        w = Math.max(0.05, Math.min(0.45, w));
+        h = Math.max(0.05, Math.min(0.45, h));
+        // Compute top-left, ensuring bbox stays fully inside [0,1]
+        const x = Math.max(0.01, Math.min(1 - w - 0.01, cx - w / 2));
+        const y = Math.max(0.01, Math.min(1 - h - 0.01, cy - h / 2));
+        return { x, y, w, h, cx, cy };
+      });
+
+      // Filter out any whose center ended up outside the safe zone after clamping
+      bboxes = normalised
+        .filter(b => b.cx >= MARGIN && b.cx <= 1 - MARGIN && b.cy >= MARGIN && b.cy <= 1 - MARGIN)
+        .slice(0, findN)
+        .map(({ x, y, w, h }) => ({ x, y, w, h }));
+
+      console.log(`[SpotChar] ✅ Found ${bboxes.length} bbox(es):`, JSON.stringify(bboxes));
+    }
+  } catch (err) {
+    console.warn('[SpotChar] Vision bbox failed (non-fatal):', err.message);
+  }
+
+  // Fallback: evenly spread bboxes if vision failed
+  if (bboxes.length === 0) {
+    const step = 1 / (findN + 1);
+    bboxes = Array.from({ length: findN }, (_, i) => ({
+      x: step * (i + 1) - 0.06, y: 0.35, w: 0.12, h: 0.25,
+    }));
+  }
+
+  res.json({ imageData: imageBase64, mimeType, bboxes, theme, findCount: findN });
+});
+// ─────────────────────────────────────────────────────────────────────────────
+
 // Route everything else directly to the SPA entry point
 app.use((req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
+
 
 app.listen(port, () => {
    console.log(`Education App Production Server is actively bound and listening on port ${port}`);
