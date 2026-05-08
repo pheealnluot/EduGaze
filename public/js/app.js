@@ -4034,9 +4034,10 @@ async function fetchWikipediaPageImage(name, thumbSize = 600) {
       if (!page || page.missing !== undefined || page.ns !== 0) return null;
       const src = page?.thumbnail?.source;
       if (!src) return null;
-      // Upscale thumbnail: replace /NNNpx- with /{thumbSize}px-
-      const bigSrc = src.replace(/\/\d+px-/, `/${thumbSize}px-`);
-      return bigSrc;
+      // The API already returns the thumbnail at the requested pithumbsize — use it directly.
+      // Do NOT manipulate the URL (e.g. regex-replacing px values) as this breaks
+      // video-derived thumbnails (.ogv → .ogv.jpg) which have different URL patterns.
+      return src;
     } catch { return null; }
   };
 
@@ -7775,12 +7776,14 @@ window.startComprehensionFromQuizSettings = () => {
     }
   };
 
-  // ── Background question generation (45-second AbortController timeout) ────
+  // ── Background question generation (90-second AbortController timeout) ────
+  // Increased from 45s: when Cloud Run can't fetch transcripts, Gemini uses
+  // native YouTube video analysis (fileData) which needs more time.
   const _genAbort = new AbortController();
   const _genTimeout = setTimeout(() => {
     _genAbort.abort();
     _runGeminiFallback('Cloud Function timed out');
-  }, 45000);
+  }, 90000);
 
   fetch('/api/comprehension-generate', {
     method: 'POST',
@@ -10643,17 +10646,18 @@ window.renderAdminReportsPanel = async () => {
   }
 };
 
-// ── Report image retry — re-fetches from the original source when stored URLs expire ────
+// ── Report image retry — re-fetches from original/fallback sources when stored URLs expire ──
 // Supports all image sources: Pixabay, Unsplash, Wikipedia, Wikimedia Commons.
-// Falls back through alternative sources if the original source fails.
+// Uses retry counter so we get TWO chances: first try original source, second try fallback.
 window._reportImgRetry = async function(img) {
-  if (img.dataset.retried) {
-    // Already retried once — show fallback
+  const attempt = parseInt(img.dataset.retried || '0');
+  if (attempt >= 2) {
+    // Both retries exhausted — show fallback
     img.style.display = 'none';
     if (img.nextElementSibling) img.nextElementSibling.style.display = 'flex';
     return;
   }
-  img.dataset.retried = '1';
+  img.dataset.retried = String(attempt + 1);
   const kw = img.dataset.keyword;
   const src = img.dataset.source || '';
   if (!kw) {
@@ -10688,47 +10692,85 @@ window._reportImgRetry = async function(img) {
     return null;
   };
 
-  // Helper: try Wikipedia pageimages (uses existing global function)
-  const _tryWikipedia = async (keyword) => {
+  // Helper: try Wikipedia — direct API call, bypasses _wikiPageImageCache to avoid stale URLs
+  const _tryWikipediaFresh = async (keyword) => {
+    // Multi-strategy: try exact name, then first-two-words, then first-word
+    const candidates = [keyword];
+    const words = keyword.trim().split(/\s+/);
+    if (words.length >= 2) candidates.push(words.slice(0, 2).join(' '));
+    if (words.length >= 2) candidates.push(words[0]);
+
+    for (const title of candidates) {
+      if (!title || title.length < 2) continue;
+      try {
+        const apiUrl = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(title)}&prop=pageimages&format=json&pithumbsize=600&origin=*`;
+        const resp = await fetch(apiUrl);
+        if (!resp.ok) continue;
+        const data = await resp.json();
+        const pages = data?.query?.pages;
+        if (!pages) continue;
+        const page = Object.values(pages)[0];
+        if (!page || page.missing !== undefined) continue;
+        // Use the thumbnail URL directly from the API — do NOT manipulate the px value
+        const thumbUrl = page?.thumbnail?.source;
+        if (thumbUrl) return thumbUrl;
+      } catch {}
+    }
+    return null;
+  };
+
+  // Helper: try Wikimedia Commons — direct API call, bypasses _wikiImageCache
+  const _tryWikimediaFresh = async (keyword) => {
     try {
-      if (typeof fetchWikipediaPageImage === 'function') {
-        return await fetchWikipediaPageImage(keyword) || null;
-      }
+      const apiUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(keyword)}&gsrnamespace=6&gsrlimit=5&prop=imageinfo&iiprop=url|mime|size&iiurlwidth=600&format=json&origin=*`;
+      const resp = await fetch(apiUrl);
+      if (!resp.ok) return null;
+      const data = await resp.json();
+      const pages = data?.query?.pages;
+      if (!pages) return null;
+      const candidates = Object.values(pages)
+        .map(p => {
+          const ii = p?.imageinfo?.[0];
+          if (!ii) return null;
+          const mime = (ii.mime || '').toLowerCase();
+          const url = ii.thumburl || ii.url || '';
+          if (!url) return null;
+          const isPhoto = mime.startsWith('image/jpeg') || mime.startsWith('image/png');
+          const isSvg = mime.startsWith('image/svg');
+          if (!isPhoto && !isSvg) return null;
+          return { url, score: isPhoto ? (ii.width || 0) : 50 };
+        })
+        .filter(Boolean)
+        .sort((a, b) => b.score - a.score);
+      return candidates[0]?.url || null;
     } catch {}
     return null;
   };
 
-  // Helper: try Wikimedia Commons (uses existing global function)
-  const _tryWikimedia = async (keyword) => {
-    try {
-      if (typeof fetchWikiImage === 'function') {
-        return await fetchWikiImage(keyword) || null;
-      }
-    } catch {}
-    return null;
-  };
-
-  // Try the original source first, then fall back through alternatives
   try {
     let freshUrl = null;
 
-    // Primary: try original source
-    if (src === 'wikipedia') {
-      freshUrl = await _tryWikipedia(kw);
-    } else if (src === 'wikimedia') {
-      freshUrl = await _tryWikimedia(kw);
-    } else if (src === 'unsplash') {
-      freshUrl = await _tryUnsplash(kw);
+    if (attempt === 0) {
+      // First attempt: try the original source with fresh API calls
+      if (src === 'wikipedia') {
+        // Clear stale cache entry so future quiz-time lookups also refresh
+        if (typeof _wikiPageImageCache !== 'undefined') delete _wikiPageImageCache[kw.toLowerCase().trim()];
+        freshUrl = await _tryWikipediaFresh(kw);
+      } else if (src === 'wikimedia') {
+        if (typeof _wikiImageCache !== 'undefined') delete _wikiImageCache[kw.toLowerCase().trim()];
+        freshUrl = await _tryWikimediaFresh(kw);
+      } else if (src === 'unsplash') {
+        freshUrl = await _tryUnsplash(kw);
+      } else {
+        freshUrl = await _tryPixabay(kw);
+      }
     } else {
-      // pixabay or unknown
+      // Second attempt: fallback chain — try ALL alternative sources
       freshUrl = await _tryPixabay(kw);
+      if (!freshUrl) freshUrl = await _tryWikimediaFresh(kw);
+      if (!freshUrl) freshUrl = await _tryWikipediaFresh(kw);
+      if (!freshUrl) freshUrl = await _tryUnsplash(kw);
     }
-
-    // Fallback chain: if original source failed, try alternatives
-    if (!freshUrl && src !== 'wikipedia')  freshUrl = await _tryWikipedia(kw);
-    if (!freshUrl && src !== 'wikimedia')  freshUrl = await _tryWikimedia(kw);
-    if (!freshUrl && src !== 'pixabay')    freshUrl = await _tryPixabay(kw);
-    if (!freshUrl && src !== 'unsplash')   freshUrl = await _tryUnsplash(kw);
 
     if (freshUrl) {
       img.src = freshUrl;
@@ -10857,7 +10899,7 @@ function _renderReportModal(data, docId, isAdminView) {
       if (qi.svg) {
         qiImg = `<div style="width:100%;max-height:320px;background:#070d1a;border-radius:10px;overflow:hidden;display:flex;align-items:center;justify-content:center;">${qi.svg}</div>`;
       } else if (qi.url) {
-        qiImg = `<img src="${qi.url}" data-keyword="${(q.questionImageKeyword || '').replace(/"/g, '&quot;')}" data-source="${qiSrc}" style="width:100%;max-height:320px;object-fit:contain;background:#070d1a;border-radius:10px;display:block;" onerror="window._reportImgRetry(this)" /><div style="display:none;width:100%;height:180px;background:#070d1a;border-radius:10px;align-items:center;justify-content:center;color:#334155;font-size:0.7rem;">Image unavailable</div>`;
+        qiImg = `<img src="${qi.url}" data-keyword="${(q.questionImageKeyword || '').replace(/"/g, '&quot;')}" data-source="${qiSrc}" referrerpolicy="no-referrer" crossorigin="anonymous" style="width:100%;max-height:320px;object-fit:contain;background:#070d1a;border-radius:10px;display:block;" onerror="window._reportImgRetry(this)" /><div style="display:none;width:100%;height:180px;background:#070d1a;border-radius:10px;align-items:center;justify-content:center;color:#334155;font-size:0.7rem;">Image unavailable</div>`;
       } else {
         qiImg = `<div style="width:100%;height:180px;background:#070d1a;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#334155;font-size:0.75rem;">Image not saved for older report — keyword: <em style="color:#475569;margin-left:4px;">${q.questionImageKeyword || '?'}</em></div>`;
       }
@@ -10898,7 +10940,7 @@ function _renderReportModal(data, docId, isAdminView) {
         if (a.url && a.url.trim().startsWith('<svg')) {
           imgHtml = `<div style="width:100%;height:180px;background:#070d1a;border-radius:8px;overflow:hidden;display:flex;align-items:center;justify-content:center;">${a.url}</div>`;
         } else if (a.url) {
-          imgHtml = `<img src="${a.url}" data-keyword="${(a.imageKeyword || '').replace(/"/g, '&quot;')}" data-source="${a.source || ''}" style="width:100%;height:180px;object-fit:contain;background:#070d1a;border-radius:8px;display:block;" onerror="window._reportImgRetry(this)" /><div style="display:none;width:100%;height:180px;background:#070d1a;border-radius:8px;align-items:center;justify-content:center;color:#334155;font-size:0.7rem;">Image unavailable</div>`;
+          imgHtml = `<img src="${a.url}" data-keyword="${(a.imageKeyword || '').replace(/"/g, '&quot;')}" data-source="${a.source || ''}" referrerpolicy="no-referrer" crossorigin="anonymous" style="width:100%;height:180px;object-fit:contain;background:#070d1a;border-radius:8px;display:block;" onerror="window._reportImgRetry(this)" /><div style="display:none;width:100%;height:180px;background:#070d1a;border-radius:8px;align-items:center;justify-content:center;color:#334155;font-size:0.7rem;">Image unavailable</div>`;
         } else {
           imgHtml = `<div style="width:100%;height:180px;background:#070d1a;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#334155;font-size:0.7rem;">No image saved</div>`;
         }

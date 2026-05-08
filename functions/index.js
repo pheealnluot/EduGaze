@@ -615,7 +615,7 @@ exports.comprehensionGenerate = onRequest(
       const r = await fetch(geminiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(55000), // never hang past Cloud Function timeout
+        signal: AbortSignal.timeout(90000), // increased from 55s for YouTube video analysis via fileData
         body: JSON.stringify({
           contents: [{ role: 'user', parts }],
           generationConfig: {
@@ -1129,35 +1129,75 @@ Return ONLY valid JSON:
             console.log(`[comp questions] Transcript-based generation complete for ${videoId}`);
 
           } else {
-            // ── PATH B: Metadata/topic fallback (no transcript available) ────
-            // Generate questions about the video's EDUCATIONAL TOPIC using title + description.
-            // When the YouTube Data API is available, we now have the full video description
-            // which provides much richer context for question generation.
-            console.log('[comp questions] Generating VIDEO questions from metadata (no transcript)');
-            const topicHint = videoMetaTitle
-              ? `The video is titled "${videoMetaTitle}"${videoMetaChannel ? ` by ${videoMetaChannel}` : ''}.`
-              : `The video ID is ${videoId}.`;
-            const descSection = videoMetaDesc
-              ? `\n\nHere is the video's full description:\n"""\n${videoMetaDesc}\n"""\n`
+            // ── PATH B: Gemini native YouTube video analysis (no transcript) ─
+            // Instead of using metadata-only, let Gemini WATCH the video directly.
+            // Gemini 2.5 Flash can natively analyse YouTube videos via fileData —
+            // it sees the visuals, hears the audio, and reads the captions.
+            // This produces questions specific to the actual video content,
+            // even when we can't scrape the transcript ourselves.
+            console.log('[comp questions] PATH B: Trying Gemini native YouTube video analysis...');
+
+            const timeLimitNote = videoTimeLimitSec && videoTimeLimitSec > 0
+              ? `\n\n⚠️ IMPORTANT: The student ONLY watched the FIRST ${videoTimeLimitSec} SECONDS of this video. Every question MUST be answerable from that opening ${videoTimeLimitSec}-second segment ONLY. Do NOT ask about anything that appears after the ${videoTimeLimitSec}-second mark.`
               : '';
-            const metadataPrompt =
+
+            const videoAnalysisPrompt =
               `You are an expert educational content creator for ${educationLevel} students.\n\n` +
-              `${topicHint}${descSection}\n` +
-              `Based on the topic of this educational video${videoMetaDesc ? ' and its description' : ''}, generate exactly ${numQuestions} multiple-choice comprehension questions ` +
-              `that a student could answer after watching a video on this topic.\n\n` +
-              `Important rules:\n` +
-              `1. Extract the EDUCATIONAL TOPIC from the title${videoMetaDesc ? ' and description' : ''} (e.g. "The Water Cycle" → ask about evaporation, condensation, precipitation)\n` +
-              `2. Generate questions that test UNDERSTANDING of the topic — facts, causes, effects, definitions\n` +
-              `3. Do NOT ask meta-questions about YouTube, the video format, or "what is this video about?"\n` +
-              `4. Each question has exactly 4 answer options (A, B, C, D)\n` +
-              `5. Only ONE answer is correct; wrong options must be plausible but clearly incorrect to someone who knows the topic\n` +
-              `6. The "explanation" must explain WHY the correct answer is right based on the topic\n` +
-              `7. Language and cognitive complexity appropriate for: ${educationLevel}\n` +
-              `8. Answer text must be in English only — no Chinese characters, no symbols\n\n` +
+              `Watch the YouTube video above carefully. Pay attention to the visuals, narration, and on-screen text.${timeLimitNote}\n\n` +
+              `Generate exactly ${numQuestions} multiple-choice comprehension questions that test understanding of this specific video's content.\n\n` +
+              `Strict rules:\n` +
+              `1. Every question must be based ONLY on what is shown, said, or presented in this specific video — not from general knowledge\n` +
+              `2. Include a mix of: recall ("What did the video show about..."), inference ("Why did..."), sequence ("What happened after..."), visual details\n` +
+              `3. Each question has exactly 4 answer options (A, B, C, D)\n` +
+              `4. Only ONE answer is correct; distractors must be plausible to someone who only partially watched\n` +
+              `5. The "explanation" must reference the specific part of the video that proves the answer\n` +
+              `6. Language and cognitive complexity appropriate for: ${educationLevel}\n` +
+              `7. Answer text must be in English only — no Chinese characters, no symbols\n` +
+              `8. No meta-questions ("What is the title?") — ask about the CONTENT of the video\n\n` +
               `Return ONLY valid JSON:\n` +
               `{ "questions": [{ "question": "?", "answers": [{"id":"a","text":""},{"id":"b","text":""},{"id":"c","text":""},{"id":"d","text":""}], "correctId": "a", "explanation": "" }] }`;
-            raw = await callGemini([{ text: metadataPrompt }]);
-            console.log(`[comp questions] Metadata-based generation complete for ${videoId} (title: "${videoMetaTitle}", desc: ${videoMetaDesc?.length || 0} chars)`);
+
+            try {
+              raw = await callGemini([
+                {
+                  fileData: {
+                    fileUri: `https://www.youtube.com/watch?v=${videoId}`,
+                    mimeType: 'video/mp4',
+                  },
+                },
+                { text: videoAnalysisPrompt },
+              ]);
+              console.log(`[comp questions] PATH B: Gemini native video analysis complete for ${videoId} (${raw.length} chars)`);
+            } catch (fileDataErr) {
+              // ── PATH C: Pure metadata fallback (if fileData also fails) ─────
+              console.warn(`[comp questions] PATH B failed (fileData):`, fileDataErr.message);
+              console.log('[comp questions] PATH C: Falling back to metadata-only generation');
+
+              const topicHint = videoMetaTitle
+                ? `The video is titled "${videoMetaTitle}"${videoMetaChannel ? ` by ${videoMetaChannel}` : ''}.`
+                : `The video ID is ${videoId}.`;
+              const descSection = videoMetaDesc
+                ? `\n\nHere is the video's full description:\n"""\n${videoMetaDesc}\n"""\n`
+                : '';
+              const metadataPrompt =
+                `You are an expert educational content creator for ${educationLevel} students.\n\n` +
+                `${topicHint}${descSection}\n` +
+                `Based on the topic of this educational video${videoMetaDesc ? ' and its description' : ''}, generate exactly ${numQuestions} multiple-choice comprehension questions ` +
+                `that a student could answer after watching a video on this topic.\n\n` +
+                `Important rules:\n` +
+                `1. Extract the EDUCATIONAL TOPIC from the title${videoMetaDesc ? ' and description' : ''} (e.g. "The Water Cycle" → ask about evaporation, condensation, precipitation)\n` +
+                `2. Generate questions that test UNDERSTANDING of the topic — facts, causes, effects, definitions\n` +
+                `3. Do NOT ask meta-questions about YouTube, the video format, or "what is this video about?"\n` +
+                `4. Each question has exactly 4 answer options (A, B, C, D)\n` +
+                `5. Only ONE answer is correct; wrong options must be plausible but clearly incorrect to someone who knows the topic\n` +
+                `6. The "explanation" must explain WHY the correct answer is right based on the topic\n` +
+                `7. Language and cognitive complexity appropriate for: ${educationLevel}\n` +
+                `8. Answer text must be in English only — no Chinese characters, no symbols\n\n` +
+                `Return ONLY valid JSON:\n` +
+                `{ "questions": [{ "question": "?", "answers": [{"id":"a","text":""},{"id":"b","text":""},{"id":"c","text":""},{"id":"d","text":""}], "correctId": "a", "explanation": "" }] }`;
+              raw = await callGemini([{ text: metadataPrompt }]);
+              console.log(`[comp questions] PATH C: Metadata-based generation complete for ${videoId}`);
+            }
           }
 
 
