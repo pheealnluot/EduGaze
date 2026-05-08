@@ -1543,3 +1543,14 @@ body.quiz-comp-img.quiz-active .quiz-score-row {
   z-index: 100;
   margin: 0 !important;
 }
+
+/* Comprehension question centring */
+#comp-question-section {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#comp-display-question {
+  text-align: center;
+  flex: 1;
+}

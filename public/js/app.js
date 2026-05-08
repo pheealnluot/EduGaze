@@ -11535,12 +11535,24 @@ function _buildCompReportRow(d, data, rowIdx, isAdmin) {
   tr.dataset.type  = media.type || 'unknown';
   tr.dataset.search = [dateShort, media.type, media.title || '', media.videoId || '', level, data.userId || ''].join(' ').toLowerCase();
 
+  // Title and description cells
+  const mediaTitle = media.title || '';
+  const mediaDesc  = media.description || '';
+  const titleCell  = mediaTitle
+    ? `<div style="font-size:0.72rem;color:#e2e8f0;font-weight:600;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${mediaTitle.replace(/"/g,'&quot;')}">${mediaTitle}</div>`
+    : `<div style="font-size:0.65rem;color:#334155;font-style:italic;">—</div>`;
+  const descCell   = mediaDesc
+    ? `<div style="font-size:0.65rem;color:#64748b;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${mediaDesc.replace(/"/g,'&quot;')}">${mediaDesc}</div>`
+    : `<div style="font-size:0.65rem;color:#334155;font-style:italic;">—</div>`;
+
   tr.innerHTML = `
     <td style="font-size:0.68rem;color:#475569;font-weight:600;text-align:center;">${rowIdx}</td>
     <td><div style="font-size:0.72rem;color:#cbd5e1;white-space:nowrap;">${dateShort}</div></td>
     ${isAdmin ? `<td><div style="font-size:0.65rem;color:#475569;font-family:monospace;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${data.userId||''}">${(data.userId||'').slice(0,14)}</div></td>` : ''}
     <td>${mediaBadge}</td>
     <td>${thumbHtml}</td>
+    <td>${titleCell}</td>
+    <td>${descCell}</td>
     <td><div style="font-size:0.75rem;color:#fbbf24;font-weight:700;">${correct}/${total}</div></td>
     <td><div style="font-size:0.72rem;color:#94a3b8;">${durStr}</div></td>
     <td><div style="font-size:0.65rem;color:#64748b;font-weight:700;">${level}</div></td>
@@ -11639,29 +11651,17 @@ function _renderCompReportModal(data, docId, isAdminView) {
         ${q.wrongAttempts > 0 ? `<span style="font-size:0.62rem;color:#64748b;margin-left:6px;">⚠ ${q.wrongAttempts} wrong attempt${q.wrongAttempts!==1?'s':''}</span>` : ''}
       </div>`;
 
-    // Answer cards
-    const cardHtml = _normArrLocal(q.answers).map((a, aIdx) => {
+    // Answer cards (no per-answer rating — only question-level rating is shown)
+    const cardHtml = _normArrLocal(q.answers).map((a) => {
       const isCorrect = String(a.id) === String(q.correctId);
       const border = isCorrect ? '1px solid rgba(52,211,153,0.4)' : '1px solid rgba(51,65,85,0.5)';
       const bg     = isCorrect ? 'rgba(52,211,153,0.04)' : 'rgba(8,14,28,0.5)';
-      const aRateVal = a.answerRating;
-      const _aBtn = (v, icon) => {
-        const sel2 = (aRateVal === v);
-        const s3 = sel2 ? 'background:rgba(251,191,36,0.22);color:#fbbf24;border:1px solid rgba(251,191,36,0.45);font-weight:700;' : 'background:rgba(255,255,255,0.04);color:#334155;border:1px solid transparent;';
-        return `<button id="carb-${docId}-${qIdx}-${aIdx}-${v}" onclick="setCompAnswerRating('${docId}',${qIdx},${aIdx},${v})" style="${s3}border-radius:6px;padding:4px 10px;cursor:pointer;font-size:1rem;transition:all 0.2s;">${icon}</button>`;
-      };
-      const aRateHtml = `
-        <div style="display:flex;align-items:center;gap:6px;margin-top:8px;">
-          <span style="font-size:0.6rem;color:#475569;">A OK?</span>
-          ${_aBtn(1, '👍')}${_aBtn(0, '😐')}${_aBtn(-1, '👎')}
-        </div>`;
       return `
         <div style="background:${bg};border:${border};border-radius:12px;padding:10px 12px;">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;margin-bottom:4px;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;">
             <span style="font-size:0.85rem;font-weight:600;color:#e2e8f0;">${a.text || a.id || '—'}</span>
             ${isCorrect ? '<span style="font-size:0.6rem;color:#34d399;background:rgba(52,211,153,0.1);padding:2px 7px;border-radius:4px;flex-shrink:0;">✓ Correct</span>' : ''}
           </div>
-          ${aRateHtml}
         </div>`;
     }).join('');
 
