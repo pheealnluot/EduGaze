@@ -2104,6 +2104,24 @@ async function saveQuizReportNow() {
   }
 }
 
+async function saveCompReportNow() {
+  if (!window.quizReport) return;
+  if (window.quizReport.sessionType !== 'comprehension') return;
+  if (window.quizReport._saved) return; // guard against double-save
+  window.quizReport._saved = true;
+  window.quizReport.endedAt = window.quizReport.endedAt || new Date().toISOString();
+  window.quizReport.durationMs = new Date(window.quizReport.endedAt) - new Date(window.quizReport.startedAt);
+  try {
+    const { addDoc: _addDoc, collection: _col } = await import('https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore.js');
+    const docRef = await _addDoc(_col(db, 'quiz_reports'), window.quizReport);
+    console.log('[CompReport] Saved! Doc ID:', docRef.id);
+    window.quizReport = null;
+  } catch (err) {
+    console.error('[CompReport] Failed to save:', err.code, err.message);
+    window.quizReport._saved = false; // allow retry
+  }
+}
+
 function restoreHeaderFromQuizMode() {
   // Save any in-progress quiz report when leaving quiz mode
   saveQuizReportNow();
@@ -5009,6 +5027,9 @@ function renderQuizBoard() {
   // Render answer cards
   // Robust correct answer identification
   const effectiveCorrectId = q.correctId || (Array.isArray(q.correctAnswerIds) ? q.correctAnswerIds[0] : null);
+  // Tracks how the last selection was made ('hover' = dwell, 'click' = direct click).
+  // Shared across all card closures for this render; read by doSelect for reporting.
+  let _selectionMethod = 'click';
 
   displayAnswers.forEach((answer, idx) => {
     const isCorrect = answer.id === effectiveCorrectId;
@@ -5034,17 +5055,7 @@ function renderQuizBoard() {
     });
     card.className = 'quiz-answer-card';
 
-    // Hover: lighten on mouseenter, restore on mouseleave (unless answered)
-    card.addEventListener('mouseenter', () => {
-      if (!card.dataset.answered && card.dataset.state !== 'wrong') card.style.background = '#364154';
-    });
-    card.addEventListener('mouseleave', () => {
-      if (card.dataset.state === 'wrong') {
-        card.style.background = '#7f1d1d';
-      } else if (!card.dataset.answered) {
-        card.style.background = '#20293a';
-      }
-    });
+    // Background hover handled by the dwell listeners below — no separate listener needed.
 
     const fontSizeClass = `quiz-font-${quizSettings.fontSize}`;
     const hasImageType = (quizSettings.contentTypes || []).includes('image');
@@ -5223,18 +5234,6 @@ function renderQuizBoard() {
 
     const doSelect = () => {
       if (quizQuestionAnswered) return;
-      // If qRead bar hasn't completed yet, skip it instantly then re-invoke after 2 frames
-      if (!_qReadDone) {
-        _skipQRead();
-        requestAnimationFrame(() => requestAnimationFrame(() => doSelect()));
-        return;
-      }
-      // If aRead bar hasn't completed yet, skip it instantly then re-invoke after 2 frames
-      if (!_aReadDone) {
-        _skipARead();
-        requestAnimationFrame(() => requestAnimationFrame(() => doSelect()));
-        return;
-      }
       if (!q._userSelections) q._userSelections = [];
       const _now = new Date().toISOString();
       const _prev = q._userSelections.length > 0 ? q._userSelections[q._userSelections.length - 1].timestamp : null;
@@ -5351,6 +5350,8 @@ function renderQuizBoard() {
             const oldCross = c.querySelector('.wrong-cross');
             if (oldCross) oldCross.remove();
           }
+          // Stop any running dwell on all cards (clears ring overlays)
+          if (typeof c._stopDwell === 'function') c._stopDwell();
         });
 
         quizWrongAttempts++;
@@ -5378,41 +5379,77 @@ function renderQuizBoard() {
       }
     };
 
+    // ── Card interaction — matches comprehension quiz pattern ────────────────
+    // startDwell: time-based from mouseenter; resets fully on mouseleave.
+    // Click: bypasses all pending gates and selects in next rAF (like comprehension doSelectWithBypass).
+    // Wrong cards: remain fully hoverable and selectable (only correct cards are locked).
+
+    // (timer is declared with 'let' above — per-card scoped)
+
     const startDwell = () => {
-      if (quizSettings.dwellTimeMs === 0) return;
-      // Don't start dwell timer while the aRead global bar is still filling
-      if (!_aReadDone) return;
-      let start = null;
+      if (!quizSettings.dwellTimeMs) return;
+      if (!_qReadDone || !_aReadDone) return; // gates must both be done
+      if (timer !== null) return;             // already animating
+      if (card.dataset.answered) return;      // correct answer already selected
+      let s = null;
       const animate = (t) => {
-        if (currentGen !== quizRenderGen) return;
-        if (!start) start = t;
-        const elapsed = t - start;
-        const progress = Math.min((elapsed / quizSettings.dwellTimeMs) * 100, 100);
-        progressBar.style.width = `${progress}%`;
-        if (progress > 0) {
+        if (currentGen !== quizRenderGen) { timer = null; return; }
+        if (!s) s = t;
+        const pct = Math.min(((t - s) / quizSettings.dwellTimeMs) * 100, 100);
+        progressBar.style.width = `${pct}%`;
+        if (pct > 0) {
           addOverlay();
-          const circle = svgOverlay.querySelector('circle:last-child');
+          const circle = svgOverlay?.querySelector('circle:last-child');
           if (circle) {
             const circ = 44 * 2 * Math.PI;
-            circle.style.strokeDashoffset = circ - (progress / 100) * circ;
+            circle.style.strokeDashoffset = circ - (pct / 100) * circ;
           }
         }
-        if (progress >= 100) { doSelect(); } else { timer = requestAnimationFrame(animate); }
+        if (pct >= 100) { timer = null; doSelect(); }
+        else { timer = requestAnimationFrame(animate); }
       };
       timer = requestAnimationFrame(animate);
     };
+
     const stopDwell = () => {
-      if (timer) cancelAnimationFrame(timer);
+      if (timer) { cancelAnimationFrame(timer); timer = null; }
       progressBar.style.width = '0%';
       removeOverlay();
     };
 
-    card.addEventListener('mouseenter', () => { _selectionMethod = 'hover'; startDwell(); });
-    card.addEventListener('mouseleave', () => { _selectionMethod = 'click'; stopDwell(); });
-    card.addEventListener('click', () => { _selectionMethod = 'click'; doSelect(); });
-    card.addEventListener('touchstart', (e) => { e.preventDefault(); _selectionMethod = 'hover'; startDwell(); });
-    card.addEventListener('touchend', (e) => { e.preventDefault(); stopDwell(); _selectionMethod = 'click'; doSelect(); });
-    card.addEventListener('touchcancel', (e) => { e.preventDefault(); stopDwell(); });
+    // doSelectWithBypass: skips any pending gates and selects after one rAF (comprehension pattern).
+    // Used for clicks so the user never has to wait for gate timers when clicking directly.
+    const doSelectWithBypass = () => {
+      if (!_qReadDone) _skipQRead();
+      if (!_aReadDone) _skipARead();
+      stopDwell(); // cancel any running dwell ring
+      requestAnimationFrame(() => doSelect());
+    };
+
+    // Expose on card element so _onAReadComplete and wrong-answer cleanup can reach them.
+    card._startDwell = startDwell;
+    card._stopDwell  = stopDwell;
+
+    // mouseenter: start dwell for any non-answered card (wrong cards stay selectable)
+    card.addEventListener('mouseenter', () => {
+      if (card.dataset.answered) return;
+      if (!card.dataset.answered && card.dataset.state !== 'wrong') card.style.background = '#364154';
+      else if (card.dataset.state === 'wrong') card.style.background = 'rgba(239,68,68,0.35)'; // highlight wrong on hover
+      _selectionMethod = 'hover';
+      startDwell();
+    });
+    card.addEventListener('mouseleave', () => {
+      if (card.dataset.state === 'wrong') card.style.background = 'rgba(239,68,68,0.18)';
+      else if (!card.dataset.answered) card.style.background = '#20293a';
+      _selectionMethod = 'click';
+      stopDwell();
+    });
+
+    // Click always selects immediately, bypassing any remaining gate timers
+    card.addEventListener('click', () => { _selectionMethod = 'click'; doSelectWithBypass(); });
+    card.addEventListener('touchstart', (e) => { e.preventDefault(); _selectionMethod = 'hover'; startDwell(); }, { passive: false });
+    card.addEventListener('touchend',   (e) => { e.preventDefault(); stopDwell(); _selectionMethod = 'click'; doSelectWithBypass(); }, { passive: false });
+    card.addEventListener('touchcancel',(e) => { e.preventDefault(); stopDwell(); }, { passive: false });
 
     grid.appendChild(card);
   });
@@ -5481,15 +5518,21 @@ function renderQuizBoard() {
       if (aDone) return;
       aDone = true;
       _aReadDone = true;
-      // Flash to completion colour — bar stays visible as a read indicator
       aBarInner.style.width = '100%';
       aBarInner.style.background = 'linear-gradient(90deg,#7c3aed,#a855f7)';
       aBarHint.style.opacity = '0';
-      // Remove interaction listeners; bar stays in DOM until next question cleans it up
       document.removeEventListener('keydown', _onAReadKey, true);
       grid.removeEventListener('click', _onAReadGridClick, true);
-      grid.removeEventListener('mouseenter', _onGridEnter);
+      grid.removeEventListener('mouseenter', onGridEnter);
       grid.removeEventListener('mouseleave', _onGridLeave);
+      // If the mouse is already inside a card when the gate completes, no mouseenter
+      // will fire — so dispatch a synthetic one to trigger startDwell via the normal path.
+      // Using dispatchEvent ensures the background highlight also runs correctly.
+      grid.querySelectorAll('.quiz-answer-card').forEach(c => {
+        if (c.matches(':hover') && !c.dataset.answered && c.dataset.state !== 'wrong') {
+          c.dispatchEvent(new MouseEvent('mouseenter', { bubbles: false }));
+        }
+      });
     };
 
     const aAnimate = (t) => {
@@ -8092,15 +8135,71 @@ window.startComprehensionFromQuizSettings = () => {
     setTimeout(() => window._qsModeSwitch('comp'), 50);
   });
 
-  // Wire Skip
+  // Wire Skip / Retry
   document.getElementById('cqv-skip-btn').addEventListener('click', () => {
-    if (generationFailed || document.getElementById('cqv-skip-btn').disabled) return;
+    const skipBtn = document.getElementById('cqv-skip-btn');
+    if (skipBtn && skipBtn.disabled) return;
+
+    // ── Retry after generation failure ────────────────────────────────────
+    if (generationFailed) {
+      generationFailed = false;
+      if (skipBtn) {
+        skipBtn.innerHTML = '⏳ Generating questions…';
+        skipBtn.disabled = true;
+        skipBtn.style.borderColor = 'rgba(100,116,139,0.35)';
+        skipBtn.style.color = '#64748b';
+        skipBtn.style.cursor = 'not-allowed';
+      }
+      // Re-run the fallback generation with metadata allowed
+      fetch('/api/comprehension-generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phase: 'questions',
+          medium: 'video',
+          subject: 'the video content',
+          educationLevel: eduLevel,
+          numQuestions: numQ,
+          mediaContent: { videoId: parsed.videoId },
+          videoTimeLimitSec: timeLimitSec > 0 ? timeLimitSec : null,
+          allowMetadataFallback: true,
+        }),
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (!data?.questions?.length) throw new Error(data?.error || 'No questions returned');
+        questionsReady = data.questions;
+        generationFailed = false;
+        const sb = document.getElementById('cqv-skip-btn');
+        if (sb) {
+          sb.innerHTML = '⏭ Skip to Quiz';
+          sb.disabled = false;
+          sb.style.borderColor = 'rgba(52,211,153,0.6)';
+          sb.style.color = '#34d399';
+          sb.style.cursor = 'pointer';
+        }
+        if (proceedCalled) { proceedCalled = false; _proceedToTransition(); }
+      })
+      .catch(err => {
+        console.error('[compFromQuiz] Retry failed:', err);
+        generationFailed = true;
+        const sb = document.getElementById('cqv-skip-btn');
+        if (sb) {
+          sb.innerHTML = '⚠ Generation failed — try again';
+          sb.style.borderColor = 'rgba(248,113,113,0.5)';
+          sb.style.color = '#f87171';
+          sb.disabled = false;
+          sb.style.cursor = 'pointer';
+        }
+      });
+      return;
+    }
+
     if (questionsReady) {
       _proceedToTransition();
     } else {
       // Mark pending; overlay will be cleaned up when questions arrive
       proceedCalled = true;
-      const skipBtn = document.getElementById('cqv-skip-btn');
       if (skipBtn) { skipBtn.innerHTML = '⏳ Please wait…'; skipBtn.disabled = true; skipBtn.style.cursor = 'not-allowed'; }
     }
   });
@@ -8116,6 +8215,30 @@ function _compShowCompView(questions) {
   // Reset render generation so all animation loops from the previous game are invalidated
   window._cqRenderGen = (window._cqRenderGen || 0) + 1000;
   _cqWrongAttempts = 0;
+
+  // ── Initialize Comprehension Report Tracking ──────────────────────────
+  const _media = window._compMedia || null;
+  window.quizReport = {
+    userId: (typeof user !== 'undefined' && user) ? user.uid : 'guest',
+    startedAt: new Date().toISOString(),
+    quizSettings: (typeof quizSettings !== 'undefined') ? JSON.parse(JSON.stringify(quizSettings)) : {},
+    sessionType: 'comprehension',
+    media: _media ? {
+      type:    _media.type    || null,
+      videoId: _media.videoId || null,
+      url:     _media.url     || null,
+      title:   _media.title   || null,
+    } : null,
+    questions: questions.map(q => ({
+      question:         q.question || '',
+      answers:          (q.answers || []).map(a => ({ id: a.id, text: a.text || '' })),
+      correctId:        q.correctId || '',
+      explanation:      q.explanation || '',
+      userSelections:   [],  // filled during play
+      wrongAttempts:    0,
+    })),
+  };
+  window._compReportSavedIds = {}; // track which question indices have been answered
 
   // Always hide the win overlay — it persists in the DOM across games
   const prevWin = document.getElementById('comp-win-overlay');
@@ -8332,6 +8455,10 @@ function _compQuizRenderQuestion() {
     else if (quizSettings.theme === 'zootopia'      && typeof playZooOutro          === 'function') playZooOutro();
 
     if (winOv) winOv.style.display = 'flex';
+
+    // ── Save comprehension report to Firestore ───────────────────────────
+    saveCompReportNow();
+
     return;
   }
 
@@ -8444,10 +8571,9 @@ function _compQuizRenderQuestion() {
         if (!_qrSpoken) {
           _qrSpoken = true;
           quizSpeakCancel();
-          // When voiceover finishes reading the question, auto-complete the gate
-          quizSpeak(q.question, { rate: 0.9, targetElement: qEl || undefined, onEnd: () => {
-            if (gen === window._cqRenderGen) { elapsed = _qReadTime; onQRDone(); }
-          }});
+          // Voiceover reads the question but does NOT auto-complete the gate.
+          // The gate progresses only by hovering over the question section.
+          quizSpeak(q.question, { rate: 0.9, targetElement: qEl || undefined });
         }
       };
       qSect.onmouseenter = () => { hovering = true; _startVoiceOver(); };
@@ -8478,13 +8604,15 @@ function _compQuizRenderQuestion() {
     }
   }
 
-  // ── Answer gate — BOTH modes ───────────────────────────────────────────
-  // Full-width bar between question and answer grid.
-  // Progresses while hovering any answer card; TTS reads each answer with underline.
+  // ── Answer gate — comprehension mode ─────────────────────────────────────
+  // Only active when "Answer Read Time before selection" is enabled in settings.
+  // Progresses only while hovering any answer card; voiceover reads answers but
+  // does NOT auto-complete the gate. Cards are always click-responsive.
   let _aReadDone = false;
   let _skipARead = () => {};
-  {
-    const _aReadTime = Math.max(quizSettings.qReadTimeMs || 2000, 1000);
+  const _aGateEnabled = quizSettings.aReadEnabled && (quizSettings.aReadTimeMs || 0) > 0;
+  if (_aGateEnabled) {
+    const _aReadTime = quizSettings.aReadTimeMs;
 
     const aGateWrap = document.createElement('div');
     aGateWrap.id = 'comp-agate-wrap';
@@ -8504,7 +8632,8 @@ function _compQuizRenderQuestion() {
       setTimeout(() => { if (aGateWrap.parentNode) aGateWrap.remove(); }, 600);
     };
 
-    // Read each answer aloud with underline when gate starts
+    // Read each answer aloud with underline when gate starts.
+    // Voiceover does NOT auto-complete the gate — only hovering fills the bar.
     const _startAnswerVO = () => {
       if (_answerVoiceStarted || !quizSettings.voiceOver || typeof quizSpeak !== 'function') return;
       _answerVoiceStarted = true;
@@ -8521,9 +8650,7 @@ function _compQuizRenderQuestion() {
         quizSpeak(ansItem.text, { rate: 0.9, targetElement: spanEl || undefined, onEnd: () => {
           if (card) card.classList.remove('vo-reading');
           readNext();
-          if (ai >= q.answers.length && gen === window._cqRenderGen) {
-            aElapsed = _aReadTime; onAGateDone();
-          }
+          // Gate is NOT auto-completed here — bar only fills via hovering.
         }});
       };
       readNext();
@@ -8543,6 +8670,9 @@ function _compQuizRenderQuestion() {
     grid.addEventListener('mouseenter', () => { aHovering = true; _startAnswerVO(); });
     grid.addEventListener('mouseleave', () => { aHovering = false; aLastT = null; });
     _skipARead = () => { aElapsed = _aReadTime; onAGateDone(); };
+  } else {
+    // Gate disabled — answers immediately available for dwell interaction.
+    _aReadDone = true;
   }
 
   // Answer grid card loop
@@ -8581,9 +8711,11 @@ function _compQuizRenderQuestion() {
     const removeSvg = () => { if (svgOv && svgOv.parentNode === card) card.removeChild(svgOv); svgOv = null; };
     const startDwell = () => {
       if (!quizSettings.dwellTimeMs || !_qReadDone || !_aReadDone) return;
+      if (dt !== null) return;   // already animating — prevents ghost loops from eye-gaze jitter
+      if (grid.dataset.answered) return; // grid locked after correct answer
       let s = null;
       const anim = (t) => {
-        if (gen !== window._cqRenderGen) return;
+        if (gen !== window._cqRenderGen) { dt = null; return; }
         if (!s) s = t;
         const pct = Math.min(((t - s) / quizSettings.dwellTimeMs) * 100, 100);
         pb.style.width = pct + '%';
@@ -8594,11 +8726,17 @@ function _compQuizRenderQuestion() {
           card.appendChild(svgOv);
         }
         if (svgOv) { const c2 = svgOv.querySelector('circle:last-child'); if (c2) c2.style.strokeDashoffset = 276.46 - (pct / 100) * 276.46; }
-        if (pct >= 100) doSelect(); else dt = requestAnimationFrame(anim);
+        if (pct >= 100) { dt = null; doSelect(); } else { dt = requestAnimationFrame(anim); }
       };
       dt = requestAnimationFrame(anim);
     };
-    const stopDwell = () => { if (dt) cancelAnimationFrame(dt); pb.style.width = '0%'; removeSvg(); };
+    // stopDwell: cancels rAF, resets dt to null, clears ring and progress bar.
+    // Must reset dt=null so startDwell can be called again on next mouseenter.
+    const stopDwell = () => {
+      if (dt) { cancelAnimationFrame(dt); dt = null; }
+      pb.style.width = '0%';
+      removeSvg();
+    };
     // Click or dwell both work in all modes.
     // Click skips all pending gates instantly before selecting.
     const doSelect = () => {
@@ -8727,6 +8865,21 @@ function _compQuizSelectAnswer(ans, q, allAnswers, grid, isCorrect, gen) {
       }
     });
 
+    // ── Record correct answer in comprehension report ─────────────────
+    const _qIdx = window._compFromQuizIdx || 0;
+    if (window.quizReport && !window._compReportSavedIds?.[_qIdx]) {
+      window._compReportSavedIds = window._compReportSavedIds || {};
+      window._compReportSavedIds[_qIdx] = true;
+      if (!window.quizReport.questions) window.quizReport.questions = [];
+      if (window.quizReport.questions[_qIdx]) {
+        window.quizReport.questions[_qIdx].userSelections = [
+          ...(window.quizReport.questions[_qIdx].userSelections || []),
+          { answerId: String(ans.id), state: 'correct', t: Date.now() }
+        ];
+        window.quizReport.questions[_qIdx].wrongAttempts = _cqWrongAttempts;
+      }
+    }
+
     window._compFromQuizScore = (window._compFromQuizScore || 0) + 1;
     window.quizScore = window._compFromQuizScore;
     if (window.updateQuizScoreBar) window.updateQuizScoreBar();
@@ -8800,20 +8953,32 @@ function _compQuizSelectAnswer(ans, q, allAnswers, grid, isCorrect, gen) {
     }, 200);
 
     // Start voiceover; fall back if TTS doesn't fire or voiceOver is disabled
+    // _doCharsOnce guards against double-firing from both voiceover onEnd and the fallback timeout
+    let _doCharsFired = false;
+    const _doCharsOnce = () => { if (_doCharsFired) return; _doCharsFired = true; _doChars(); };
     let _voFallback;
     if (typeof quizSpeakCongrats === 'function') {
       // Safety fallback: if onEnd never fires (known Chrome TTS bug), trigger after 5s
-      _voFallback = setTimeout(_doChars, 5000);
-      quizSpeakCongrats(correctAnsText, { onEnd: () => { clearTimeout(_voFallback); _doChars(); } });
+      _voFallback = setTimeout(_doCharsOnce, 5000);
+      quizSpeakCongrats(correctAnsText, { onEnd: () => { clearTimeout(_voFallback); _doCharsOnce(); } });
     } else {
       // No voiceover at all — go straight to chars
       _voFallback = null;
-      setTimeout(_doChars, 400);
+      setTimeout(_doCharsOnce, 400);
     }
 
   } else {
     // Wrong — shake + flash + sound
     _cqWrongAttempts++;
+
+    // ── Record wrong attempt in comprehension report ──────────────────
+    const _qIdxW = window._compFromQuizIdx || 0;
+    if (window.quizReport && window.quizReport.questions?.[_qIdxW]) {
+      window.quizReport.questions[_qIdxW].userSelections = [
+        ...(window.quizReport.questions[_qIdxW].userSelections || []),
+        { answerId: String(ans.id), state: 'wrong', t: Date.now() }
+      ];
+    }
     // Clear previous wrong highlights
     Array.from(grid.children).forEach(c => {
       if (c.dataset.state === 'wrong') {
@@ -10626,25 +10791,44 @@ window.renderAdminReportsPanel = async () => {
     const snap = await getDocs(q);
 
     if (loadingEl) loadingEl.style.display = 'none';
-    if (snap.empty) { if (emptyEl) emptyEl.classList.remove('hidden'); return; }
-    if (tableEl) tableEl.style.display = '';
 
     tbody.innerHTML = '';
     window._adminReportsCache = {};
-    let rowIdx = 0;
-    snap.forEach(d => {
-      const data = _normalizeReportData(d.data());
-      window._adminReportsCache[d.id] = data;
-      rowIdx++;
-      tbody.appendChild(_buildReportRow(d, data, rowIdx, true));
+    window._adminCompReportsCache = {};
+
+    const allDocs = [];
+    snap.forEach(d => allDocs.push(d));
+
+    // Separate comprehension from quiz
+    const quizDocs = allDocs.filter(d => (d.data().sessionType || '') !== 'comprehension');
+    const compDocs = allDocs.filter(d => (d.data().sessionType || '') === 'comprehension');
+
+    allDocs.forEach(d => {
+      window._adminReportsCache[d.id] = _normalizeReportData(d.data());
     });
-    _initReportTableSort('admin-reports-table', 'admin-reports-tbody');
+
+    if (quizDocs.length === 0) {
+      if (emptyEl) emptyEl.classList.remove('hidden');
+    } else {
+      if (tableEl) tableEl.style.display = '';
+      quizDocs.forEach((d, i) => {
+        const data = window._adminReportsCache[d.id];
+        tbody.appendChild(_buildReportRow(d, data, i + 1, true));
+      });
+      _initReportTableSort('admin-reports-table', 'admin-reports-tbody');
+    }
+
+    // Render admin comprehension table
+    compDocs.forEach(d => { window._adminCompReportsCache[d.id] = window._adminReportsCache[d.id]; });
+    window.renderAdminCompReports(compDocs, window._adminCompReportsCache);
+
   } catch (err) {
     console.error('[renderAdminReportsPanel]', err);
     if (loadingEl) loadingEl.style.display = 'none';
     if (emptyEl) { emptyEl.textContent = 'Error loading reports.'; emptyEl.classList.remove('hidden'); }
   }
 };
+
 
 // ── Report image retry — re-fetches from original/fallback sources when stored URLs expire ──
 // Supports all image sources: Pixabay, Unsplash, Wikipedia, Wikimedia Commons.
@@ -11306,8 +11490,357 @@ window.setReportAccuracy = async (docId, qIdx, aIdx, value) => {
   }
 };
 
+// ── Comprehension Adventures Table ───────────────────────────────────────────
+
+// Build a single row for the comprehension adventures table
+function _buildCompReportRow(d, data, rowIdx, isAdmin) {
+  const docId    = d.id;
+  const media    = data.media || {};
+  const qs       = _normArrLocal(data.questions);
+  const correct  = qs.filter(q => {
+    const sels = _normArrLocal(q.userSelections);
+    return sels.length > 0 && sels[sels.length - 1].state === 'correct';
+  }).length;
+  const total    = qs.length;
+  const durSec   = Math.round((data.durationMs || 0) / 1000);
+  const durStr   = durSec >= 60 ? `${Math.floor(durSec/60)}m ${durSec%60}s` : `${durSec}s`;
+  const dateShort = new Date(data.startedAt).toLocaleDateString(undefined, { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+  const level    = data.quizSettings?.eduLevel || '—';
+  const reviewed = data.compReviewCompletedAt
+    ? `<span style="color:#34d399;font-size:0.68rem;">✓ ${new Date(data.compReviewCompletedAt).toLocaleDateString()}</span>`
+    : `<span style="color:#334155;font-size:0.68rem;">—</span>`;
+
+  // Media type badge + preview thumbnail
+  const isYT   = media.type === 'youtube';
+  const isImg  = media.type === 'image';
+  const mediaBadge = isYT
+    ? `<span style="font-size:0.68rem;font-weight:700;padding:2px 8px;border-radius:5px;background:rgba(239,68,68,0.12);color:#f87171;">🎬 YouTube</span>`
+    : `<span style="font-size:0.68rem;font-weight:700;padding:2px 8px;border-radius:5px;background:rgba(139,92,246,0.12);color:#a78bfa;">🖼 Image</span>`;
+  const thumbHtml = isYT && media.videoId
+    ? `<img src="https://img.youtube.com/vi/${media.videoId}/mqdefault.jpg" style="width:80px;height:45px;object-fit:cover;border-radius:6px;border:1px solid rgba(255,255,255,0.08);" loading="lazy" onerror="this.style.display='none'">`
+    : (isImg && media.url
+      ? `<img src="${media.url}" style="width:70px;height:45px;object-fit:cover;border-radius:6px;border:1px solid rgba(255,255,255,0.08);" loading="lazy" onerror="this.style.display='none'">`
+      : `<div style="width:70px;height:45px;background:#1e293b;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:1.4rem;">🎬</div>`);
+
+  const viewFn  = isAdmin ? `openAdminCompReportModal('${docId}')` : `openUserCompReportModal('${docId}')`;
+  const viewCls = isAdmin ? 'bg-violet-600/20 hover:bg-violet-600/40 text-violet-300' : 'bg-teal-600/20 hover:bg-teal-600/40 text-teal-300';
+  const delBtn  = `<button onclick="deleteQuizReport('${docId}',${isAdmin})" style="margin-left:5px;padding:3px 9px;border:1px solid rgba(248,113,113,0.3);border-radius:6px;background:rgba(248,113,113,0.07);color:#f87171;font-size:0.67rem;cursor:pointer;">🗑</button>`;
+
+  const tr = document.createElement('tr');
+  tr.id = `comp-report-row-${docId}`;
+  tr.dataset.date  = data.startedAt || '';
+  tr.dataset.score = total > 0 ? (correct / total) : 0;
+  tr.dataset.dur   = durSec;
+  tr.dataset.level = level;
+  tr.dataset.type  = media.type || 'unknown';
+  tr.dataset.search = [dateShort, media.type, media.title || '', media.videoId || '', level, data.userId || ''].join(' ').toLowerCase();
+
+  tr.innerHTML = `
+    <td style="font-size:0.68rem;color:#475569;font-weight:600;text-align:center;">${rowIdx}</td>
+    <td><div style="font-size:0.72rem;color:#cbd5e1;white-space:nowrap;">${dateShort}</div></td>
+    ${isAdmin ? `<td><div style="font-size:0.65rem;color:#475569;font-family:monospace;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${data.userId||''}">${(data.userId||'').slice(0,14)}</div></td>` : ''}
+    <td>${mediaBadge}</td>
+    <td>${thumbHtml}</td>
+    <td><div style="font-size:0.75rem;color:#fbbf24;font-weight:700;">${correct}/${total}</div></td>
+    <td><div style="font-size:0.72rem;color:#94a3b8;">${durStr}</div></td>
+    <td><div style="font-size:0.65rem;color:#64748b;font-weight:700;">${level}</div></td>
+    <td id="comp-reviewed-cell-${docId}">${reviewed}</td>
+    <td style="white-space:nowrap;">
+      <button onclick="${viewFn}" class="px-2 py-1 ${viewCls} rounded text-xs transition-colors">View</button>
+      ${delBtn}
+    </td>`;
+  return tr;
+}
+
+// Render the comprehension adventures detail modal
+function _renderCompReportModal(data, docId, isAdminView) {
+  const modal = document.getElementById('admin-report-modal');
+  const title = document.getElementById('admin-report-title');
+  const sub   = document.getElementById('admin-report-subtitle');
+  const body  = document.getElementById('admin-report-body');
+  if (!modal || !body) return;
+
+  const modalInner = modal.firstElementChild;
+  if (modalInner) { modalInner.style.width = '96vw'; modalInner.style.maxWidth = '1400px'; modalInner.style.maxHeight = '94vh'; }
+
+  const media   = data.media || {};
+  const qs      = _normArrLocal(data.questions);
+  const correct = qs.filter(q => { const s = _normArrLocal(q.userSelections); return s.length > 0 && s[s.length-1].state === 'correct'; }).length;
+  const durSec  = Math.round((data.durationMs || 0) / 1000);
+
+  title.textContent = isAdminView ? 'Comprehension Adventure Report' : 'My Adventure Report';
+  sub.textContent   = `${new Date(data.startedAt).toLocaleString()}  ·  ${durSec}s  ·  ${correct}/${qs.length} correct`;
+
+  const pc = (lbl, val) => `<div style="min-width:100px;"><div style="font-size:0.58rem;color:#64748b;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:3px;">${lbl}</div><div style="font-size:0.78rem;color:#f1f5f9;font-weight:600;">${val}</div></div>`;
+
+  // Media preview section
+  let mediaHtml = '';
+  if (media.type === 'youtube' && media.videoId) {
+    mediaHtml = `
+      <div style="margin-bottom:18px;background:rgba(239,68,68,0.05);border:1px solid rgba(239,68,68,0.2);border-radius:14px;padding:14px 16px;">
+        <div style="font-size:0.62rem;color:#f87171;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">🎬 YouTube Video</div>
+        <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;">
+          <div style="flex:0 0 auto;">
+            <iframe width="360" height="203" src="https://www.youtube.com/embed/${media.videoId}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen style="border-radius:10px;display:block;max-width:100%;"></iframe>
+          </div>
+          <div style="flex:1;min-width:160px;">
+            ${media.title ? `<div style="font-size:0.88rem;font-weight:700;color:#f1f5f9;margin-bottom:6px;">${media.title}</div>` : ''}
+            <a href="https://www.youtube.com/watch?v=${media.videoId}" target="_blank" rel="noopener" style="font-size:0.72rem;color:#60a5fa;text-decoration:underline;">Open on YouTube ↗</a>
+          </div>
+        </div>
+      </div>`;
+  } else if (media.type === 'image' && media.url) {
+    mediaHtml = `
+      <div style="margin-bottom:18px;background:rgba(139,92,246,0.05);border:1px solid rgba(139,92,246,0.2);border-radius:14px;padding:14px 16px;">
+        <div style="font-size:0.62rem;color:#a78bfa;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">🖼 Image</div>
+        <img src="${media.url}" style="max-width:100%;max-height:320px;object-fit:contain;border-radius:10px;display:block;background:#070d1a;" onerror="this.style.display='none'">
+        <a href="${media.url}" target="_blank" rel="noopener" style="font-size:0.68rem;color:#60a5fa;text-decoration:underline;margin-top:6px;display:inline-block;">Open full image ↗</a>
+      </div>`;
+  }
+
+  // Settings bar
+  const s = data.quizSettings || {};
+  const level = s.eduLevel || '—';
+  const subjs = [...(s.subjects||[])];
+  if (s.customSubject) subjs.push(`"${s.customSubject}"`);
+  const subjects = subjs.join(', ') || '—';
+
+  let html = `
+    <div style="display:flex;flex-wrap:wrap;gap:10px 24px;margin-bottom:1.25rem;padding:12px 16px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:12px;">
+      ${pc('Subject', subjects)}
+      ${pc('Level', level)}
+      ${pc('Media', media.type === 'youtube' ? '🎬 YouTube' : '🖼 Image')}
+      ${pc('Score', `${correct} / ${qs.length}`)}
+      ${pc('Duration', `${durSec}s`)}
+      ${isAdminView ? pc('User', `<span style="font-size:0.62rem;font-family:monospace;color:#94a3b8;">${data.userId}</span>`) : ''}
+    </div>
+    ${mediaHtml}
+    <div style="display:flex;flex-direction:column;gap:16px;">`;
+
+  qs.forEach((q, qIdx) => {
+    const sels = _normArrLocal(q.userSelections);
+    const selHtml = sels.map((sel, i) => {
+      const colour = sel.state === 'correct' ? '#34d399' : '#f87171';
+      const ansText = _normArrLocal(q.answers).find(a => String(a.id) === String(sel.answerId))?.text || sel.answerId;
+      return `<span style="display:inline-flex;align-items:center;gap:2px;color:${colour};white-space:nowrap;">${i+1}. ${ansText}</span>`;
+    }).join(`<span style="color:#334155;margin:0 3px;">→</span>`);
+
+    // Q-level rating buttons (rate question quality)
+    const qRateVal = q.questionRating;
+    const _cqBtn = (v, icon) => {
+      const sel = (qRateVal === v);
+      const s2 = sel ? 'background:rgba(251,191,36,0.22);color:#fbbf24;border:1px solid rgba(251,191,36,0.45);font-weight:700;' : 'background:rgba(255,255,255,0.04);color:#334155;border:1px solid transparent;';
+      return `<button id="cqrb-${docId}-${qIdx}-${v}" onclick="setCompQuestionRating('${docId}',${qIdx},${v})" style="${s2}border-radius:6px;padding:4px 10px;cursor:pointer;font-size:1rem;transition:all 0.2s;">${icon}</button>`;
+    };
+    const qRateHtml = `
+      <div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap;">
+        <span style="font-size:0.6rem;color:#475569;">Q Quality?</span>
+        ${_cqBtn(1, '👍')}${_cqBtn(0, '😐')}${_cqBtn(-1, '👎')}
+        ${q.wrongAttempts > 0 ? `<span style="font-size:0.62rem;color:#64748b;margin-left:6px;">⚠ ${q.wrongAttempts} wrong attempt${q.wrongAttempts!==1?'s':''}</span>` : ''}
+      </div>`;
+
+    // Answer cards
+    const cardHtml = _normArrLocal(q.answers).map((a, aIdx) => {
+      const isCorrect = String(a.id) === String(q.correctId);
+      const border = isCorrect ? '1px solid rgba(52,211,153,0.4)' : '1px solid rgba(51,65,85,0.5)';
+      const bg     = isCorrect ? 'rgba(52,211,153,0.04)' : 'rgba(8,14,28,0.5)';
+      const aRateVal = a.answerRating;
+      const _aBtn = (v, icon) => {
+        const sel2 = (aRateVal === v);
+        const s3 = sel2 ? 'background:rgba(251,191,36,0.22);color:#fbbf24;border:1px solid rgba(251,191,36,0.45);font-weight:700;' : 'background:rgba(255,255,255,0.04);color:#334155;border:1px solid transparent;';
+        return `<button id="carb-${docId}-${qIdx}-${aIdx}-${v}" onclick="setCompAnswerRating('${docId}',${qIdx},${aIdx},${v})" style="${s3}border-radius:6px;padding:4px 10px;cursor:pointer;font-size:1rem;transition:all 0.2s;">${icon}</button>`;
+      };
+      const aRateHtml = `
+        <div style="display:flex;align-items:center;gap:6px;margin-top:8px;">
+          <span style="font-size:0.6rem;color:#475569;">A OK?</span>
+          ${_aBtn(1, '👍')}${_aBtn(0, '😐')}${_aBtn(-1, '👎')}
+        </div>`;
+      return `
+        <div style="background:${bg};border:${border};border-radius:12px;padding:10px 12px;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;margin-bottom:4px;">
+            <span style="font-size:0.85rem;font-weight:600;color:#e2e8f0;">${a.text || a.id || '—'}</span>
+            ${isCorrect ? '<span style="font-size:0.6rem;color:#34d399;background:rgba(52,211,153,0.1);padding:2px 7px;border-radius:4px;flex-shrink:0;">✓ Correct</span>' : ''}
+          </div>
+          ${aRateHtml}
+        </div>`;
+    }).join('');
+
+    html += `
+      <div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);border-radius:14px;padding:16px 20px;">
+        <div style="font-size:0.95rem;font-weight:700;color:#f1f5f9;margin-bottom:2px;">Q${qIdx+1}: ${q.question || '<span style="color:#475569;font-style:italic;">question not saved</span>'}</div>
+        ${q.explanation ? `<div style="font-size:0.72rem;color:#64748b;margin-bottom:8px;font-style:italic;">${q.explanation}</div>` : ''}
+        <div style="font-size:0.8rem;margin-bottom:14px;display:flex;flex-wrap:wrap;align-items:center;gap:5px;line-height:1.8;">
+          <strong style="color:#94a3b8;margin-right:2px;">Selections:</strong>
+          ${selHtml || '<span style="color:#334155;">—</span>'}
+        </div>
+        ${qRateHtml}
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-top:12px;">${cardHtml}</div>
+      </div>`;
+  });
+
+  html += '</div>';
+  body.innerHTML = html;
+  modal.style.display = 'flex';
+}
+
+// Set rating for a comprehension question
+window.setCompQuestionRating = async (docId, qIdx, value) => {
+  _ensureRatingCSS(); _playRatingSound(value);
+  const popBtn = document.getElementById(`cqrb-${docId}-${qIdx}-${value}`);
+  if (popBtn) { popBtn.classList.remove('thumb-pop'); void popBtn.offsetWidth; popBtn.classList.add('thumb-pop'); }
+  _updateRatingBtns(`cqrb-${docId}-${qIdx}`, value);
+
+  const cache = window._adminCompReportsCache?.[docId] ? window._adminCompReportsCache : window._userCompReportsCache;
+  if (cache?.[docId]) {
+    const qs = _normArrLocal(cache[docId].questions);
+    if (qs[qIdx]) { qs[qIdx].questionRating = value; cache[docId].questions = qs; }
+    _checkCompReviewComplete(docId, cache);
+  }
+  try {
+    const { doc, updateDoc } = await import('https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore.js');
+    await updateDoc(doc(db, 'quiz_reports', docId), { [`compRatings.q${qIdx}_q`]: value });
+  } catch(e) { console.error('[setCompQuestionRating]', e); }
+};
+
+// Set rating for a comprehension answer
+window.setCompAnswerRating = async (docId, qIdx, aIdx, value) => {
+  _ensureRatingCSS(); _playRatingSound(value);
+  const popBtn = document.getElementById(`carb-${docId}-${qIdx}-${aIdx}-${value}`);
+  if (popBtn) { popBtn.classList.remove('thumb-pop'); void popBtn.offsetWidth; popBtn.classList.add('thumb-pop'); }
+  _updateRatingBtns(`carb-${docId}-${qIdx}-${aIdx}`, value);
+
+  const cache = window._adminCompReportsCache?.[docId] ? window._adminCompReportsCache : window._userCompReportsCache;
+  if (cache?.[docId]) {
+    const qs = _normArrLocal(cache[docId].questions);
+    if (qs[qIdx]) {
+      const ans = _normArrLocal(qs[qIdx].answers);
+      if (ans[aIdx]) { ans[aIdx].answerRating = value; qs[qIdx].answers = ans; }
+      cache[docId].questions = qs;
+    }
+    _checkCompReviewComplete(docId, cache);
+  }
+  try {
+    const { doc, updateDoc } = await import('https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore.js');
+    await updateDoc(doc(db, 'quiz_reports', docId), { [`compRatings.q${qIdx}_a${aIdx}`]: value });
+  } catch(e) { console.error('[setCompAnswerRating]', e); }
+};
+
+// Merge compRatings flat map back into questions when loading
+function _normalizeCompReportData(data) {
+  if (!data) return data;
+  if (!Array.isArray(data.questions)) data.questions = Object.values(data.questions || {});
+  if (data.compRatings && typeof data.compRatings === 'object') {
+    const qs = data.questions;
+    Object.keys(data.compRatings).forEach(key => {
+      const qMatch = key.match(/^q(\d+)_q$/);
+      const aMatch = key.match(/^q(\d+)_a(\d+)$/);
+      if (qMatch) {
+        const qi = parseInt(qMatch[1]);
+        if (qs[qi] && qs[qi].questionRating == null) qs[qi].questionRating = data.compRatings[key];
+      } else if (aMatch) {
+        const qi = parseInt(aMatch[1]), ai = parseInt(aMatch[2]);
+        if (qs[qi]) {
+          const ans = Array.isArray(qs[qi].answers) ? qs[qi].answers : Object.values(qs[qi].answers || {});
+          if (ans[ai] && ans[ai].answerRating == null) ans[ai].answerRating = data.compRatings[key];
+          qs[qi].answers = ans;
+        }
+      }
+    });
+    data.questions = qs;
+  }
+  return data;
+}
+
+function _checkCompReviewComplete(docId, cache) {
+  if (!cache?.[docId]) return;
+  const qs = _normArrLocal(cache[docId].questions);
+  const total = qs.length;
+  const rated = qs.filter(q => q.questionRating != null).length;
+  if (total > 0 && rated >= total && !cache[docId].compReviewCompletedAt) {
+    cache[docId].compReviewCompletedAt = new Date().toISOString();
+    const cell = document.getElementById(`comp-reviewed-cell-${docId}`);
+    if (cell) cell.innerHTML = `<span style="color:#34d399;font-size:0.72rem;">✓ ${new Date().toLocaleDateString()}</span>`;
+  }
+}
+
+// Render the user comprehension adventures table
+window.renderUserCompReports = (compDocs, cache) => {
+  const wrap    = document.getElementById('user-comp-adventures-wrap');
+  const tableEl = document.getElementById('user-comp-table');
+  const tbody   = document.getElementById('user-comp-tbody');
+  const emptyEl = document.getElementById('user-comp-empty');
+  const loadEl  = document.getElementById('user-comp-loading');
+  if (!wrap) return;
+
+  if (loadEl) loadEl.style.display = 'none';
+  tbody.innerHTML = '';
+  if (!compDocs || compDocs.length === 0) {
+    if (emptyEl) emptyEl.classList.remove('hidden');
+    if (tableEl) tableEl.style.display = 'none';
+    return;
+  }
+  if (emptyEl) emptyEl.classList.add('hidden');
+  if (tableEl) tableEl.style.display = '';
+
+  compDocs.forEach((d, i) => {
+    const data = _normalizeCompReportData(cache[d.id] || d.data());
+    cache[d.id] = data;
+    tbody.appendChild(_buildCompReportRow(d, data, i + 1, false));
+  });
+};
+
+// Render the admin comprehension adventures table
+window.renderAdminCompReports = (compDocs, cache) => {
+  const wrap    = document.getElementById('admin-comp-adventures-wrap');
+  const tableEl = document.getElementById('admin-comp-table');
+  const tbody   = document.getElementById('admin-comp-tbody');
+  const emptyEl = document.getElementById('admin-comp-empty');
+  if (!wrap) return;
+
+  tbody.innerHTML = '';
+  if (!compDocs || compDocs.length === 0) {
+    if (emptyEl) emptyEl.classList.remove('hidden');
+    if (tableEl) tableEl.style.display = 'none';
+    return;
+  }
+  if (emptyEl) emptyEl.classList.add('hidden');
+  if (tableEl) tableEl.style.display = '';
+
+  compDocs.forEach((d, i) => {
+    const data = _normalizeCompReportData(cache[d.id] || d.data());
+    cache[d.id] = data;
+    tbody.appendChild(_buildCompReportRow(d, data, i + 1, true));
+  });
+};
+
+// Open user comp report modal
+window.openUserCompReportModal = async (docId) => {
+  window._activeReportCtx = { docId, isAdmin: false, isComp: true };
+  const cached = window._userCompReportsCache?.[docId];
+  if (cached) { _renderCompReportModal(cached, docId, false); return; }
+  try {
+    const { doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore.js');
+    const snap = await getDoc(doc(db, 'quiz_reports', docId));
+    if (snap.exists()) {
+      const fresh = _normalizeCompReportData(snap.data());
+      if (!window._userCompReportsCache) window._userCompReportsCache = {};
+      window._userCompReportsCache[docId] = fresh;
+      _renderCompReportModal(fresh, docId, false);
+    }
+  } catch(e) { console.error('[openUserCompReportModal]', e); }
+};
+
+// Open admin comp report modal
+window.openAdminCompReportModal = (docId) => {
+  window._activeReportCtx = { docId, isAdmin: true, isComp: true };
+  const data = window._adminCompReportsCache?.[docId];
+  if (!data) return;
+  _renderCompReportModal(data, docId, true);
+};
+
 // ── Image Ratings Panel ──────────────────────────────────────────
 window.renderImageRatingsPanel = async () => {
+
   const loadEl  = document.getElementById('image-ratings-loading');
   const chartEl = document.getElementById('image-ratings-chart-wrap');
   const emptyEl = document.getElementById('image-ratings-empty');
@@ -11483,26 +12016,46 @@ window.renderUserReports = async () => {
     const snap = await getDocs(q);
 
     if (loadingEl) loadingEl.style.display = 'none';
-    if (snap.empty) { if (emptyEl) emptyEl.classList.remove('hidden'); return; }
-    if (tableEl) tableEl.style.display = '';
 
     tbody.innerHTML = '';
     window._userReportsCache = {};
+    window._userCompReportsCache = window._userCompReportsCache || {};
 
     const repDocs = [];
     snap.forEach(d => repDocs.push(d));
     const repCount = repDocs.length;
 
-    repDocs.forEach((d, i) => {
-      const data = _normalizeReportData(d.data());
-      window._userReportsCache[d.id] = data;
-      const rowIdx = repCount - i; // oldest = 1, newest = repCount
-      tbody.appendChild(_buildReportRow(d, data, rowIdx, false));
+    // Separate comprehension adventures from quiz reports
+    const quizDocs = repDocs.filter(d => (d.data().sessionType || '') !== 'comprehension');
+    const compDocs = repDocs.filter(d => (d.data().sessionType || '') === 'comprehension');
+
+    // Populate the all-reports cache (needed for ratings etc.)
+    repDocs.forEach(d => {
+      window._userReportsCache[d.id] = _normalizeReportData(d.data());
     });
 
-    _initReportTableSort('user-reports-table', 'user-reports-tbody');
-    // Render image quality trend chart
-    window.renderUserImageQualityChart(window._userReportsCache);
+    if (quizDocs.length === 0) {
+      if (emptyEl) emptyEl.classList.remove('hidden');
+    } else {
+      if (tableEl) tableEl.style.display = '';
+      quizDocs.forEach((d, i) => {
+        const data = window._userReportsCache[d.id];
+        const rowIdx = quizDocs.length - i;
+        tbody.appendChild(_buildReportRow(d, data, rowIdx, false));
+      });
+      _initReportTableSort('user-reports-table', 'user-reports-tbody');
+    }
+
+    // Render image quality trend chart (quiz sessions only for this chart)
+    window.renderUserImageQualityChart(
+      Object.fromEntries(quizDocs.map(d => [d.id, window._userReportsCache[d.id]]))
+    );
+
+    // Populate comprehension cache and render comp table
+    compDocs.forEach(d => {
+      window._userCompReportsCache[d.id] = window._userReportsCache[d.id];
+    });
+    window.renderUserCompReports(compDocs, window._userCompReportsCache);
 
   } catch (err) {
     console.error('[renderUserReports]', err);
@@ -11510,6 +12063,7 @@ window.renderUserReports = async () => {
     if (emptyEl) { emptyEl.textContent = 'Error loading reports: ' + err.message; emptyEl.classList.remove('hidden'); }
   }
 };
+
 
 window.openUserReportModal = async (docId) => {
   window._activeReportCtx = { docId, isAdmin: false };

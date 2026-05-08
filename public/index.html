@@ -279,6 +279,35 @@
           </table>
           <div id="admin-reports-empty" class="admin-empty hidden">No reports found.</div>
         </div>
+
+        <!-- Admin Comprehension Adventures Table -->
+        <div id="admin-comp-adventures-wrap" style="margin-top:28px;">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding-top:20px;border-top:1px solid rgba(255,255,255,0.06);">
+            <span style="font-size:1rem;font-weight:900;color:#0d9488;">🎬</span>
+            <h3 style="font-size:0.95rem;font-weight:800;color:#0d9488;margin:0;">Comprehension Adventures</h3>
+            <span style="font-size:0.62rem;color:#475569;font-style:italic;">All users</span>
+          </div>
+          <div class="admin-table-wrap" style="max-height:50vh;overflow-y:auto;">
+            <table class="admin-table" id="admin-comp-table" style="display:none;">
+              <thead style="position:sticky;top:0;z-index:2;background:#0f172a;">
+                <tr>
+                  <th style="width:32px;text-align:center;">#</th>
+                  <th>Date</th>
+                  <th>User</th>
+                  <th>Media</th>
+                  <th>Preview</th>
+                  <th>Score</th>
+                  <th>Duration</th>
+                  <th>Level</th>
+                  <th>Reviewed</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="admin-comp-tbody"></tbody>
+            </table>
+            <div id="admin-comp-empty" class="admin-empty hidden">No comprehension adventures found.</div>
+          </div>
+        </div>
       </div>
 
       <!-- Image Ratings Tab -->
@@ -403,7 +432,41 @@
           </div>
         </div>
       </div>
+
+      <!-- Comprehension Adventures Table -->
+      <div id="user-comp-adventures-wrap" class="w-full mt-10">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:1.2rem;font-weight:900;color:#0d9488;">🎬</span>
+            <h3 style="font-size:1.1rem;font-weight:800;color:#0d9488;margin:0;">Comprehension Adventures</h3>
+          </div>
+          <span style="font-size:0.68rem;color:#475569;font-style:italic;">Videos &amp; images you explored with Q&amp;A</span>
+        </div>
+        <div class="admin-table-wrap w-full" style="max-height:55vh;overflow-y:auto;">
+          <div id="user-comp-loading" class="admin-empty" style="display:none;">
+            <div class="admin-spinner mx-auto mb-3"></div>Loading adventures…
+          </div>
+          <table class="admin-table" id="user-comp-table" style="display:none;">
+            <thead style="position:sticky;top:0;z-index:2;background:#0f172a;">
+              <tr>
+                <th style="width:32px;text-align:center;">#</th>
+                <th>Date</th>
+                <th>Media</th>
+                <th>Preview</th>
+                <th>Score</th>
+                <th>Duration</th>
+                <th>Level</th>
+                <th>Reviewed</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="user-comp-tbody"></tbody>
+          </table>
+          <div id="user-comp-empty" class="admin-empty hidden">No comprehension adventures yet. Start one from the Knowledge Explorer!</div>
+        </div>
+      </div>
     </div>
+
 
     <!-- ══════════════════════════════════════════════════════════ -->
     <!-- COMPREHENSION ADVENTURE VIEW                              -->
