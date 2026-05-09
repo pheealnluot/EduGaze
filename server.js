@@ -856,12 +856,14 @@ function _removeOverlapping(boxes, maxCount, iouThreshold = 0.15) {
   return accepted;
 }
 
-app.get('/api/spot-char-gallery', (req, res) => {
+// Helper to scan and generate gallery.json
+function updateGalleryJson() {
   try {
     const assetsDir = path.join(__dirname, 'public', 'assets');
     const images = [];
 
     function walk(dir) {
+      if (!statSync(dir, { throwIfNoEntry: false })) return;
       const files = readdirSync(dir);
       for (const f of files) {
         const p = path.join(dir, f);
@@ -872,22 +874,19 @@ app.get('/api/spot-char-gallery', (req, res) => {
           walk(p);
         } else if (p.toLowerCase().endsWith('.png') || p.toLowerCase().endsWith('.webp')) {
           const lowerF = f.toLowerCase();
-          // Skip background files
           if (lowerF.includes('background') || lowerF.includes('skyline') || lowerF.includes('water')) continue;
           
           const relPath = p.substring(assetsDir.length + 1).replace(/\\/g, '/');
           
-          // Generate a readable name from the filename
           let name = f.replace(/\.(png|webp)$/i, '')
                       .replace(/-removebg-preview/i, '')
                       .replace(/_[a-z0-9]+$/i, '')
                       .replace(/[-_]/g, ' ')
                       .trim();
                       
-          // Heuristic to hide garbage names
           const isGarbage = 
-            /^[a-z0-9]{10,}$/i.test(name.replace(/\s/g, '')) || // long alphanumeric hash
-            /[0-9]{4,}/.test(name) || // contains a 4+ digit number
+            /^[a-z0-9]{10,}$/i.test(name.replace(/\s/g, '')) || 
+            /[0-9]{4,}/.test(name) || 
             name.toLowerCase().includes('screenshot') ||
             name.toLowerCase().startsWith('images') ||
             name.toLowerCase() === 'maxresdefault' ||
@@ -896,7 +895,6 @@ app.get('/api/spot-char-gallery', (req, res) => {
           if (isGarbage) {
             name = '';
           } else {
-            // Capitalize first letter of each word
             name = name.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
           }
           
@@ -906,13 +904,25 @@ app.get('/api/spot-char-gallery', (req, res) => {
     }
     
     walk(assetsDir);
-    // Sort alphabetically by name
     images.sort((a, b) => a.name.localeCompare(b.name));
     
-    res.json({ images });
+    writeFileSync(path.join(assetsDir, 'gallery.json'), JSON.stringify({ images }, null, 2));
+    console.log(`[SpotChar] Updated gallery.json with ${images.length} images`);
   } catch (err) {
-    console.error('[SpotChar] Gallery error:', err);
-    res.status(500).json({ error: 'Failed to load gallery' });
+    console.error('[SpotChar] Failed to update gallery.json:', err);
+  }
+}
+
+// Generate it on server start
+updateGalleryJson();
+
+// We still keep a GET endpoint just in case, but it reads the file
+app.get('/api/spot-char-gallery', (req, res) => {
+  try {
+    const data = readFileSync(path.join(__dirname, 'public', 'assets', 'gallery.json'), 'utf8');
+    res.type('json').send(data);
+  } catch (e) {
+    res.status(404).json({ error: 'Gallery not found' });
   }
 });
 
@@ -936,6 +946,7 @@ app.post('/api/spot-char-gallery/upload', (req, res) => {
     
     writeFileSync(filePath, buffer);
     console.log(`[SpotChar] Saved new gallery image: ${fileName}`);
+    updateGalleryJson(); // Update static JSON
     res.json({ url: `assets/uploads/${fileName}`, name });
   } catch (err) {
     console.error('[SpotChar] Upload error:', err);
@@ -962,6 +973,7 @@ app.post('/api/spot-char-gallery/delete', (req, res) => {
       const newPath = path.join(archiveDir, path.basename(normalizedPath));
       renameSync(normalizedPath, newPath);
       console.log(`[SpotChar] Archived gallery image: ${url}`);
+      updateGalleryJson(); // Update static JSON
       res.json({ success: true });
     } else {
       res.status(404).json({ error: 'File not found' });

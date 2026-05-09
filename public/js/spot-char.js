@@ -1116,7 +1116,7 @@ window.stcOpenGallery = async function() {
   if (STC_GALLERY_IMAGES.length === 0) {
     grid.innerHTML = '<div style="color:#94a3b8;grid-column:1/-1;text-align:center;padding:40px;">Loading characters...</div>';
     try {
-      const res = await fetch('/api/spot-char-gallery');
+      const res = await fetch('assets/gallery.json');
       const data = await res.json();
       if (data.images) STC_GALLERY_IMAGES = data.images;
     } catch(e) {
