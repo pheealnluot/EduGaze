@@ -339,16 +339,22 @@ async function _start() {
   const bgStyle    = localStorage.getItem(STC_KEY_BG_STYLE) || 'kids';
   const describeVisually = _el('stc-describe-chk')?.checked ?? false;
   const describeSceneVisually = _el('stc-describe-scene-chk')?.checked ?? false;
-  if (!theme) { _el('stc-char-input').focus(); _err('Please enter a theme to find!'); return; }
+  
+  let finalTheme = theme;
+  if (!finalTheme && !_targetImageUrl) { _el('stc-char-input').focus(); _err('Please enter a theme to find, or select a character image!'); return; }
+  if (!finalTheme && _targetImageUrl) { finalTheme = 'the reference character'; }
+  
   if (!scene) { _el('stc-scene-input').focus(); _err('Please describe a background scene!'); return; }
-  _saveH(STC_KEY_THEME, theme); _saveH(STC_KEY_SCENE, scene);
-  _theme = theme; _targets=[]; _foundCount=0; _attempts=0; _failedClicks=0; _allFound=false;
-  _lastReqBody = { theme, scene, otherCount: count, findCount: findN, bgStyle, describeVisually, describeSceneVisually, targetImageUrl: _targetImageUrl };
+  if (theme) { _saveH(STC_KEY_THEME, theme); }
+  _saveH(STC_KEY_SCENE, scene);
+  
+  _theme = finalTheme; _targets=[]; _foundCount=0; _attempts=0; _failedClicks=0; _allFound=false;
+  _lastReqBody = { theme: finalTheme, scene, otherCount: count, findCount: findN, bgStyle, describeVisually, describeSceneVisually, targetImageUrl: _targetImageUrl };
   // ── Initialize Spot-the-Character Report Tracking ─────────────────────
   window.stcReport = {
     sessionType: 'spot-char',
     startedAt: new Date().toISOString(),
-    theme, scene,
+    theme: finalTheme, scene,
     findCount: findN, otherCount: count,
     bgStyle,
     modelName: 'Gemini Flash Image',
@@ -1120,7 +1126,8 @@ window.stcOpenGallery = async function() {
   }
   
   grid.innerHTML = STC_GALLERY_IMAGES.map((img, i) => `
-    <div onclick="window.stcSelectGalleryItem(${i})" style="cursor:pointer;background:rgba(255,255,255,0.05);border-radius:12px;padding:12px;display:flex;flex-direction:column;align-items:center;transition:all 0.2s;border:2px solid transparent;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'">
+    <div onclick="window.stcSelectGalleryItem(${i})" style="position:relative;cursor:pointer;background:rgba(255,255,255,0.05);border-radius:12px;padding:12px;display:flex;flex-direction:column;align-items:center;transition:all 0.2s;border:2px solid transparent;" onmouseover="this.style.background='rgba(255,255,255,0.1)';this.querySelector('.stc-del-btn').style.opacity='1'" onmouseout="this.style.background='rgba(255,255,255,0.05)';this.querySelector('.stc-del-btn').style.opacity='0'">
+      <button class="stc-del-btn" onclick="window.stcDeleteGalleryItem(${i}, event)" style="position:absolute;top:4px;right:4px;background:rgba(239,68,68,0.8);color:white;border:none;border-radius:50%;width:24px;height:24px;font-size:0.8rem;cursor:pointer;opacity:0;transition:opacity 0.2s;display:flex;align-items:center;justify-content:center;" title="Remove from Gallery">✕</button>
       <img src="${img.url}" style="width:100%;height:100px;object-fit:contain;margin-bottom:8px;" />
       <span style="font-size:0.8rem;color:#cbd5e1;text-align:center;font-weight:600;">${img.name}</span>
     </div>
@@ -1146,4 +1153,60 @@ window.stcSelectGalleryItem = function(idx) {
   }
   
   window.stcCloseGallery();
+};
+
+window.stcUploadImage = async function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const btn = e.target.previousElementSibling;
+  const originalText = btn.innerHTML;
+  btn.innerHTML = `<span style="font-size:1.1rem;">⌛</span> Uploading...`;
+  btn.disabled = true;
+
+  try {
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      const base64 = evt.target.result;
+      const res = await fetch('/api/spot-char-gallery/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: file.name, imageBase64: base64 })
+      });
+      if (res.ok) {
+        STC_GALLERY_IMAGES = []; // Invalidate
+        window.stcOpenGallery(); // Refresh
+      } else {
+        alert('Failed to upload image');
+      }
+    };
+    reader.readAsDataURL(file);
+  } catch (err) {
+    alert('Failed to upload image');
+  } finally {
+    btn.innerHTML = originalText;
+    btn.disabled = false;
+    e.target.value = ''; // Reset input
+  }
+};
+
+window.stcDeleteGalleryItem = async function(idx, event) {
+  event.stopPropagation();
+  if (!confirm('Are you sure you want to remove this character from the gallery?')) return;
+  const img = STC_GALLERY_IMAGES[idx];
+  
+  try {
+    const res = await fetch('/api/spot-char-gallery/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: img.url })
+    });
+    if (res.ok) {
+      STC_GALLERY_IMAGES.splice(idx, 1);
+      window.stcOpenGallery(); // Re-render grid
+    } else {
+      alert('Failed to delete image');
+    }
+  } catch (err) {
+    alert('Failed to delete image');
+  }
 };

@@ -2,7 +2,7 @@ import express from 'express';
 import compression from 'compression';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { readFileSync } from 'fs';
+import { readFileSync, readdirSync, statSync, mkdirSync, writeFileSync, renameSync } from 'fs';
 
 // Auto-load .env for local development (file is gitignored, never committed)
 try {
@@ -33,7 +33,7 @@ app.use(express.static(path.join(__dirname, 'public'), {
 }));
 
 // Parse JSON request bodies (needed for the Gemini proxy + transcript injection)
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '10mb' }));
 
 // ── Gemini API proxy ─────────────────────────────────────────────────────────
 // The Firebase API key has API_KEY_SERVICE_BLOCKED for generativelanguage API.
@@ -862,15 +862,15 @@ app.get('/api/spot-char-gallery', (req, res) => {
     const images = [];
 
     function walk(dir) {
-      const files = fs.readdirSync(dir);
+      const files = readdirSync(dir);
       for (const f of files) {
         const p = path.join(dir, f);
-        if (fs.statSync(p).isDirectory()) {
+        if (statSync(p).isDirectory()) {
           const folderName = path.basename(p).toLowerCase();
           // Skip known non-character folders
           if (folderName === 'wrong png' || folderName === 'raw_image' || folderName === 'archive' || folderName === 'backgrounds') continue;
           walk(p);
-        } else if (p.endsWith('.png') || p.endsWith('.webp')) {
+        } else if (p.toLowerCase().endsWith('.png') || p.toLowerCase().endsWith('.webp')) {
           const lowerF = f.toLowerCase();
           // Skip background files
           if (lowerF.includes('background') || lowerF.includes('skyline') || lowerF.includes('water')) continue;
@@ -884,8 +884,21 @@ app.get('/api/spot-char-gallery', (req, res) => {
                       .replace(/[-_]/g, ' ')
                       .trim();
                       
-          // Capitalize first letter of each word
-          name = name.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+          // Heuristic to hide garbage names
+          const isGarbage = 
+            /^[a-z0-9]{10,}$/i.test(name.replace(/\s/g, '')) || // long alphanumeric hash
+            /[0-9]{4,}/.test(name) || // contains a 4+ digit number
+            name.toLowerCase().includes('screenshot') ||
+            name.toLowerCase().startsWith('images') ||
+            name.toLowerCase() === 'maxresdefault' ||
+            name.toLowerCase().startsWith('download');
+            
+          if (isGarbage) {
+            name = '';
+          } else {
+            // Capitalize first letter of each word
+            name = name.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+          }
           
           images.push({ url: 'assets/' + relPath, name });
         }
@@ -900,6 +913,62 @@ app.get('/api/spot-char-gallery', (req, res) => {
   } catch (err) {
     console.error('[SpotChar] Gallery error:', err);
     res.status(500).json({ error: 'Failed to load gallery' });
+  }
+});
+
+app.post('/api/spot-char-gallery/upload', (req, res) => {
+  try {
+    const { name, imageBase64 } = req.body;
+    if (!name || !imageBase64) return res.status(400).json({ error: 'Missing name or imageBase64' });
+
+    const uploadsDir = path.join(__dirname, 'public', 'assets', 'uploads');
+    if (!statSync(uploadsDir, { throwIfNoEntry: false })) {
+      mkdirSync(uploadsDir, { recursive: true });
+    }
+
+    const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+    const buffer = Buffer.from(base64Data, 'base64');
+    
+    // Sanitize filename
+    const safeName = name.replace(/[^a-z0-9_-]/gi, '_').toLowerCase();
+    const fileName = `${safeName}_${Date.now()}.png`;
+    const filePath = path.join(uploadsDir, fileName);
+    
+    writeFileSync(filePath, buffer);
+    console.log(`[SpotChar] Saved new gallery image: ${fileName}`);
+    res.json({ url: `assets/uploads/${fileName}`, name });
+  } catch (err) {
+    console.error('[SpotChar] Upload error:', err);
+    res.status(500).json({ error: 'Failed to upload image' });
+  }
+});
+
+app.post('/api/spot-char-gallery/delete', (req, res) => {
+  try {
+    const { url } = req.body;
+    if (!url || !url.startsWith('assets/')) return res.status(400).json({ error: 'Invalid URL' });
+    
+    const filePath = path.join(__dirname, 'public', url);
+    const normalizedPath = path.normalize(filePath);
+    if (!normalizedPath.startsWith(path.join(__dirname, 'public', 'assets'))) {
+      return res.status(403).json({ error: 'Forbidden path' });
+    }
+    
+    if (statSync(normalizedPath, { throwIfNoEntry: false })) {
+      const archiveDir = path.join(__dirname, 'public', 'assets', 'archive');
+      if (!statSync(archiveDir, { throwIfNoEntry: false })) {
+        mkdirSync(archiveDir, { recursive: true });
+      }
+      const newPath = path.join(archiveDir, path.basename(normalizedPath));
+      renameSync(normalizedPath, newPath);
+      console.log(`[SpotChar] Archived gallery image: ${url}`);
+      res.json({ success: true });
+    } else {
+      res.status(404).json({ error: 'File not found' });
+    }
+  } catch (err) {
+    console.error('[SpotChar] Delete error:', err);
+    res.status(500).json({ error: 'Failed to delete image' });
   }
 });
 
