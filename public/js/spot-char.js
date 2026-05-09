@@ -185,6 +185,17 @@ function _bindEvents() {
   _bindSlider('stc-autohint-slider', 'stc-autohint-value', v => v == 0 ? 'Off' : v+'s', '', v => {
     _autoHintDelayMs = parseInt(v) * 1000;
     localStorage.setItem(STC_KEY_AUTOHINT, _autoHintDelayMs);
+    const iahs = _el('stc-ingame-autohint-slider');
+    if (iahs) { iahs.value = v; _grad(iahs); _el('stc-ingame-autohint-value').textContent = v == 0 ? 'Off' : v+'s'; }
+    if (_autoHintDelayMs === 0 && window._autoHintTimer) { clearTimeout(window._autoHintTimer); window._autoHintTimer = null; }
+  });
+  _bindSlider('stc-ingame-autohint-slider', 'stc-ingame-autohint-value', v => v == 0 ? 'Off' : v+'s', '', v => {
+    _autoHintDelayMs = parseInt(v) * 1000;
+    localStorage.setItem(STC_KEY_AUTOHINT, _autoHintDelayMs);
+    const m = _el('stc-autohint-slider');
+    if (m) { m.value = v; _grad(m); _el('stc-autohint-value').textContent = v == 0 ? 'Off' : v+'s'; }
+    if (_autoHintDelayMs === 0 && window._autoHintTimer) { clearTimeout(window._autoHintTimer); window._autoHintTimer = null; }
+    else { const c = _el('stc-game-canvas'); if (c && !_allFound) _resetAutoHintTimer(c); }
   });
 
   // Describe visually checkboxes — persist on change
@@ -265,6 +276,9 @@ function _syncSliders() {
   const ahs = _el('stc-autohint-slider'), ahv = _el('stc-autohint-value');
   if (ahs) { ahs.value = _autoHintDelayMs / 1000; _grad(ahs); }
   if (ahv) ahv.textContent = _autoHintDelayMs === 0 ? 'Off' : (_autoHintDelayMs / 1000) + 's';
+  const iahs = _el('stc-ingame-autohint-slider'), iahv = _el('stc-ingame-autohint-value');
+  if (iahs) { iahs.value = _autoHintDelayMs / 1000; _grad(iahs); }
+  if (iahv) iahv.textContent = _autoHintDelayMs === 0 ? 'Off' : (_autoHintDelayMs / 1000) + 's';
 
   // Describe visually checkboxes
   const descChk = _el('stc-describe-chk');
@@ -1001,6 +1015,7 @@ function _startDwell(canvas, t, idx) {
     const arc=el.querySelector(`#stc-arc-${idx}`);
     if(arc) arc.style.strokeDashoffset='0'; // animate: empty → full
   }));
+  _resetAutoHintTimer(canvas);
   t.dwellTimer=setTimeout(()=>{ if(t.inBbox&&!t.found) _onFound(canvas,t,idx); }, _dwellMs);
 }
 

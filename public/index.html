@@ -980,6 +980,21 @@
             </div>
           </div>
           
+          <div class="stc-field-group" style="margin-top:16px;">
+            <label class="stc-field-label">Auto-Hint Delay
+              <span style="font-weight:500;color:#475569;text-transform:none;letter-spacing:0;margin-left:4px;font-size:0.6rem;">(0 = Off)</span>
+            </label>
+            <div class="stc-slider-row">
+              <input type="range" id="stc-ingame-autohint-slider" class="stc-slider" min="0" max="100" step="1" value="0" style="--pct:0%">
+              <div class="stc-slider-value" id="stc-ingame-autohint-value">Off</div>
+            </div>
+            <div class="stc-slider-labels">
+              <span>Off</span>
+              <span>50s</span>
+              <span>100s</span>
+            </div>
+          </div>
+          
           <div style="margin-top:24px;display:flex;justify-content:flex-end;">
             <button onclick="window.stcCloseInGameSettings()" style="background:linear-gradient(135deg,#06b6d4,#6366f1);border:none;border-radius:8px;color:#fff;padding:10px 24px;font-weight:700;cursor:pointer;">Save & Resume</button>
           </div>
@@ -1313,7 +1328,7 @@
                   <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
                 </svg>
                 <input type="text" id="qs-find-topic" placeholder="Topic or keyword (optional) — e.g. space, ocean, rainforest…"
-                  style="flex:1;background:transparent;border:none;outline:none;font-size:0.72rem;font-weight:600;color:#e2e8f0;placeholder-color:#475569;"
+                  style="flex:1;background:transparent;border:none;outline:none;font-size:0.72rem;font-weight:600;color:#e2e8f0;"
                   autocomplete="off" spellcheck="false">
               </div>
               <div style="display:flex;gap:8px;">
