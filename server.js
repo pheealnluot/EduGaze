@@ -822,30 +822,216 @@ const GEMINI_IMAGE_GEN_URL =
 const IMAGEN4_URL =
   `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${GEMINI_API_KEY}`;
 
+// Helper: Greedily select non-overlapping bboxes.
+// Keeps the first bbox, then only adds subsequent ones if their IoU with all
+// already-accepted bboxes is below the threshold (default 0.15).
+function _removeOverlapping(boxes, maxCount, iouThreshold = 0.15) {
+  if (boxes.length <= 1) return boxes.slice(0, maxCount);
+  const accepted = [boxes[0]];
+  for (let i = 1; i < boxes.length && accepted.length < maxCount; i++) {
+    const b = boxes[i];
+    let overlaps = false;
+    for (const a of accepted) {
+      // Compute intersection
+      const x1 = Math.max(a.x, b.x);
+      const y1 = Math.max(a.y, b.y);
+      const x2 = Math.min(a.x + a.w, b.x + b.w);
+      const y2 = Math.min(a.y + a.h, b.y + b.h);
+      const interW = Math.max(0, x2 - x1);
+      const interH = Math.max(0, y2 - y1);
+      const interArea = interW * interH;
+      const areaA = a.w * a.h;
+      const areaB = b.w * b.h;
+      const union = areaA + areaB - interArea;
+      const iou = union > 0 ? interArea / union : 0;
+      // Also check if centers are too close (< 20% image width apart)
+      const cxA = a.x + a.w / 2, cyA = a.y + a.h / 2;
+      const cxB = b.x + b.w / 2, cyB = b.y + b.h / 2;
+      const dist = Math.sqrt((cxA - cxB) ** 2 + (cyA - cyB) ** 2);
+      if (iou > iouThreshold || dist < 0.18) {
+        overlaps = true;
+        break;
+      }
+    }
+    if (!overlaps) accepted.push(b);
+  }
+  if (accepted.length < boxes.length) {
+    console.log(`[SpotChar] Overlap filter: kept ${accepted.length} of ${boxes.length} bbox(es)`);
+  }
+  return accepted;
+}
+
 app.post('/api/spot-char-generate', async (req, res) => {
   if (!GEMINI_API_KEY) return res.status(503).json({ error: 'GEMINI_API_KEY not configured' });
 
-  const { theme, scene, otherCount = 10, findCount = 1, usePaidTier = false } = req.body || {};
-  if (!theme || !scene) return res.status(400).json({ error: 'theme and scene are required' });
+  const { theme: rawTheme, scene, otherCount = 10, findCount = 1, usePaidTier = false, bgStyle = 'kids', describeVisually = false } = req.body || {};
+  if (!rawTheme || !scene) return res.status(400).json({ error: 'theme and scene are required' });
+
+  // ── Optional: translate franchise name → visual description ────────────────
+  // When enabled, this prevents the franchise's canonical art style from
+  // overriding the user's selected art style. E.g. "Kiki's Delivery Service" →
+  // "a young girl in a dark navy-blue dress riding a broomstick, accompanied by
+  // a small black cat with bright eyes"
+  let theme = rawTheme;
+  if (describeVisually) {
+    try {
+      console.log(`[SpotChar] Translating franchise → visual description: "${rawTheme}"`);
+      const descResp = await fetch(GEMINI_URL, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(15000),
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text:
+            `You are a visual description translator for an AI image generator.\n` +
+            `Convert this franchise/character name into a VISUAL-ONLY description.\n` +
+            `DO NOT mention the franchise name, studio, or any copyrighted terms.\n` +
+            `Describe ONLY what the character(s) LOOK like: body shape, clothing, colours, accessories, distinctive features.\n` +
+            `Keep it concise (1-2 sentences max).\n\n` +
+            `Franchise: "${rawTheme}"\n\n` +
+            `Visual description:`
+          }] }],
+          generationConfig: { maxOutputTokens: 150, temperature: 0.2 },
+        }),
+      });
+      const descData = await descResp.json();
+      const descText = descData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+      if (descText && descText.length > 10) {
+        theme = descText;
+        console.log(`[SpotChar] ✅ Translated to: "${theme}"`);
+      } else {
+        console.warn(`[SpotChar] Translation returned empty — using original: "${rawTheme}"`);
+      }
+    } catch (e) {
+      console.warn(`[SpotChar] Translation failed (non-fatal): ${e.message} — using original: "${rawTheme}"`);
+    }
+  }
 
   const bgCount   = Math.min(Math.max(parseInt(otherCount) || 10, 2), 50);
   const findN     = Math.min(Math.max(parseInt(findCount)  || 1,  1), 5);
   const isPaid    = usePaidTier === true || usePaidTier === 'true';
 
-  console.log(`[SpotChar] Model tier: ${isPaid ? 'PAID (Imagen 3)' : 'FREE (Gemini Flash Image)'}`);
+  // ── Background art style mapping ──────────────────────────────────────────
+  const BG_STYLES = {
+    wally: {
+      prefix:  'CLASSIC "WHERE\'S WALLY / WHERE\'S WALDO" STYLE ILLUSTRATION — ',
+      suffix:  'Art style: dense, meticulously detailed hand-drawn crowd illustration exactly like Martin Handford\'s Where\'s Wally books. ' +
+               'Overhead or slightly elevated viewpoint over a massive, packed crowd scene. ' +
+               'Hundreds of tiny characters fill every inch of the image with no empty space. ' +
+               'Bold, flat colours with strong black outlines; cheerful, holiday-fair atmosphere; lots of props, stalls, tents, and activities. ' +
+               'The target character(s) must blend into the busy crowd but still be findable. Flat 2-D graphic novel quality.',
+    },
+    realistic: {
+      prefix:  'MIXED MEDIA: PHOTOREALISTIC BACKGROUND + CARTOON CHARACTERS — ',
+      suffix:  'BACKGROUND/ENVIRONMENT style: The scenery, buildings, streets, sky, foliage, water, and all non-character elements MUST be ' +
+               'STRICTLY HYPER-REALISTIC — rendered as a high-resolution photograph or cinematic 3D render. ' +
+               'Use cinematic lighting, volumetric fog, ray-traced global illumination, physical depth of field (bokeh), ' +
+               'real-world textures (brick, glass, wood, concrete, leaves, water reflections), atmospheric perspective, and natural shadows. ' +
+               'The environment should look like a real location photographed with a professional camera. ' +
+               'CHARACTER style: ALL characters (both background people and target characters) should be rendered in a bright, ' +
+               'colourful CARTOON / ANIME / ILLUSTRATED style — like 2D animated characters composited into a real photograph. ' +
+               'Characters should have exaggerated proportions, bold outlines, flat cel-shaded colours, and expressive cartoon faces. ' +
+               'Think "Who Framed Roger Rabbit" or "Space Jam" — cartoon characters living in a real-world environment. ' +
+               'The contrast between the photorealistic environment and the cartoon characters is the KEY visual effect.',
+    },
+    stylistic: {
+      prefix:  'BOLD STYLISTIC DIGITAL ILLUSTRATION — ',
+      suffix:  'Art style: modern stylistic concept art with a strong graphic design sensibility. ' +
+               'Vibrant, curated colour palette (teals, deep purples, warm golds); sweeping compositional shapes; ' +
+               'semi-flat characters with expressive silhouettes and subtle gradients. ' +
+               'Inspired by award-winning children\'s book covers and animated film concept art. ' +
+               'Clean, intentional design language — every element feels hand-composed. Highly decorative and visually striking.',
+    },
+    comic: {
+      prefix:  'BOLD AMERICAN COMIC BOOK STYLE — ',
+      suffix:  'Art style: classic superhero comic-book panel art. ' +
+               'Strong, dynamic ink outlines with Ben-Day dot shading and halftone textures. ' +
+               'Bold primary colours: red, blue, yellow, green. ' +
+               'Dramatic low-angle or dynamic perspective; action lines and energy bursts; chunky speech-bubble ready layout. ' +
+               'Inspired by classic Marvel/DC golden-age comic books. High contrast; no gradients; print-style flat ink look.',
+    },
+    kids: {
+      prefix:  'JOYFUL CHILDREN\'S PICTURE-BOOK ILLUSTRATION — ',
+      suffix:  'Art style: warm, friendly children\'s picture-book style. ' +
+               'Soft, rounded character designs with expressive faces and chunky proportions suitable for young children. ' +
+               'Pastel-leaning palette with bright accent colours; gentle textures like coloured pencil or watercolour washes. ' +
+               'Inspired by the illustration style of Pixar, Studio Ghibli children\'s films, and popular picture-books. ' +
+               'Inviting, non-threatening, joyful atmosphere — every detail should make a child smile.',
+    },
+    scene: {
+      prefix:  `ART STYLE OF "${scene}" — `,
+      suffix:  `Art style: Replicate the EXACT visual art style, colour palette, line work, textures, and rendering technique of "${scene}". ` +
+               `Study what "${scene}" looks like in its original media (animated film, TV show, book, game, etc.) and MATCH that style precisely. ` +
+               `For example: if "${scene}" is a Studio Ghibli world, use Ghibli\'s signature watercolour backgrounds with soft edges and luminous skies. ` +
+               `If "${scene}" is Minecraft, use blocky pixel-art voxel rendering. If it\'s a Tim Burton film, use gothic, dark, angular stylisation. ` +
+               `The entire image — background, environment, AND all characters — must look like it belongs in the world of "${scene}". ` +
+               `Match the original art direction as faithfully as possible.`,
+    },
+    character: {
+      prefix:  `ART STYLE OF "${theme}" — `,
+      suffix:  `Art style: Replicate the EXACT visual art style, colour palette, line work, textures, and rendering technique of "${theme}"\'s original media. ` +
+               `Study what "${theme}" looks like in its source cartoon, anime, film, book, or game and MATCH that style precisely for the ENTIRE image. ` +
+               `For example: if "${theme}" is Peppa Pig, use the simple flat 2D vector style with bold outlines and bright primary colours that Peppa Pig uses. ` +
+               `If "${theme}" is Pokémon, use the anime cel-shaded style of the Pokémon animated series. ` +
+               `If "${theme}" is from a Pixar film, use Pixar\'s 3D rendered CGI style with subsurface scattering and soft ambient occlusion. ` +
+               `The entire image — background, environment, AND all characters — must look like it belongs in the world of "${theme}". ` +
+               `Match the original art direction as faithfully as possible.`,
+    },
+  };
+  const styleKey   = (typeof bgStyle === 'string' && BG_STYLES[bgStyle]) ? bgStyle : 'kids';
+  const styleData  = BG_STYLES[styleKey];
 
-  // ── Step 1: Generate landscape scene ──────────────────────────────────────
-  // IMPORTANT: The aspectRatio: '16:9' config param enforces the true landscape
-  // output at the API level. The text prompt also reinforces this.
+  console.log(`[SpotChar] Model tier: ${isPaid ? 'PAID (Imagen 4)' : 'FREE (Gemini Flash Image)'} | Style: ${styleKey}`);
+
+    // ── Step 1: Generate landscape scene ──────────────────────────────────────
+  // Style description comes FIRST (highest token weight) so the model commits
+  // to the art style before reading any scene content.
+  // A style-aware quality closer at the end prevents illustration language from
+  // overriding photorealistic or other non-cartoon styles.
+  const styleQuality = {
+    realistic:  'CRITICAL: The BACKGROUND must be photorealistic (real photograph quality). The CHARACTERS must be cartoon/anime/illustrated. This mixed-media "Roger Rabbit" effect is mandatory — photorealistic scenery with cartoon characters placed inside it.',
+    stylistic:  'Bold graphic design aesthetic throughout — intentional composition, curated colour palette, expressive silhouettes. No cartoons.',
+    comic:      'Classic comic-book art throughout — bold ink outlines, halftone shading, flat primary colours. No photorealism, no soft gradients.',
+    wally:      'Dense hand-drawn crowd illustration style throughout — hundreds of tiny characters, bold flat colours, packed with meticulous detail.',
+    kids:       "Warm children's picture-book illustration throughout — soft rounded characters, pastel palette, colourful, crowded, joyful and inviting.",
+    scene:      `The ENTIRE image must faithfully replicate the art style of "${scene}". Every element — background, characters, props — should look like it was drawn/rendered by the original artists of "${scene}".`,
+    character:  `The ENTIRE image must faithfully replicate the art style of "${theme}"\'s original media. Every element — background, characters, props — should look like it was drawn/rendered by the original artists of "${theme}".`,
+  }[styleKey] || 'High detail, colourful, crowded, joyful.';
+
+  // Build position hints — spread characters across distinct non-overlapping zones
+  // Each zone is defined as approximate (x%, y%) of the image to prevent clustering
+  const positionZones = [
+    { label: 'LEFT third (x ≈ 15–30%)', x: '15–30%' },
+    { label: 'CENTRE (x ≈ 45–55%)',     x: '45–55%' },
+    { label: 'RIGHT third (x ≈ 70–85%)', x: '70–85%' },
+    { label: 'UPPER-LEFT (x ≈ 20–35%, y ≈ 20–40%)', x: '20–35%' },
+    { label: 'LOWER-RIGHT (x ≈ 65–80%, y ≈ 60–80%)', x: '65–80%' },
+  ];
+  const positionList = Array.from({length: findN}, (_, i) =>
+    `  Character ${i+1}: place in the ${positionZones[i % positionZones.length].label}`
+  ).join('\n');
+
   const imagePrompt =
+    // ① Full style description FIRST so model commits to it immediately
+    `${styleData.suffix}\n` +
+    `${styleData.prefix}` +
+    // ② Orientation
     `HORIZONTAL WIDESCREEN LANDSCAPE IMAGE ONLY — 16:9 aspect ratio like a cinema screen. ` +
     `DO NOT generate a portrait or square image under any circumstances. ` +
-    `This is for a children's "Where's Waldo" / "Where's Wally" style hidden-picture game. ` +
-    `Draw an original, richly detailed background scene inspired by the visual style and world of "${scene}". ` +
-    `Fill this scene with ${bgCount} unique original characters whose visual design is inspired by the world of "${scene}" — ` +
+    // ③ Scene content (no style-conflicting language here)
+    `Draw an original, richly detailed background scene set in the world of "${scene}". ` +
+   `Fill this scene with ${bgCount} unique original characters whose visual design fits the world of "${scene}" — ` +
     `each clearly different from one another, no two alike. ` +
-    `CRITICALLY IMPORTANT: Scattered across DIFFERENT locations in the scene (left third, centre, and right third), ` +
-    `draw exactly ${findN} CHARACTER(S) that are CLEARLY and OBVIOUSLY inspired by "${theme}". ` +
+    `ABSOLUTE RULE: NONE of these ${bgCount} background characters may look like, resemble, or be confused with "${theme}". ` +
+    `Background characters must be COMPLETELY DIFFERENT species/types/shapes from "${theme}" — ` +
+    `for example if "${theme}" is a butterfly, do NOT draw ANY other butterflies, moths, or winged insects anywhere in the scene. ` +
+    `CRITICALLY IMPORTANT: draw EXACTLY ${findN} — and ABSOLUTELY NO MORE THAN ${findN} — CHARACTER(S) inspired by "${theme}". ` +
+    `COUNT CAREFULLY: the total number of "${theme}"-like characters in the ENTIRE image must be PRECISELY ${findN}. ` +
+    `If you draw even one extra, the image is WRONG. Do NOT sneak extra "${theme}" characters into the background, edges, or sky. ` +
+    `SPREAD THEM FAR APART across the scene — they must NOT be near each other or in the same area.\n` +
+    `Place them at these SPECIFIC positions (mandatory):\n${positionList}\n` +
+    `NO-OVERLAP RULE: Each "${theme}" character must be in a COMPLETELY DIFFERENT region of the image. ` +
+    `The distance between any two "${theme}" characters must be at least 25% of the image width. ` +
+    `They must NEVER be adjacent, clustered, or within the same quadrant of the image. ` +
+    `If you are placing 3 characters, one goes LEFT, one goes CENTRE, one goes RIGHT — no exceptions.\n` +
     `These "${theme}"-inspired characters MUST:\n` +
     `- Be clearly recognisable and visible to a 9-year-old child\n` +
     `- Be at least medium-sized (not tiny or partially hidden)\n` +
@@ -855,10 +1041,18 @@ app.post('/api/spot-char-generate', async (req, res) => {
     `- Be ENTIRELY AND COMPLETELY INSIDE the image — NO character body parts cropped by the frame edge\n` +
     `- Be placed at least 15% away from ALL four edges of the image (top, bottom, left, right)\n` +
     `- NEVER be placed in a corner or along any image border\n` +
+    `- NEVER overlap or touch another "${theme}" character — keep at least 20% image-width apart\n` +
     `Keep the top-left 15% of the image free of any "${theme}"-inspired characters (reserved for UI). ` +
-    `No text, no labels, no watermarks. High detail, colourful, crowded, joyful.`;
+    `No text, no labels, no watermarks.\n` +
+    // ④ After generating the image, output character positions
+    `After generating the image, output a JSON array describing where you placed each "${theme}" character. ` +
+    `Use the format: [{"box_2d":[ymin, xmin, ymax, xmax], "label":"${theme}"}] ` +
+    `where each value is an integer from 0 to 1000 (0 = top/left edge, 1000 = bottom/right edge). ` +
+    `The box should tightly enclose each character from head to feet.\n` +
+    // ⑤ Style-aware quality closer repeated at end for reinforcement
+    `${styleQuality}`;
 
-  console.log(`[SpotChar] Generating: ${findN}x "${theme}"-style in "${scene}"-style + ${bgCount} bg chars`);
+  console.log(`[SpotChar] Generating: ${findN}x "${theme}"-style in "${scene}"-style + ${bgCount} bg chars (style: ${styleKey})`);
 
   // ── Helper: human-readable PROHIBITED_CONTENT explanation ──────────────────
   const _buildProhibitedMsg = (rawReason) => {
@@ -877,7 +1071,7 @@ app.post('/api/spot-char-generate', async (req, res) => {
     );
   };
 
-  let imageBase64 = null, mimeType = 'image/png';
+  let imageBase64 = null, mimeType = 'image/png', bboxes = [];
   try {
     if (isPaid) {
       // ── Paid: Imagen 4 — /predict endpoint ────────────────────────────────────
@@ -919,8 +1113,10 @@ app.post('/api/spot-char-generate', async (req, res) => {
           contents: [{ role: 'user', parts: [{ text: imagePrompt }] }],
           generationConfig: {
             responseModalities: ['IMAGE', 'TEXT'],
-            // aspectRatio is the correct param for gemini-2.0-flash-preview-image-generation
-            aspectRatio: '16:9',
+          },
+          // imageGenerationConfig is the correct field for aspect ratio in Gemini image models
+          imageGenerationConfig: {
+            aspectRatio: 'LANDSCAPE',   // values: LANDSCAPE | PORTRAIT | SQUARE
           },
         }),
       });
@@ -947,65 +1143,133 @@ app.post('/api/spot-char-generate', async (req, res) => {
       imageBase64 = imgPart.inlineData.data;
       mimeType    = imgPart.inlineData.mimeType || 'image/png';
       console.log(`[SpotChar] ✅ Gemini 3.1 Flash Image 🍌 generated (${Math.round(imageBase64.length/1024)}KB)`);
+
+      // ── Try to extract character bboxes from the text part of the generation response ──
+      // The image gen model was asked to also output positions as JSON alongside the image.
+      const genTextPart = parts.find(p => p.text);
+      if (genTextPart?.text) {
+        console.log(`[SpotChar] Generation text output: ${genTextPart.text.slice(0, 300)}`);
+        const genArrMatch = genTextPart.text.match(/\[[\s\S]*?\]/);
+        if (genArrMatch) {
+          try {
+            const genParsed = JSON.parse(genArrMatch[0]);
+            const MARGIN = 0.12;
+            const genBboxes = genParsed
+              .filter(b => Array.isArray(b.box_2d) && b.box_2d.length >= 4)
+              .map(b => {
+                const [ymin, xmin, ymax, xmax] = b.box_2d;
+                const x = xmin / 1000, y = ymin / 1000;
+                const w = Math.max(0.05, Math.min(0.45, (xmax - xmin) / 1000));
+                const h = Math.max(0.05, Math.min(0.45, (ymax - ymin) / 1000));
+                let cx = x + w / 2, cy = y + h / 2;
+                cx = Math.max(MARGIN, Math.min(1 - MARGIN, cx));
+                cy = Math.max(MARGIN, Math.min(1 - MARGIN, cy));
+                const fx = Math.max(0.01, Math.min(1 - w - 0.01, cx - w / 2));
+                const fy = Math.max(0.01, Math.min(1 - h - 0.01, cy - h / 2));
+                return { x: fx, y: fy, w, h, cx, cy };
+              })
+              .filter(b => b.cx >= MARGIN && b.cx <= 1 - MARGIN && b.cy >= MARGIN && b.cy <= 1 - MARGIN)
+              .slice(0, findN)
+              .map(({ x, y, w, h }) => ({ x, y, w, h }));
+            if (genBboxes.length > 0) {
+              bboxes = genBboxes;
+              console.log(`[SpotChar] ✅ Extracted ${bboxes.length} bbox(es) from generation text:`, JSON.stringify(bboxes));
+            }
+          } catch (e) {
+            console.warn(`[SpotChar] Failed to parse generation bbox JSON:`, e.message);
+          }
+        }
+      }
     }
   } catch (err) {
     return res.status(502).json({ error: `Image generation failed: ${err.message}` });
   }
 
   // ── Step 2: Locate all findN theme characters via vision ──────────────────
-  let bboxes = [];
+  // ONLY runs if we didn't already get bboxes from the image generation step.
+  // Uses Gemini's NATIVE bounding-box format [ymin, xmin, ymax, xmax] on a
+  // 0–1000 integer scale. This is the coordinate system the model was trained
+  // on, so spatial accuracy is significantly better than custom fractional formats.
+  if (bboxes.length > 0) {
+    console.log(`[SpotChar] Skipping vision step — ${bboxes.length} bbox(es) already extracted from generation`);
+  } else {
   try {
-    // Ask for CENTER x/y + width/height — Gemini vision is more accurate with
-    // center-point coordinates than top-left corner estimates.
     const visionPrompt =
-      `This "Spot the Character" game image contains exactly ${findN} character(s) inspired by "${theme}" ` +
-      `hidden among "${scene}"-style background characters. ` +
-      `Your job: find ALL ${findN} "${theme}"-inspired character(s) and report where each one is. ` +
-      `For each character, give the CENTER of the character body (cx, cy) and the ` +
-      `full WIDTH (w) and HEIGHT (h) of the character — all as fractions from 0.0 to 1.0. ` +
-      `RULES:\n` +
-      `- cx and cy are the CENTER of the character (not the top-left corner)\n` +
-      `- w and h include the full character body with a small padding around it\n` +
-      `- All values must be between 0.05 and 0.95 (no character should be at the very edge)\n` +
-      `- Return ONLY valid JSON, no other text:\n` +
-      `[{"cx":0.5,"cy":0.5,"w":0.1,"h":0.2},...]\n` +
-      `Return exactly ${findN} entries. If a character is hard to find, give your best estimate for its center.`;
+      `Look carefully at this image. It is a "Spot the Character" game scene.\n` +
+      `It should contain ${findN} character(s) visually inspired by "${theme}".\n\n` +
+      `STEP 1 — Think about what a "${theme}"-inspired character looks LIKE visually:\n` +
+      `Consider distinctive features: body shape, colours, markings, clothing, size.\n` +
+      `For example: a tiger has an orange/black striped ANIMAL BODY. A panda has black/white fur.\n` +
+      `Do NOT report buildings, props, signs, windows, or background scenery — only living character bodies.\n\n` +
+      `STEP 2 — Find and locate each "${theme}"-inspired character you can CLEARLY SEE.\n` +
+      `For each one, return a bounding box as [ymin, xmin, ymax, xmax] where each value is\n` +
+      `an integer from 0 to 1000 (0 = top/left edge, 1000 = bottom/right edge).\n` +
+      `The box should tightly enclose the full character body from head to feet.\n` +
+      `Also include a "confidence" score from 0.0 to 1.0.\n\n` +
+      `ANTI-HALLUCINATION RULES — read VERY carefully:\n` +
+      `- You MUST be at least 75% certain that each character truly matches the visual features of "${theme}"\n` +
+      `- A character that merely has a vaguely similar colour or pose is NOT a match — it must have MULTIPLE distinctive features of "${theme}"\n` +
+      `- Do NOT report background characters that belong to the scene unless they CLEARLY match "${theme}"\n` +
+      `- If a character could be either a "${theme}" character OR a generic scene character, do NOT include it\n` +
+      `- Report FEWER characters rather than hallucinate extras — return [] rather than a wrong detection\n` +
+      `- Maximum ${findN} character(s). If you find more, keep only the ${findN} most confident\n` +
+      `- Only include entries with confidence >= 0.75\n\n` +
+      `Return ONLY a JSON array — no prose, no explanation:\n` +
+      `[{"box_2d":[ymin, xmin, ymax, xmax],"label":"${theme}","confidence":0.9}]`;
 
     const vResp = await fetch(GEMINI_URL, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(35000),
+      signal: AbortSignal.timeout(45000),
       body: JSON.stringify({
         contents: [{ role: 'user', parts: [
           { inlineData: { mimeType, data: imageBase64 } },
           { text: visionPrompt },
         ]}],
-        generationConfig: { thinkingConfig: { thinkingBudget: 0 }, maxOutputTokens: 512 },
+        // Increased thinking budget for better spatial reasoning
+        generationConfig: { thinkingConfig: { thinkingBudget: 4096 }, maxOutputTokens: 1024 },
       }),
     });
     const vData  = await vResp.json();
-    const rawText = vData?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    // Text part may be after a thinking part
+    const rawText = (vData?.candidates?.[0]?.content?.parts || [])
+      .filter(p => p.text && !p.thought)
+      .map(p => p.text).join('');
+    console.log(`[SpotChar] Vision raw response: ${rawText.slice(0, 300)}`);
     const arrMatch = rawText.match(/\[[\s\S]*?\]/);
     if (arrMatch) {
       const parsed = JSON.parse(arrMatch[0]);
 
-      // Safe margins: character center must be within [0.12, 0.88] in both axes
-      // so the character is fully visible and not near any edge.
-      const MARGIN = 0.12;
+      const MARGIN = 0.12; // safe zone: center must be within [0.12, 0.88]
+      const CONFIDENCE_MIN = 0.75;
 
-      const raw = parsed.filter(b => typeof b.cx === 'number' && typeof b.cy === 'number');
+      // Convert native 0–1000 [ymin,xmin,ymax,xmax] format to 0.0–1.0 {x,y,w,h}
+      const converted = parsed
+        .filter(b => {
+          // Must have box_2d array with 4 numbers
+          if (!Array.isArray(b.box_2d) || b.box_2d.length < 4) return false;
+          // Confidence filter
+          if (typeof b.confidence === 'number' && b.confidence < CONFIDENCE_MIN) return false;
+          return true;
+        })
+        .map(b => {
+          const [ymin, xmin, ymax, xmax] = b.box_2d;
+          // Convert 0–1000 integers to 0.0–1.0 fractions
+          const x = xmin / 1000;
+          const y = ymin / 1000;
+          const w = (xmax - xmin) / 1000;
+          const h = (ymax - ymin) / 1000;
+          const cx = x + w / 2;
+          const cy = y + h / 2;
+          return { x, y, w, h, cx, cy, confidence: b.confidence };
+        });
 
-      // Support both center-format {cx,cy,w,h} and legacy top-left format {x,y,w,h}
-      const normalised = raw.map(b => {
-        let cx, cy, w, h;
-        if (typeof b.cx === 'number') {
-          // Preferred center format
-          cx = b.cx; cy = b.cy;
-          w  = b.w || 0.08; h = b.h || 0.12;
-        } else {
-          // Legacy top-left format — convert to center
-          w = b.w || 0.08; h = b.h || 0.12;
-          cx = b.x + w / 2; cy = b.y + h / 2;
-        }
+      if (parsed.length > converted.length) {
+        console.log(`[SpotChar] Filtered ${parsed.length - converted.length} low-confidence or invalid bbox(es)`);
+      }
+
+      // Clamp and validate
+      const normalised = converted.map(b => {
+        let { cx, cy, w, h } = b;
         // Clamp center to safe zone
         cx = Math.max(MARGIN, Math.min(1 - MARGIN, cx));
         cy = Math.max(MARGIN, Math.min(1 - MARGIN, cy));
@@ -1018,16 +1282,22 @@ app.post('/api/spot-char-generate', async (req, res) => {
         return { x, y, w, h, cx, cy };
       });
 
-      // Filter out any whose center ended up outside the safe zone after clamping
-      bboxes = normalised
+      const safeBoxes = normalised
         .filter(b => b.cx >= MARGIN && b.cx <= 1 - MARGIN && b.cy >= MARGIN && b.cy <= 1 - MARGIN)
-        .slice(0, findN)
         .map(({ x, y, w, h }) => ({ x, y, w, h }));
 
-      console.log(`[SpotChar] ✅ Found ${bboxes.length} bbox(es):`, JSON.stringify(bboxes));
+      bboxes = _removeOverlapping(safeBoxes, findN);
+
+      console.log(`[SpotChar] ✅ Found ${bboxes.length} bbox(es) (native 0-1000 format):`, JSON.stringify(bboxes));
     }
   } catch (err) {
     console.warn('[SpotChar] Vision bbox failed (non-fatal):', err.message);
+  }
+  } // end if (bboxes.length === 0)
+
+  // Apply overlap removal to generation-extracted bboxes too
+  if (bboxes.length > 1) {
+    bboxes = _removeOverlapping(bboxes, findN);
   }
 
   // Fallback: evenly spread bboxes if vision failed
@@ -1038,7 +1308,7 @@ app.post('/api/spot-char-generate', async (req, res) => {
     }));
   }
 
-  res.json({ imageData: imageBase64, mimeType, bboxes, theme, findCount: findN });
+  res.json({ imageData: imageBase64, mimeType, bboxes, theme: rawTheme, findCount: findN });
 });
 // ─────────────────────────────────────────────────────────────────────────────
 

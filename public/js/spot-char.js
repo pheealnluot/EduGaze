@@ -5,6 +5,8 @@ const STC_KEY_DWELL     = 'stc_dwell_ms';
 const STC_KEY_FIND      = 'stc_find_count';
 const STC_KEY_COUNT     = 'stc_other_count';
 const STC_KEY_PAID_TIER = 'stc_paid_tier'; // persisted checkbox
+const STC_KEY_BG_STYLE  = 'stc_bg_style';   // background art style
+const STC_KEY_DESCRIBE  = 'stc_describe_visually'; // translate franchise to visual description
 const STC_HINT_DELAY    = 30000;
 const STC_MIN_TARGET    = 0.10;  // minimum hit zone (fraction of display size)
 const BBOX_PAD          = 1.5;   // multiply bbox w/h — ensures full character is covered
@@ -72,6 +74,19 @@ function _bindEvents() {
   if (paidChk) paidChk.addEventListener('change', () => {
     localStorage.setItem(STC_KEY_PAID_TIER, paidChk.checked ? '1' : '0');
   });
+  // Describe visually checkbox — persist on change
+  const descChk = _el('stc-describe-chk');
+  if (descChk) descChk.addEventListener('change', () => {
+    localStorage.setItem(STC_KEY_DESCRIBE, descChk.checked ? '1' : '0');
+  });
+  // Background style pill buttons
+  document.querySelectorAll('.stc-style-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const style = btn.dataset.style;
+      _setStyleBtn(style);
+      localStorage.setItem(STC_KEY_BG_STYLE, style);
+    });
+  });
   _hist('stc-char-input',  'stc-char-dropdown',  'stc-char-clear',  STC_KEY_THEME);
   _hist('stc-scene-input', 'stc-scene-dropdown', 'stc-scene-clear', STC_KEY_SCENE);
   const startBtn = _el('stc-start-btn');
@@ -114,6 +129,18 @@ function _syncSliders() {
   // Paid tier checkbox
   const paidChk = _el('stc-paid-tier-chk');
   if (paidChk) paidChk.checked = localStorage.getItem(STC_KEY_PAID_TIER) === '1';
+  // Describe visually checkbox
+  const descChk = _el('stc-describe-chk');
+  if (descChk) descChk.checked = localStorage.getItem(STC_KEY_DESCRIBE) === '1';
+  // Background style
+  const savedStyle = localStorage.getItem(STC_KEY_BG_STYLE) || 'kids';
+  _setStyleBtn(savedStyle);
+}
+
+function _setStyleBtn(style) {
+  document.querySelectorAll('.stc-style-btn').forEach(b => b.classList.remove('stc-style-btn--active'));
+  const active = document.querySelector(`.stc-style-btn[data-style="${style}"]`);
+  if (active) active.classList.add('stc-style-btn--active');
 }
 
 // Keep legacy alias for any callers
@@ -209,11 +236,13 @@ async function _start() {
   const count      = parseInt(_el('stc-count-slider').value) || 10;
   const findN      = parseInt(_el('stc-find-slider').value)  || 1;
   const usePaidTier = _el('stc-paid-tier-chk')?.checked ?? false;
+  const bgStyle    = localStorage.getItem(STC_KEY_BG_STYLE) || 'kids';
+  const describeVisually = _el('stc-describe-chk')?.checked ?? false;
   if (!theme) { _el('stc-char-input').focus(); _err('Please enter a theme to find!'); return; }
   if (!scene) { _el('stc-scene-input').focus(); _err('Please describe a background scene!'); return; }
   _saveH(STC_KEY_THEME, theme); _saveH(STC_KEY_SCENE, scene);
   _theme = theme; _targets=[]; _foundCount=0; _attempts=0; _failedClicks=0; _allFound=false;
-  _lastReqBody = { theme, scene, otherCount: count, findCount: findN, usePaidTier };
+  _lastReqBody = { theme, scene, otherCount: count, findCount: findN, usePaidTier, bgStyle, describeVisually };
   if (window.stcPersist) window.stcPersist.save();
   await _generate(_lastReqBody);
 }
@@ -223,6 +252,19 @@ window.stcRetry = async () => { if (_lastReqBody) { _sec('loading'); await _gene
 async function _generate(body) {
   _sec('loading'); _clearErr();
   _tipCycle(body.theme, body.scene, body.findCount);
+
+  // ── Seconds counter ───────────────────────────────────────────────────────
+  const counterEl = _el('stc-loading-counter');
+  let _genSecs = 0;
+  if (counterEl) counterEl.textContent = '0s';
+  if (window._stcCountInt) clearInterval(window._stcCountInt);
+  window._stcCountInt = setInterval(() => {
+    _genSecs++;
+    if (counterEl) counterEl.textContent = _genSecs + 's';
+  }, 1000);
+  const _stopCounter = () => { clearInterval(window._stcCountInt); window._stcCountInt = null; };
+  // ─────────────────────────────────────────────────────────────────────────
+
   try {
     const r = await fetch('/api/spot-char-generate', {
       method:'POST', headers:{'Content-Type':'application/json'},
@@ -233,12 +275,14 @@ async function _generate(body) {
     const d = await r.json();
     if (!r.ok || d.error) throw new Error(d.error || `Server error ${r.status}`);
     clearInterval(window._stcTipInt);
+    _stopCounter();
     _mimeType = d.mimeType || 'image/png';
     _targets = (d.bboxes || []).map(b => ({ bbox:b, found:false, inBbox:false, dwellTimer:null, dwellEl:null }));
     _theme   = d.theme || body.theme;
     await _showGame(d.imageData, _mimeType);
   } catch(e) {
     clearInterval(window._stcTipInt);
+    _stopCounter();
     _showSettings(); _err(e.message, true);
   }
 }
@@ -269,31 +313,14 @@ async function _showGame(imageData, mime) {
 
   const canvas = document.createElement('canvas');
   canvas.id = 'stc-game-canvas'; canvas.className = oldCanvas.className;
-
-  // ── Enforce 16:9 landscape by letterboxing the source image ──────────────
-  // The canvas is always 1920×1080. If the model returned a portrait/square
-  // image we draw it centred with black bars. Bbox fractions (0-1) still map
-  // correctly because we store the draw-rect and offset them in _dispBbox.
-  const TARGET_W = 1920, TARGET_H = 1080;
-  canvas.width  = TARGET_W;
-  canvas.height = TARGET_H;
-
-  const imgW = _origImg.naturalWidth  || TARGET_W;
-  const imgH = _origImg.naturalHeight || TARGET_H;
-  const scale = Math.min(TARGET_W / imgW, TARGET_H / imgH);
-  const drawW = Math.round(imgW * scale);
-  const drawH = Math.round(imgH * scale);
-  const drawX = Math.round((TARGET_W - drawW) / 2);
-  const drawY = Math.round((TARGET_H - drawH) / 2);
-
-  // Store letterbox geometry so _dispBbox can convert bbox fractions correctly
-  canvas._imgRect = { x: drawX, y: drawY, w: drawW, h: drawH };
-
+  // Use the image's natural dimensions — no forced aspect ratio.
+  // CSS (max-width/max-height: 100%) scales the canvas to fit the container.
+  canvas.width  = _origImg.naturalWidth  || 1024;
+  canvas.height = _origImg.naturalHeight || 576;
   wrap.replaceChild(canvas, oldCanvas);
 
   _redraw(canvas);
   _bindCanvas(canvas);
-
   if (_hintTimer) { clearTimeout(_hintTimer); _hintTimer = null; }
 }
 
@@ -301,24 +328,15 @@ async function _showGame(imageData, mime) {
 function _redraw(canvas) {
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  // Draw letterboxed — if the source image is portrait/square the bars are black
-  if (canvas._imgRect) {
-    const {x, y, w, h} = canvas._imgRect;
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(_origImg, x, y, w, h);
-  } else {
-    ctx.drawImage(_origImg, 0, 0);
-  }
+  ctx.drawImage(_origImg, 0, 0);
   _drawProfiles(ctx, canvas.width, canvas.height);
   _targets.forEach((t, i) => {
     if (!t.bbox) return;
     if (t.found) {
       _drawFoundRing(ctx, canvas, t.bbox, i);
     } else {
-      // Draw a subtle crosshair at the character center so players can see where to click
-      const {x,y,w,h} = t.bbox;
+      // Subtle crosshair at character center
+      const {x, y, w, h} = t.bbox;
       const cx = (x + w/2) * canvas.width;
       const cy = (y + h/2) * canvas.height;
       const color = PROF_COLORS[i % PROF_COLORS.length];
@@ -327,11 +345,9 @@ function _redraw(canvas) {
       ctx.strokeStyle = color;
       ctx.lineWidth = 2;
       ctx.setLineDash([4,3]);
-      // Small dashed crosshair lines
       const arm = 12;
       ctx.beginPath(); ctx.moveTo(cx-arm,cy); ctx.lineTo(cx+arm,cy); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(cx,cy-arm); ctx.lineTo(cx,cy+arm); ctx.stroke();
-      // Center dot
       ctx.setLineDash([]);
       ctx.globalAlpha = 0.55;
       ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI*2);
@@ -363,9 +379,11 @@ function _drawProfiles(ctx, W, H) {
       // Dim the crop and draw a green overlay
       if (_origImg && t.bbox) {
         const {x,y,w,h} = t.bbox;
-        ctx.drawImage(_origImg, x*_origImg.naturalWidth, y*_origImg.naturalHeight,
-          w*_origImg.naturalWidth, h*_origImg.naturalHeight,
-          cx-PROF_R, cy-PROF_R, diameter, diameter);
+        const sw = w * _origImg.naturalWidth, sh = h * _origImg.naturalHeight;
+        if (sw >= 1 && sh >= 1) {
+          ctx.drawImage(_origImg, x*_origImg.naturalWidth, y*_origImg.naturalHeight,
+            sw, sh, cx-PROF_R, cy-PROF_R, diameter, diameter);
+        }
         // Semi-transparent green wash
         ctx.fillStyle = 'rgba(16,185,129,0.55)';
         ctx.fillRect(cx-PROF_R, cy-PROF_R, diameter, diameter);
@@ -377,14 +395,20 @@ function _drawProfiles(ctx, W, H) {
       // Draw the character crop from the scene image
       if (_origImg && t.bbox) {
         const {x,y,w,h} = t.bbox;
-        ctx.drawImage(_origImg, x*_origImg.naturalWidth, y*_origImg.naturalHeight,
-          w*_origImg.naturalWidth, h*_origImg.naturalHeight,
-          cx-PROF_R, cy-PROF_R, diameter, diameter);
-        // Slight dark vignette so ring borders pop
-        ctx.fillStyle = 'rgba(0,0,0,0.10)';
-        ctx.fillRect(cx-PROF_R, cy-PROF_R, diameter, diameter);
+        const sw = w * _origImg.naturalWidth, sh = h * _origImg.naturalHeight;
+        if (sw >= 1 && sh >= 1) {
+          ctx.drawImage(_origImg, x*_origImg.naturalWidth, y*_origImg.naturalHeight,
+            sw, sh, cx-PROF_R, cy-PROF_R, diameter, diameter);
+          // Slight dark vignette so ring borders pop
+          ctx.fillStyle = 'rgba(0,0,0,0.10)';
+          ctx.fillRect(cx-PROF_R, cy-PROF_R, diameter, diameter);
+        } else {
+          // Degenerate bbox — dark fill
+          ctx.fillStyle = 'rgba(6,14,30,0.88)';
+          ctx.fillRect(cx-PROF_R, cy-PROF_R, diameter, diameter);
+        }
       } else {
-        // Fallback if no bbox: dark fill
+        // No bbox — dark fill
         ctx.fillStyle = 'rgba(6,14,30,0.88)';
         ctx.fillRect(cx-PROF_R, cy-PROF_R, diameter, diameter);
       }
@@ -425,8 +449,9 @@ function _drawProfiles(ctx, W, H) {
 }
 
 function _drawFoundRing(ctx, canvas, bbox, idx) {
-  const {x,y,w,h} = bbox;
-  const px=x*canvas.width, py=y*canvas.height, pw=w*canvas.width, ph=h*canvas.height;
+  const {x, y, w, h} = bbox;
+  const px = x * canvas.width,  py = y * canvas.height;
+  const pw = w * canvas.width,  ph = h * canvas.height;
   const color = PROF_COLORS[idx % PROF_COLORS.length];
   ctx.save();
   ctx.strokeStyle=color; ctx.lineWidth=5;
@@ -496,33 +521,21 @@ function _bindCanvas(canvas) {
 // _dispBbox — converts normalised image-space bbox to display-pixel hit zone.
 // The center is always the true character center (x+w/2, y+h/2).
 // The hit zone is padded by BBOX_PAD so the full character body is covered.
-// Accounts for letterbox offset stored in canvas._imgRect.
+// canvas.width/height == naturalWidth/Height, so fractions map directly.
 function _dispBbox(canvas, t, idx) {
   if (!t || !t.bbox) return null;
   const rect = canvas.getBoundingClientRect();
   const {x, y, w, h} = t.bbox;
 
-  // Scale factors: canvas buffer → display pixels
-  const scaleX = rect.width  / canvas.width;
-  const scaleY = rect.height / canvas.height;
+  // True character center in display pixels
+  const cx = (x + w/2) * rect.width;
+  const cy = (y + h/2) * rect.height;
 
-  // Letterbox offset in display pixels (0 if no _imgRect)
-  const ir   = canvas._imgRect || { x: 0, y: 0, w: canvas.width, h: canvas.height };
-  const lbX  = ir.x * scaleX;  // left black-bar width in display pixels
-  const lbY  = ir.y * scaleY;  // top black-bar height in display pixels
-  const imgW = ir.w * scaleX;  // displayed image width
-  const imgH = ir.h * scaleY;  // displayed image height
-
-  // True character center in display pixels (within the displayed image area)
-  const cx = lbX + (x + w/2) * imgW;
-  const cy = lbY + (y + h/2) * imgH;
-
-  // Padded half-extents: BBOX_PAD makes the zone larger than the raw bbox.
-  // We also enforce a minimum so tiny bboxes are still hittable.
-  const minHW = imgW * STC_MIN_TARGET / 2;
-  const minHH = imgH * STC_MIN_TARGET / 2;
-  const hw = Math.max((w * imgW * BBOX_PAD) / 2, minHW);
-  const hh = Math.max((h * imgH * BBOX_PAD) / 2, minHH);
+  // Padded half-extents
+  const minHW = rect.width  * STC_MIN_TARGET / 2;
+  const minHH = rect.height * STC_MIN_TARGET / 2;
+  const hw = Math.max((w * rect.width  * BBOX_PAD) / 2, minHW);
+  const hh = Math.max((h * rect.height * BBOX_PAD) / 2, minHH);
 
   return { cx, cy, hw, hh };
 }
@@ -546,16 +559,17 @@ function _startDwell(canvas, t, idx) {
 
   // Pad around the hit zone so the ring outline sits just outside it.
   const pad  = 10;
-  const W    = hw*2 + pad*2;
-  const H    = hh*2 + pad*2;
+  const strokePad = 6; // extra padding so the 6px stroke isn't clipped by the SVG edge
+  const W    = hw*2 + pad*2 + strokePad*2;
+  const H    = hh*2 + pad*2 + strokePad*2;
   // Ellipse radii match the padded hit zone exactly
   const rx   = hw + pad;
   const ry   = hh + pad;
   // Approximate ellipse perimeter (Ramanujan)
   const perim = Math.PI * (3*(rx+ry) - Math.sqrt((3*rx+ry)*(rx+3*ry)));
-  // Start animation at 12 o'clock: dashoffset starts at (perim - perim/4) so the
-  // gap begins at the topmost point. No SVG rotation needed.
-  const startOffset = perim * 0.75;
+  // NOTE: No rotation applied — both the background ellipse and animated arc
+  // share the same axis-aligned orientation as the CSS hint pulse ellipse.
+  // The dash animation starts at 3 o'clock, which is standard and consistent.
 
   const el=document.createElement('div');
   el.className='stc-dwell-ring';
@@ -563,13 +577,14 @@ function _startDwell(canvas, t, idx) {
   el.innerHTML=`<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
     <ellipse cx="${W/2}" cy="${H/2}" rx="${rx}" ry="${ry}" fill="${color}11" stroke="${color}44" stroke-width="3"/>
     <ellipse id="stc-arc-${idx}" cx="${W/2}" cy="${H/2}" rx="${rx}" ry="${ry}" fill="none" stroke="${color}" stroke-width="6" stroke-linecap="round"
-      stroke-dasharray="${perim}" stroke-dashoffset="${startOffset + perim}"
+      stroke-dasharray="${perim}" stroke-dashoffset="${perim}"
       style="transition:stroke-dashoffset ${_dwellMs}ms linear"/>
   </svg>`;
   wrap.appendChild(el); t.dwellEl=el;
+  // Double rAF ensures the initial dashoffset is painted before the transition starts
   requestAnimationFrame(()=>requestAnimationFrame(()=>{
     const arc=el.querySelector(`#stc-arc-${idx}`);
-    if(arc) arc.style.strokeDashoffset=String(startOffset);
+    if(arc) arc.style.strokeDashoffset='0'; // animate: empty → full
   }));
   t.dwellTimer=setTimeout(()=>{ if(t.inBbox&&!t.found) _onFound(canvas,t,idx); }, _dwellMs);
 }
@@ -630,7 +645,7 @@ function _placeHintEl(canvas, t, i) {
   const hint=document.createElement('div');
   hint.className='stc-hint-pulse';
   hint.dataset.targetIdx = i;
-  hint.style.cssText=`left:${offX+b.cx}px;top:${offY+b.cy}px;width:${b.hw*2+20}px;height:${b.hh*2+20}px;border-color:${PROF_COLORS[i%PROF_COLORS.length]};`;
+  hint.style.cssText=`left:${offX+b.cx}px;top:${offY+b.cy}px;width:${b.hw*2+20}px;height:${b.hh*2+20}px;transform:translate(-50%,-50%);border-color:${PROF_COLORS[i%PROF_COLORS.length]};`;
   wrap.appendChild(hint);
 }
 

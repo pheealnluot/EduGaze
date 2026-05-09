@@ -597,6 +597,19 @@
       <!-- Settings Panel -->
       <div id="stc-settings-view" class="w-full flex flex-col items-center" style="display:flex;">
         <div class="stc-settings-card">
+          <!-- EduGaze Home Link -->
+          <div style="display:flex;justify-content:center;margin-bottom:18px;">
+            <button onclick="if(window.setMode)window.setMode('landing')" id="stc-home-logo-btn"
+              title="Back to EduGaze Home"
+              style="display:inline-flex;align-items:center;gap:8px;background:rgba(96,165,250,0.08);border:1.5px solid rgba(96,165,250,0.22);border-radius:999px;padding:7px 20px 7px 14px;cursor:pointer;transition:all 0.2s ease;text-decoration:none;"
+              onmouseover="this.style.background='rgba(96,165,250,0.16)';this.style.borderColor='rgba(96,165,250,0.5)';this.style.boxShadow='0 0 18px rgba(96,165,250,0.18)';"
+              onmouseout="this.style.background='rgba(96,165,250,0.08)';this.style.borderColor='rgba(96,165,250,0.22)';this.style.boxShadow='';">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;opacity:0.8;">
+                <path d="M15 18l-6-6 6-6"/>
+              </svg>
+              <span style="font-size:0.82rem;font-weight:900;letter-spacing:0.07em;color:#60a5fa;text-transform:uppercase;">EduGaze</span>
+            </button>
+          </div>
           <h2 class="stc-game-title">🔍 Spot the Character</h2>
           <p class="stc-game-subtitle">AI-powered hidden character game for sharp eyes!</p>
 
@@ -627,6 +640,15 @@
               </div>
               <button id="stc-char-clear" class="stc-clear-btn" title="Clear">✕ Clear</button>
             </div>
+            <!-- Describe visually toggle -->
+            <div style="margin-top:10px;display:flex;align-items:flex-start;gap:8px;">
+              <input type="checkbox" id="stc-describe-chk"
+                style="width:16px;height:16px;accent-color:#06b6d4;cursor:pointer;margin-top:1px;flex-shrink:0;">
+              <label for="stc-describe-chk" style="cursor:pointer;user-select:none;">
+                <span style="font-size:0.74rem;font-weight:700;color:#94a3b8;">Describe visually</span>
+                <span style="font-size:0.65rem;color:#475569;display:block;margin-top:2px;">Translates franchise names into visual descriptions so the art style isn't overridden by the franchise's look</span>
+              </label>
+            </div>
           </div>
 
           <!-- Background Scene -->
@@ -640,6 +662,20 @@
                 <div id="stc-scene-dropdown" class="stc-history-dropdown"></div>
               </div>
               <button id="stc-scene-clear" class="stc-clear-btn" title="Clear">✕ Clear</button>
+            </div>
+          </div>
+
+          <!-- Background Art Style -->
+          <div class="stc-field-group">
+            <label class="stc-field-label">Background Art Style</label>
+            <div id="stc-bg-style-group" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;">
+              <button type="button" class="stc-style-btn" data-style="wally" id="stc-style-wally">Where's Wally</button>
+              <button type="button" class="stc-style-btn" data-style="realistic" id="stc-style-realistic">Realistic</button>
+              <button type="button" class="stc-style-btn" data-style="stylistic" id="stc-style-stylistic">Stylistic</button>
+              <button type="button" class="stc-style-btn" data-style="comic" id="stc-style-comic">Comic</button>
+              <button type="button" class="stc-style-btn stc-style-btn--active" data-style="kids" id="stc-style-kids">Kids Style</button>
+              <button type="button" class="stc-style-btn" data-style="scene" id="stc-style-scene">Scene Style</button>
+              <button type="button" class="stc-style-btn" data-style="character" id="stc-style-character">Character Style</button>
             </div>
           </div>
 
@@ -703,6 +739,7 @@
         <div class="stc-spinner-ring"></div>
         <div class="stc-loading-title">🎨 Creating your scene…</div>
         <div class="stc-loading-tip" id="stc-loading-tip">Painting the world, please wait…</div>
+        <div id="stc-loading-counter" style="font-size:2rem;font-weight:900;color:#6366f1;letter-spacing:0.05em;font-variant-numeric:tabular-nums;text-shadow:0 0 20px rgba(99,102,241,0.5);">0s</div>
       </div>
 
       <!-- Game View -->

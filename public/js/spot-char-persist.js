@@ -25,6 +25,8 @@
       findCount:    parseInt(_el('stc-find-slider')?.value)  || 1,
       otherCount:   parseInt(_el('stc-count-slider')?.value) || 10,
       dwellMs:      parseInt(localStorage.getItem('stc_dwell_ms')) || 2000,
+      bgStyle:      localStorage.getItem('stc_bg_style') || 'kids',
+      describeVisually: localStorage.getItem('stc_describe_visually') === '1',
       libraryTheme: libT || [],
       libraryScene: libS || [],
     };
@@ -78,6 +80,16 @@
     if (s.dwellMs) {
       localStorage.setItem('stc_dwell_ms', s.dwellMs);
       applySlider('stc-dwell-slider', 'stc-dwell-value', s.dwellMs, v => (v/1000).toFixed(1)+'s');
+    }
+    if (s.bgStyle) {
+      localStorage.setItem('stc_bg_style', s.bgStyle);
+      // Update pill UI if _setStyleBtn is available (spot-char.js loaded)
+      if (typeof _setStyleBtn === 'function') _setStyleBtn(s.bgStyle);
+    }
+    if (typeof s.describeVisually === 'boolean') {
+      localStorage.setItem('stc_describe_visually', s.describeVisually ? '1' : '0');
+      const chk = _el('stc-describe-chk');
+      if (chk) chk.checked = s.describeVisually;
     }
 
     // Restore library lists
