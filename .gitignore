@@ -5,3 +5,4 @@ dist/
 .firebase/
 firebase-debug.log
 .vscode/
+scratch/
