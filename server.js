@@ -546,20 +546,25 @@ app.post('/api/youtube-video-search', async (req, res) => {
   const durationGuidance = maxDurationMin > 0
     ? `Videos should be ${maxDurationMin} minutes or shorter. Prefer short-form content.\n`
     : '';
+  // Caption guidance is now subordinate — it suggests channel formats but NEVER overrides the topic.
   const captionGuidance = requireCaption
-    ? `IMPORTANT: Bias queries toward channels that ALWAYS have captions:\n` +
-      `TED-Ed, National Geographic Kids, BBC Earth, SciShow Kids, Kurzgesagt, Khan Academy, Crash Course Kids.\n` +
-      `Include the channel name, e.g. "TED-Ed how volcanoes work".\n`
+    ? `For caption availability, prefer channels known for captioned videos (e.g. TED-Ed, SciShow Kids, Kurzgesagt, National Geographic Kids, Khan Academy) — but ONLY if they have content matching the topic above. Do NOT pick a different topic just to use these channels.\n`
     : '';
-  const subjectNote = subject ? ` about "${subject}"` : '';
+
+  // Build the prompt — topic is the #1 constraint, stated first and reinforced last.
+  const topicConstraint = subject
+    ? `TOPIC (MANDATORY): Every single query MUST be about "${subject}". Do not generate queries about any other topic.\n`
+    : '';
+  const subjectNote = subject ? ` specifically about "${subject}"` : '';
 
   const queryPrompt =
     `You are an educational content curator for ${educationLevel} students.\n` +
+    topicConstraint +
     `Generate 5 different YouTube search queries for great educational videos${subjectNote}.\n` +
-    `Suitable for children, interesting topics.\n` +
+    `Suitable for children. Keep queries varied (e.g. life cycle, facts, documentary, for kids, explained).\n` +
     `${durationGuidance}` +
     `${captionGuidance}` +
-    `Each query: 3-6 words, specific.\n` +
+    `Each query: 3-6 words, specific.${subject ? ` All queries must include or relate to "${subject}".` : ''}\n` +
     `Return ONLY valid JSON:\n{"queries":["q1","q2","q3","q4","q5"]}`;
 
   let queries = [];
@@ -584,12 +589,24 @@ app.post('/api/youtube-video-search', async (req, res) => {
     console.warn('[ytVideoSearch] Gemini query gen failed:', err.message);
   }
 
+  // Fallback: use keyword-aware generic queries if Gemini fails
   if (!queries.length) {
-    queries = requireCaption
-      ? ['TED-Ed science explained', 'National Geographic Kids animals', 'Kurzgesagt how things work',
-         'SciShow Kids experiments', 'Crash Course Kids earth science']
-      : ['educational science for kids', 'nature animals documentary children',
-         'how things work kids educational', 'space planets for kids', 'history for children'];
+    if (subject) {
+      // Keyword-aware fallbacks — always include the topic
+      queries = [
+        `${subject} for kids educational`,
+        `${subject} explained children`,
+        `${subject} documentary kids`,
+        `learn about ${subject} children`,
+        `${subject} facts science`,
+      ];
+    } else {
+      queries = requireCaption
+        ? ['TED-Ed science explained', 'National Geographic Kids animals', 'Kurzgesagt how things work',
+           'SciShow Kids experiments', 'Crash Course Kids earth science']
+        : ['educational science for kids', 'nature animals documentary children',
+           'how things work kids educational', 'space planets for kids', 'history for children'];
+    }
   }
   console.log(`[ytVideoSearch] Queries:`, queries);
 
@@ -1473,6 +1490,19 @@ app.post('/api/spot-char-generate', async (req, res) => {
   }
 
   res.json({ imageData: imageBase64, mimeType, bboxes, theme: rawTheme, findCount: findN, aiHard, aiSource });
+});
+
+// ── YouTube Meta Endpoint for Video Previews ──────────────────────────────────
+app.get('/api/youtube-meta', async (req, res) => {
+  const url = req.query.url;
+  if (!url) return res.status(400).json({ error: 'URL required' });
+  try {
+    const r = await fetch(`https://noembed.com/embed?url=${encodeURIComponent(url)}`);
+    const data = await r.json();
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 // ─────────────────────────────────────────────────────────────────────────────
 

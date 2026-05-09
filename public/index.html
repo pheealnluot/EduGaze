@@ -835,7 +835,42 @@
               </div>
             </div>
 
+            <!-- FULL WIDTH: Auto-Hint Timer -->
+            <div class="stc-field-group stc-field-full">
+              <label class="stc-field-label">Auto-Hint Delay
+                <span style="font-weight:500;color:#475569;text-transform:none;letter-spacing:0;margin-left:4px;font-size:0.6rem;">(0 = Off)</span>
+              </label>
+              <div class="stc-slider-row">
+                <input type="range" id="stc-autohint-slider" class="stc-slider" min="0" max="100" step="1"
+                  value="0" style="--pct:0%">
+                <div class="stc-slider-value" id="stc-autohint-value">Off</div>
+              </div>
+              <div class="stc-slider-labels">
+                <span>Off</span>
+                <span>50s</span>
+                <span>100s</span>
+              </div>
+            </div>
 
+            <!-- FULL WIDTH: Loading Video URL -->
+            <div class="stc-field-group stc-field-full">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+                <input type="checkbox" id="stc-play-video-chk" checked
+                  style="width:16px;height:16px;accent-color:#06b6d4;cursor:pointer;">
+                <label for="stc-play-video-chk" class="stc-field-label" style="margin-bottom:0;cursor:pointer;">Play video during loading</label>
+              </div>
+              <label class="stc-field-label" for="stc-video-input">Loading Video URL
+                <span style="font-weight:500;color:#475569;text-transform:none;letter-spacing:0;margin-left:4px;font-size:0.6rem;">(Leave blank for random popular video)</span>
+              </label>
+              <div class="stc-input-row">
+                <div class="stc-dropdown-wrap" style="flex:1;position:relative;">
+                  <input type="text" id="stc-video-input" class="stc-text-input" style="width:100%;"
+                    placeholder="e.g. https://www.youtube.com/watch?v=..." autocomplete="off" spellcheck="false">
+                  <div id="stc-video-dropdown" class="stc-history-dropdown"></div>
+                </div>
+                <button id="stc-video-clear" class="stc-clear-btn" title="Clear">✕ Clear</button>
+              </div>
+            </div>
 
           </div><!-- /stc-settings-grid -->
 
@@ -849,13 +884,20 @@
 
       <!-- Loading View -->
       <div id="stc-loading-view"
-        style="display:none;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:24px;text-align:center;width:100%;">
-        <div class="stc-spinner-ring"></div>
-        <div class="stc-loading-title">🎨 Creating your scene…</div>
-        <div class="stc-loading-tip" id="stc-loading-tip">Painting the world, please wait…</div>
-        <div id="stc-loading-counter"
-          style="font-size:2rem;font-weight:900;color:#6366f1;letter-spacing:0.05em;font-variant-numeric:tabular-nums;text-shadow:0 0 20px rgba(99,102,241,0.5);">
-          0s</div>
+        style="display:none;flex-direction:column;align-items:center;justify-content:center;min-height:75vh;padding:10px 0;gap:12px;text-align:center;width:100%;">
+        
+        <div id="stc-loading-video-container" style="display:none;width:100%;height:60vh;max-height:60vh;aspect-ratio:16/9;border-radius:12px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,0.5);margin:0 auto;">
+          <iframe id="stc-loading-iframe" width="100%" height="100%" src="" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+        </div>
+
+        <div id="stc-loading-spinner-container" style="display:flex;flex-direction:column;align-items:center;gap:12px;">
+          <div class="stc-spinner-ring" style="width:32px;height:32px;"></div>
+          <div class="stc-loading-title" style="font-size:1.2rem;margin-bottom:0;">🎨 Creating your scene…</div>
+          <div class="stc-loading-tip" id="stc-loading-tip" style="margin-bottom:0;">Painting the world, please wait…</div>
+          <div id="stc-loading-counter"
+            style="font-size:1.8rem;font-weight:900;color:#6366f1;letter-spacing:0.05em;font-variant-numeric:tabular-nums;text-shadow:0 0 10px rgba(99,102,241,0.5);">
+            0s</div>
+        </div>
       </div>
 
       <!-- Game View -->
@@ -867,7 +909,7 @@
             <span class="stc-game-attempts" id="stc-attempts-display">Attempts: 0</span>
           </div>
           <div class="stc-game-btns">
-            <button class="stc-hint-btn" onclick="window.stcOpenSettings()"
+            <button class="stc-hint-btn" onclick="window.stcOpenInGameSettings()"
               style="border-color:rgba(99,102,241,0.3);color:#818cf8;">⚙️ Settings</button>
             <button class="stc-hint-btn" onclick="window.stcToggleInfo()" title="View AI Generation Info"
               style="border-color:rgba(56,189,248,0.3);color:#38bdf8;">ℹ️ Info</button>
@@ -897,8 +939,8 @@
         </div>
       </div>
 
-      <!-- Character Gallery Modal -->
-      <div id="stc-gallery-modal" style="display:none;position:fixed;inset:0;z-index:9000;background:rgba(2,6,23,0.9);align-items:center;justify-content:center;padding:20px;">
+        <!-- Character Gallery Modal -->
+        <div id="stc-gallery-modal" style="display:none;position:fixed;inset:0;z-index:9000;background:rgba(2,6,23,0.9);align-items:center;justify-content:center;padding:20px;">
         <div style="background:#0f172a;border:1px solid rgba(255,255,255,0.1);border-radius:16px;width:100%;max-width:800px;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 20px 40px rgba(0,0,0,0.5);">
           <div style="padding:16px 24px;border-bottom:1px solid rgba(255,255,255,0.08);display:flex;justify-content:space-between;align-items:center;">
             <div style="display:flex;align-items:center;gap:16px;">
@@ -912,6 +954,34 @@
           </div>
           <div id="stc-gallery-grid" style="padding:20px;display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:16px;overflow-y:auto;flex:1;">
             <!-- Gallery items injected here -->
+          </div>
+        </div>
+        </div>
+      </div>
+
+      <!-- In-Game Settings Modal -->
+      <div id="stc-ingame-settings-modal" style="display:none;position:fixed;inset:0;z-index:9000;background:rgba(2,6,23,0.9);align-items:center;justify-content:center;padding:20px;">
+        <div style="background:#0f172a;border:1px solid rgba(255,255,255,0.1);border-radius:16px;width:100%;max-width:500px;padding:24px;box-shadow:0 20px 40px rgba(0,0,0,0.5);">
+          <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:16px;margin-bottom:20px;">
+            <h3 style="margin:0;font-size:1.4rem;font-weight:800;color:#f8fafc;">Game Settings</h3>
+            <button onclick="window.stcCloseInGameSettings()" style="background:transparent;border:none;color:#94a3b8;font-size:1.5rem;cursor:pointer;">&times;</button>
+          </div>
+          
+          <div class="stc-field-group">
+            <label class="stc-field-label">Dwell Duration</label>
+            <div class="stc-slider-row">
+              <input type="range" id="stc-ingame-dwell-slider" class="stc-slider" min="500" max="5000" step="100" value="2000" style="--pct:31.6%">
+              <div class="stc-slider-value" id="stc-ingame-dwell-value">2.0s</div>
+            </div>
+            <div class="stc-slider-labels">
+              <span>0.5s (Fast)</span>
+              <span>2.5s</span>
+              <span>5s (Slow)</span>
+            </div>
+          </div>
+          
+          <div style="margin-top:24px;display:flex;justify-content:flex-end;">
+            <button onclick="window.stcCloseInGameSettings()" style="background:linear-gradient(135deg,#06b6d4,#6366f1);border:none;border-radius:8px;color:#fff;padding:10px 24px;font-weight:700;cursor:pointer;">Save & Resume</button>
           </div>
         </div>
       </div>
@@ -1237,6 +1307,15 @@
 
             <!-- ── Find a Video / Find a Picture buttons ── -->
             <div style="display:flex;flex-direction:column;gap:8px;">
+              <!-- Topic / Keyword field -->
+              <div style="display:flex;align-items:center;gap:8px;background:#1e293b;border-radius:0.85rem;border:1.5px solid rgba(139,92,246,0.2);padding:6px 10px;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;opacity:0.8;">
+                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <input type="text" id="qs-find-topic" placeholder="Topic or keyword (optional) — e.g. space, ocean, rainforest…"
+                  style="flex:1;background:transparent;border:none;outline:none;font-size:0.72rem;font-weight:600;color:#e2e8f0;placeholder-color:#475569;"
+                  autocomplete="off" spellcheck="false">
+              </div>
               <div style="display:flex;gap:8px;">
                 <button id="qs-find-video-btn" onclick="window._qsFindVideo()" style="flex:1;display:flex;align-items:center;justify-content:center;gap:7px;
                          padding:9px 12px;border-radius:0.85rem;font-size:0.8rem;font-weight:800;
@@ -1504,15 +1583,21 @@
                   class="absolute top-0.5 left-0.5 w-6 h-6 bg-slate-400 rounded-full transition-all duration-300"></div>
               </button>
             </div>
+            <!-- SFX Volume -->
             <div class="flex items-center gap-3" id="quiz-volume-row">
-              <svg class="w-4 h-4 text-slate-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M15.536 8.464a5 5 0 010 7.072M12 6v12m0 0l-3-3m3 3l3-3M9.172 14.828A4 4 0 116 12" />
-              </svg>
+              <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wide flex-shrink-0" style="width:60px;">SFX</span>
               <input type="range" id="quiz-volume-slider" min="0" max="100" step="5" value="100"
                 class="flex-1 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-violet-500">
               <span id="quiz-volume-display" class="text-violet-400 font-black text-sm w-8 text-right">100%</span>
             </div>
+            <!-- Voice Over Volume (always visible) -->
+            <div class="flex items-center gap-3" id="quiz-vo-volume-row-main">
+              <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wide flex-shrink-0" style="width:60px;">Voice</span>
+              <input type="range" id="quiz-vo-volume-slider" min="0" max="100" step="5" value="70"
+                class="flex-1 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500">
+              <span id="quiz-vo-volume-display" class="text-cyan-400 font-black text-sm w-8 text-right">70%</span>
+            </div>
+            <p class="text-[10px] text-slate-500">SFX controls sound effects volume. Voice controls the voice-over reading volume. Both sliders are calibrated so the same value gives a similar perceived loudness.</p>
           </div>
 
           <!-- Theme Selection -->
@@ -1606,17 +1691,7 @@
                 class="text-xs font-bold text-slate-400 uppercase tracking-wider cursor-pointer select-none">🔊 Voice
                 Over</label>
             </div>
-            <p class="text-[10px] text-slate-500">Reads the question aloud, then each answer.</p>
-            <!-- Sub-option: volume -->
-            <div id="quiz-vo-volume-row" class="flex items-center gap-3 pl-7 mt-1" style="display:none">
-              <svg class="w-4 h-4 text-slate-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M15.536 8.464a5 5 0 010 7.072M12 6v12m0 0l-3-3m3 3l3-3M9.172 14.828A4 4 0 116 12" />
-              </svg>
-              <input type="range" id="quiz-vo-volume-slider" min="0" max="100" step="5" value="100"
-                class="flex-1 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500">
-              <span id="quiz-vo-volume-display" class="text-cyan-400 font-black text-sm w-8 text-right">100%</span>
-            </div>
+            <p class="text-[10px] text-slate-500">Reads the question aloud, then each answer. Adjust the Voice volume in the Sound &amp; Effects section above.</p>
             <!-- Sub-option: repeat on hover -->
             <div id="quiz-vo-hover-row" class="flex items-center gap-3 pl-7 mt-1" style="display:none">
               <input type="checkbox" id="quiz-vo-hover-repeat"

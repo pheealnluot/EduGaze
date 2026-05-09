@@ -8,6 +8,9 @@ const STC_KEY_COUNT     = 'stc_other_count';
 const STC_KEY_BG_STYLE  = 'stc_bg_style';   // background art style
 const STC_KEY_DESCRIBE  = 'stc_describe_visually'; // translate franchise to visual description
 const STC_KEY_DESCRIBE_SCENE = 'stc_describe_scene_visually'; // translate scene to visual description
+const STC_KEY_AUTOHINT  = 'stc_autohint_ms'; // auto-hint timer
+const STC_KEY_PLAY_VIDEO = 'stc_play_video'; // play loading video
+const STC_KEY_VIDEOS    = 'stc_library_videos'; // custom video pool
 const STC_HINT_DELAY    = 30000;
 const STC_MIN_TARGET    = 0.10;  // minimum hit zone (fraction of display size)
 const BBOX_PAD          = 1.5;   // multiply bbox w/h — ensures full character is covered
@@ -101,6 +104,12 @@ const STC_PRESETS = [
   'Peppa Pig',"Ben and Holly's Little Kingdom",'Kung Fu Panda','Turning Red (Disney)',
 ];
 
+const STC_PRESET_VIDEOS = [
+  'https://www.youtube.com/watch?v=rDUidZU0Ii8',
+  'https://www.youtube.com/watch?v=O-hveQNPn0k',
+  'https://www.youtube.com/watch?v=poR0EtWZwiA'
+];
+
 // ── State ─────────────────────────────────────────────────────────────────────
 let _targets      = []; // [{bbox,found,inBbox,dwellTimer,dwellEl}]
 let _theme        = '';
@@ -109,6 +118,8 @@ let _attempts     = 0;  // total click-based attempts
 let _failedClicks = 0;  // clicks that missed all targets (drives auto-hints)
 let _allFound     = false;
 let _dwellMs      = 2000;
+let _autoHintDelayMs = 0; // 0 = disabled
+let _autoHintTimer = null;
 let _origImg      = null;
 let _hintTimer    = null; // kept for cleanup, no longer auto-scheduled
 let _lastReqBody  = null;
@@ -123,8 +134,10 @@ let _targetImageUrl = null; // optional user-selected image for the target chara
 // ── Init ──────────────────────────────────────────────────────────────────────
 window.initSpotChar = async function () {
   _dwellMs = parseInt(localStorage.getItem(STC_KEY_DWELL)) || 2000;
+  _autoHintDelayMs = parseInt(localStorage.getItem(STC_KEY_AUTOHINT)) || 0;
   _seedLibrary(STC_KEY_THEME);
   _seedLibrary(STC_KEY_SCENE);
+  if (_getLib(STC_KEY_VIDEOS) === null) _saveLib(STC_KEY_VIDEOS, [...STC_PRESET_VIDEOS]);
   if (window.stcPersist) await window.stcPersist.load();
   if (!window._stcBound) { window._stcBound = true; _bindEvents(); }
   _showSettings();
@@ -163,6 +176,16 @@ function _bindEvents() {
     _dwellMs = parseInt(v);
     localStorage.setItem(STC_KEY_DWELL, _dwellMs);
   });
+  _bindSlider('stc-ingame-dwell-slider', 'stc-ingame-dwell-value', v => (v/1000).toFixed(1)+'s', '', v => {
+    _dwellMs = parseInt(v);
+    localStorage.setItem(STC_KEY_DWELL, _dwellMs);
+    // sync the main slider too
+    const m = _el('stc-dwell-slider'); if(m) { m.value = v; _grad(m); _el('stc-dwell-value').textContent = (v/1000).toFixed(1)+'s'; }
+  });
+  _bindSlider('stc-autohint-slider', 'stc-autohint-value', v => v == 0 ? 'Off' : v+'s', '', v => {
+    _autoHintDelayMs = parseInt(v) * 1000;
+    localStorage.setItem(STC_KEY_AUTOHINT, _autoHintDelayMs);
+  });
 
   // Describe visually checkboxes — persist on change
   const descChk = _el('stc-describe-chk');
@@ -173,6 +196,12 @@ function _bindEvents() {
   if (descSceneChk) descSceneChk.addEventListener('change', () => {
     localStorage.setItem(STC_KEY_DESCRIBE_SCENE, descSceneChk.checked ? '1' : '0');
   });
+  
+  const playVideoChk = _el('stc-play-video-chk');
+  if (playVideoChk) playVideoChk.addEventListener('change', () => {
+    localStorage.setItem(STC_KEY_PLAY_VIDEO, playVideoChk.checked ? '1' : '0');
+  });
+
   // Background style pill buttons
   document.querySelectorAll('.stc-style-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -183,6 +212,7 @@ function _bindEvents() {
   });
   _hist('stc-char-input',  'stc-char-dropdown',  'stc-char-clear',  STC_KEY_THEME);
   _hist('stc-scene-input', 'stc-scene-dropdown', 'stc-scene-clear', STC_KEY_SCENE);
+  _hist('stc-video-input', 'stc-video-dropdown', 'stc-video-clear', STC_KEY_VIDEOS);
   const startBtn = _el('stc-start-btn');
   if (startBtn) startBtn.addEventListener('click', _start);
 
@@ -227,12 +257,28 @@ function _syncSliders() {
   const sd = _el('stc-dwell-slider'), vd = _el('stc-dwell-value');
   if (sd) { sd.value = _dwellMs; _grad(sd); }
   if (vd) vd.textContent = (_dwellMs/1000).toFixed(1)+'s';
+  const sid = _el('stc-ingame-dwell-slider'), vid = _el('stc-ingame-dwell-value');
+  if (sid) { sid.value = _dwellMs; _grad(sid); }
+  if (vid) vid.textContent = (_dwellMs/1000).toFixed(1)+'s';
+  
+  // Auto hint slider
+  const ahs = _el('stc-autohint-slider'), ahv = _el('stc-autohint-value');
+  if (ahs) { ahs.value = _autoHintDelayMs / 1000; _grad(ahs); }
+  if (ahv) ahv.textContent = _autoHintDelayMs === 0 ? 'Off' : (_autoHintDelayMs / 1000) + 's';
 
   // Describe visually checkboxes
   const descChk = _el('stc-describe-chk');
   if (descChk) descChk.checked = localStorage.getItem(STC_KEY_DESCRIBE) === '1';
   const descSceneChk = _el('stc-describe-scene-chk');
   if (descSceneChk) descSceneChk.checked = localStorage.getItem(STC_KEY_DESCRIBE_SCENE) === '1';
+  
+  const playVideoChk = _el('stc-play-video-chk');
+  if (playVideoChk) {
+    const saved = localStorage.getItem(STC_KEY_PLAY_VIDEO);
+    if (saved !== null) playVideoChk.checked = saved === '1';
+    else playVideoChk.checked = true; // default true
+  }
+
   // Background style
   const savedStyle = localStorage.getItem(STC_KEY_BG_STYLE) || 'kids';
   _setStyleBtn(savedStyle);
@@ -298,20 +344,57 @@ function _renderLib(inp, dd, key, f = '') {
   const lib = (_getLib(key) || []).filter(v => !f || v.toLowerCase().includes(f.toLowerCase()));
   const q = (inp.value || '').trim();
   const canAdd = q && !lib.some(v => v.toLowerCase() === q.toLowerCase());
+  const isVideo = key === STC_KEY_VIDEOS;
+  
   const addRow = canAdd
     ? `<div class="stc-lib-add-row"><button class="stc-lib-add-btn">\uff0b Add "${q}"</button></div>`
     : '';
+    
   dd.innerHTML =
     `<div class="stc-dropdown-header"><span>\ud83d\udcda Library <em style="color:#475569;font-weight:400;font-size:0.7rem;">\u2014 Enter to add</em></span></div>`
     + addRow
     + (lib.length
-      ? lib.map(v =>
-          `<div class="stc-history-item" data-val="${v.replace(/"/g,'&quot;')}">`
-          + `<span class="stc-hist-icon">\ud83c\udfac</span>`
-          + `<span class="stc-lib-label">${v}</span>`
-          + `<button class="stc-lib-remove" title="Remove">\u2715</button>`
-          + `</div>`).join('')
+      ? lib.map(v => {
+          let innerHtml = `<span class="stc-hist-icon">\ud83c\udfac</span><span class="stc-lib-label">${v}</span>`;
+          if (isVideo) {
+            innerHtml = `<div class="stc-video-preview" data-url="${v.replace(/"/g,'&quot;')}" style="display:flex;align-items:center;gap:10px;width:100%;overflow:hidden;">
+              <img src="" style="width:72px;height:40px;border-radius:4px;object-fit:cover;background:#1e293b;flex-shrink:0;">
+              <div style="display:flex;flex-direction:column;overflow:hidden;flex:1;">
+                <span class="stc-vid-title" style="font-size:0.75rem;font-weight:700;color:#f8fafc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Loading...</span>
+                <span style="font-size:0.6rem;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${v}</span>
+              </div>
+            </div>`;
+          }
+          return `<div class="stc-history-item" data-val="${v.replace(/"/g,'&quot;')}">${innerHtml}<button class="stc-lib-remove" title="Remove">\u2715</button></div>`;
+        }).join('')
       : '<div class="stc-dropdown-empty">No items — type and press Enter to add</div>');
+
+  if (isVideo && lib.length) {
+    dd.querySelectorAll('.stc-video-preview').forEach(async el => {
+      const url = el.dataset.url;
+      try {
+        if (!window._stcVidMetaCache) window._stcVidMetaCache = {};
+        if (!window._stcVidMetaCache[url]) {
+          const r = await fetch(`/api/youtube-meta?url=${encodeURIComponent(url)}`);
+          if (r.ok) window._stcVidMetaCache[url] = await r.json();
+          else window._stcVidMetaCache[url] = { error: true };
+        }
+        const meta = window._stcVidMetaCache[url];
+        if (meta && meta.title) {
+          const img = el.querySelector('img');
+          if (img) img.src = meta.thumbnail_url || '';
+          const titleEl = el.querySelector('.stc-vid-title');
+          if (titleEl) titleEl.textContent = meta.title;
+        } else {
+          const titleEl = el.querySelector('.stc-vid-title');
+          if (titleEl) titleEl.textContent = 'Unknown Video';
+        }
+      } catch (e) {
+        const titleEl = el.querySelector('.stc-vid-title');
+        if (titleEl) titleEl.textContent = 'Error loading preview';
+      }
+    });
+  }
 
   dd.querySelectorAll('.stc-history-item').forEach(el => {
     el.addEventListener('click', e => {
@@ -348,6 +431,8 @@ async function _start() {
   if (!scene) { _el('stc-scene-input').focus(); _err('Please describe a background scene!'); return; }
   if (theme) { _saveH(STC_KEY_THEME, theme); }
   _saveH(STC_KEY_SCENE, scene);
+  const vidUrl = _el('stc-video-input')?.value?.trim();
+  if (vidUrl) { _saveH(STC_KEY_VIDEOS, vidUrl); }
   
   _theme = finalTheme; _targets=[]; _foundCount=0; _attempts=0; _failedClicks=0; _allFound=false;
   _lastReqBody = { theme: finalTheme, scene, otherCount: count, findCount: findN, bgStyle, describeVisually, describeSceneVisually, targetImageUrl: _targetImageUrl };
@@ -377,6 +462,42 @@ window.stcRetry = async () => { if (_lastReqBody) { _sec('loading'); await _gene
 async function _generate(body) {
   _sec('loading'); _clearErr();
   _tipCycle(body.theme, body.scene, body.findCount);
+  
+  // ── Video logic ────────────────────────────────────────────────────────────
+  const vidContainer = _el('stc-loading-video-container');
+  const iframe = _el('stc-loading-iframe');
+  const spinnerContainer = _el('stc-loading-spinner-container');
+  const playVideoChk = _el('stc-play-video-chk');
+  const shouldPlayVideo = playVideoChk ? playVideoChk.checked : true;
+  
+  if (shouldPlayVideo) {
+    let customVidUrl = '';
+    const vidInput = _el('stc-video-input');
+    if (vidInput) customVidUrl = vidInput.value.trim();
+    
+    // Pick random from library if empty
+    if (!customVidUrl) {
+      const vidLib = _getLib(STC_KEY_VIDEOS) || STC_PRESET_VIDEOS;
+      if (vidLib.length > 0) {
+        customVidUrl = vidLib[Math.floor(Math.random() * vidLib.length)];
+      }
+    }
+    
+    let ytId = ''; 
+    if (customVidUrl) {
+      const m = customVidUrl.match(/(?:v=|youtu\.be\/)([^&]+)/);
+      if (m && m[1]) ytId = m[1];
+    }
+    
+    if (vidContainer && iframe && ytId) {
+      vidContainer.style.display = 'block';
+      iframe.src = `https://www.youtube.com/embed/${ytId}?autoplay=1&mute=0&controls=1`;
+      if (spinnerContainer) spinnerContainer.style.flexDirection = 'row';
+    }
+  } else {
+    if (vidContainer) vidContainer.style.display = 'none';
+    if (spinnerContainer) spinnerContainer.style.flexDirection = 'column';
+  }
 
   // ── Seconds counter ───────────────────────────────────────────────────────
   const counterEl = _el('stc-loading-counter');
@@ -422,7 +543,32 @@ async function _generate(body) {
   } catch(e) {
     clearInterval(window._stcTipInt);
     _stopCounter();
+    const vidContainer = _el('stc-loading-video-container');
+    if (vidContainer) vidContainer.style.display = 'none';
+    const iframe = _el('stc-loading-iframe');
+    if (iframe) iframe.src = '';
     _showSettings(); _err(e.message, true);
+  }
+}
+
+window.stcOpenInGameSettings = () => {
+  const modal = _el('stc-ingame-settings-modal');
+  if (modal) modal.style.display = 'flex';
+  // Pause any active dwells while settings are open
+  _targets.forEach(t => _cancelDwell(t));
+};
+
+window.stcCloseInGameSettings = () => {
+  const modal = _el('stc-ingame-settings-modal');
+  if (modal) modal.style.display = 'none';
+};
+
+function _resetAutoHintTimer(canvas) {
+  if (_autoHintTimer) { clearTimeout(_autoHintTimer); _autoHintTimer = null; }
+  if (_autoHintDelayMs > 0 && !_allFound) {
+    _autoHintTimer = setTimeout(() => {
+      _showOneHint(canvas);
+    }, _autoHintDelayMs);
   }
 }
 
@@ -469,6 +615,13 @@ window.stcToggleInfo = function() {
 
 // ── Game View ─────────────────────────────────────────────────────────────────
 async function _showGame(imageData, mime) {
+  const vidContainer = _el('stc-loading-video-container');
+  if (vidContainer) vidContainer.style.display = 'none';
+  const iframe = _el('stc-loading-iframe');
+  if (iframe) iframe.src = '';
+  const spinnerContainer = _el('stc-loading-spinner-container');
+  if (spinnerContainer) spinnerContainer.style.flexDirection = 'column';
+
   const v = _el('view-spot-char');
   if (v) v.style.cssText = 'position:fixed;inset:0;z-index:500;background:#020617;display:flex;flex-direction:column;padding:0;gap:0;';
   _sec('game');
@@ -508,6 +661,7 @@ async function _showGame(imageData, mime) {
   _redraw(canvas);
   _bindCanvas(canvas);
   if (_hintTimer) { clearTimeout(_hintTimer); _hintTimer = null; }
+  _resetAutoHintTimer(canvas);
 }
 
 // ── Canvas Drawing ────────────────────────────────────────────────────────────
@@ -873,14 +1027,16 @@ function _onFound(canvas, t, idx) {
     };
   }
 
-  // Partial win: mini confetti + sound
-  _miniConfetti(PROF_COLORS[idx%PROF_COLORS.length]);
-  if (window.playJoySound) window.playJoySound();
+  // Partial win: full confetti + sound
+  _launchConfetti();
+  if (window.playSuccessSound) window.playSuccessSound();
+  else if (window.playJoySound) window.playJoySound();
 
   // Toast message
   _toast(`🎉 Found one! ${_foundCount} of ${_targets.length} found!`);
 
   if (_foundCount >= _targets.length) _onAllFound(canvas);
+  else _resetAutoHintTimer(canvas);
 }
 
 function _onAllFound(canvas) {
@@ -1011,7 +1167,7 @@ function _showOneHint(canvas) {
 }
 
 // Hint button: show ALL remaining hints
-window.stcShowHint=()=>{ const c=_el('stc-game-canvas'); if(c) _showHints(c); };
+window.stcShowHint=()=>{ const c=_el('stc-game-canvas'); if(c) { _showHints(c); _resetAutoHintTimer(c); } };
 
 // ── Confetti ──────────────────────────────────────────────────────────────────
 function _miniConfetti(color) {

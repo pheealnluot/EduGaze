@@ -1900,6 +1900,7 @@ function _saveQuizPrefsToFirestore() {
         compUrlHistory:        _qsHistoryLoad(),
         compTimeLimitSec:      _qsTimeLimitSec || 0,
         compRequireTranscript: _qsRequireTranscript,
+        compFindTopic:         (() => { const el = document.getElementById('qs-find-topic'); return el ? el.value : ''; })(),
       };
       await _upd(_doc(db, 'users', user.uid), { quizPrefs: prefs });
     } catch (e) { /* non-critical */ }
@@ -1916,6 +1917,7 @@ function saveCompPrefs() {
     existing.compUrlHistory        = _qsHistoryLoad();
     existing.compTimeLimitSec      = _qsTimeLimitSec || 0;
     existing.compRequireTranscript = _qsRequireTranscript;
+    existing.compFindTopic         = (() => { const el = document.getElementById('qs-find-topic'); return el ? el.value : ''; })();
     localStorage.setItem('quizSettings_v2', JSON.stringify(existing));
   } catch {}
   _saveQuizPrefsToFirestore();
@@ -1943,6 +1945,7 @@ function loadQuizPrefsFromFirestore(data) {
   if (prefs.compMode) _qsCurrentMode = prefs.compMode;
   if (prefs.compTimeLimitSec !== undefined) _qsTimeLimitSec = prefs.compTimeLimitSec;
   if (prefs.compRequireTranscript !== undefined) _qsRequireTranscript = prefs.compRequireTranscript;
+  if (prefs.compFindTopic !== undefined) quizSettings._compFindTopic = prefs.compFindTopic;
   // Mirror URL history to localStorage so _qsHistoryLoad() picks it up
   if (Array.isArray(prefs.compUrlHistory) && prefs.compUrlHistory.length) {
     try { localStorage.setItem(_COMP_HISTORY_KEY, JSON.stringify(prefs.compUrlHistory)); } catch {}
@@ -1968,6 +1971,7 @@ function saveQuizSettings() {
       compUrlHistory:        _qsHistoryLoad().length ? _qsHistoryLoad() : (existing.compUrlHistory || []),
       compTimeLimitSec:      _qsTimeLimitSec != null ? _qsTimeLimitSec : (existing.compTimeLimitSec || 0),
       compRequireTranscript: _qsRequireTranscript,
+      compFindTopic:         (() => { const el = document.getElementById('qs-find-topic'); return el ? el.value : (existing.compFindTopic || ''); })(),
     };
     localStorage.setItem('quizSettings_v2', JSON.stringify(payload));
   } catch { }
@@ -1985,6 +1989,7 @@ function loadQuizSettings() {
     if (parsed.compTimeLimitSec !== undefined) _qsTimeLimitSec = parsed.compTimeLimitSec;
     if (parsed.compRequireTranscript !== undefined) _qsRequireTranscript = parsed.compRequireTranscript;
     if (parsed.compUrl)          parsed._compUrl  = parsed.compUrl;
+    if (parsed.compFindTopic !== undefined) parsed._compFindTopic = parsed.compFindTopic;
     if (Array.isArray(parsed.compUrlHistory) && parsed.compUrlHistory.length) {
       try { localStorage.setItem(_COMP_HISTORY_KEY, JSON.stringify(parsed.compUrlHistory)); } catch {}
     }
@@ -2022,7 +2027,7 @@ let initialSettings = loadQuizSettings() || {
   hintThreshold: 4,
   voiceOver: false,
   voiceOverHoverRepeat: false,
-  voiceOverVolume: 1.0,
+  voiceOverVolume: 0.7,  // 0.7 default calibrated to match SFX at same slider position
   // Per-source toggles — each can be independently enabled/disabled
   imageSources: { pixabay: true, unsplash: false, wikimedia: true, ai: true },
 };
@@ -2032,7 +2037,7 @@ if (!initialSettings.fontSize) initialSettings.fontSize = 'medium';
 if (initialSettings.hintThreshold === undefined) initialSettings.hintThreshold = 4;
 if (initialSettings.voiceOver === undefined) initialSettings.voiceOver = false;
 if (initialSettings.voiceOverHoverRepeat === undefined) initialSettings.voiceOverHoverRepeat = false;
-if (initialSettings.voiceOverVolume === undefined) initialSettings.voiceOverVolume = 1.0;
+if (initialSettings.voiceOverVolume === undefined) initialSettings.voiceOverVolume = 0.7;
 if (!initialSettings.eduLevel) initialSettings.eduLevel = 'P2';
 if (!initialSettings.contentTypes) initialSettings.contentTypes = ['text'];
 if (initialSettings.customSubject === undefined) initialSettings.customSubject = '';
@@ -2226,6 +2231,19 @@ function initQuizSettingsUI() {
     _urlInput._compPersistBound = true;
     _urlInput.addEventListener('input', () => {
       quizSettings._compUrl = _urlInput.value;
+      saveCompPrefs();
+    });
+  }
+  // Restore topic/keyword field and bind persistence
+  const _topicInput = document.getElementById('qs-find-topic');
+  const _savedTopic = quizSettings._compFindTopic || '';
+  if (_topicInput && _savedTopic && !_topicInput.value) {
+    _topicInput.value = _savedTopic;
+  }
+  if (_topicInput && !_topicInput._compPersistBound) {
+    _topicInput._compPersistBound = true;
+    _topicInput.addEventListener('input', () => {
+      quizSettings._compFindTopic = _topicInput.value;
       saveCompPrefs();
     });
   }
@@ -2509,17 +2527,17 @@ function initQuizSettingsUI() {
   });
   updateImgSourceUI();
 
-  // Voice Over toggle + sub-settings (volume, repeat-on-hover)
+  // Voice Over toggle + sub-settings (repeat-on-hover)
+  // Volume is now controlled by the always-visible slider in the Sound & Effects section
   const voChk       = document.getElementById('quiz-voiceover-enabled');
   const voHoverRow  = document.getElementById('quiz-vo-hover-row');
   const voHoverChk  = document.getElementById('quiz-vo-hover-repeat');
-  const voVolRow    = document.getElementById('quiz-vo-volume-row');
+  // Always-visible VO volume slider (moved to Sound & Effects section)
   const voVolSlider = document.getElementById('quiz-vo-volume-slider');
   const voVolDisplay= document.getElementById('quiz-vo-volume-display');
   const _syncVoSubRows = () => {
     const on = quizSettings.voiceOver;
     if (voHoverRow) voHoverRow.style.display = on ? 'flex' : 'none';
-    if (voVolRow)   voVolRow.style.display   = on ? 'flex' : 'none';
   };
   if (voChk) {
     voChk.checked = quizSettings.voiceOver;
@@ -2536,8 +2554,10 @@ function initQuizSettingsUI() {
       saveQuizSettings();
     };
   }
+  // Always-visible Voice Over volume slider
   if (voVolSlider) {
-    const pct = Math.round((quizSettings.voiceOverVolume ?? 1.0) * 100);
+    // Default VO volume is 0.7 (70%) — calibrated to match SFX at equivalent slider position
+    const pct = Math.round((quizSettings.voiceOverVolume ?? 0.7) * 100);
     voVolSlider.value = pct;
     if (voVolDisplay) voVolDisplay.textContent = `${pct}%`;
     voVolSlider.oninput = e => {
@@ -2589,10 +2609,15 @@ function stopQuizMusic() {
 }
 
 // Returns the effective SFX volume (0 if muted, else musicVolume)
+// Calibration factor: SFX sounds are played at 0.15–0.85× of this value,
+// while voice-over uses voiceOverVolume directly at 1.0×.
+// We apply a 1.4× boost so that SFX at 50% slider ≈ Voice at 50% slider
+// in perceived loudness. Capped at 1.0 to avoid clipping.
 function _getSfxVolume() {
   // SFX volume is independent of the music toggle — always audible.
   // Uses musicVolume as a relative scale, defaulting to 0.5 if not set.
-  return quizSettings.musicVolume ?? 0.5;
+  // 1.4× calibration factor makes SFX and voice-over perceptually equal at the same slider position.
+  return Math.min(1.0, (quizSettings.musicVolume ?? 0.5) * 1.4);
 }
 
 // ── Voice Over (TTS) helper ─────────────────────────────────────────────
@@ -7045,6 +7070,9 @@ window._qsFindVideo = async () => {
   const eduLevel        = (window.quizSettings?.eduLevel) || 'P2';
   const subjects        = (window.quizSettings?.subjects)  || [];
   const requireTranscript = _qsRequireTranscript;
+  // Read topic keyword from the dedicated field (overrides subject-based search if set)
+  const topicField = document.getElementById('qs-find-topic');
+  const topicKeyword = (topicField?.value || '').trim();
 
   _qsFindSetBusy(true);
   _qsFindSetStatus(`Searching YouTube for a child-friendly video${requireTranscript ? ' with captions' : ''}…`, 'loading');
@@ -7071,7 +7099,8 @@ window._qsFindVideo = async () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           educationLevel: eduLevel,
-          subject: subjects.join(', '), // passing subjects to help backend generate relevant queries
+          // Prefer the explicit topic keyword over general subjects
+          subject: topicKeyword || subjects.join(', '),
           maxDurationMin: maxMins,
           exclude: [...excludeThisCall],
           requireCaption: requireTranscript, // when true, backend validates transcript before returning
@@ -7140,7 +7169,10 @@ window._qsFindVideo = async () => {
  */
 window._qsFindPicture = async () => {
   _qsFindSetBusy(true);
-  _qsFindSetStatus(`Finding a great picture for you…`, 'loading');
+  // Read topic keyword from the dedicated field
+  const topicField = document.getElementById('qs-find-topic');
+  const topicKeyword = (topicField?.value || '').trim();
+  _qsFindSetStatus(`Finding a great picture${topicKeyword ? ` about "${topicKeyword}"` : ''} for you…`, 'loading');
 
   // ── Category pool — rotate category type so consecutive presses feel varied ──
   const categoryTypes = [
@@ -7170,10 +7202,14 @@ window._qsFindPicture = async () => {
   let topic = null;
   try {
     const recentList = window._qsPicRecentQueries.slice(-8).join(', ');
+    // If a topic keyword is set, guide Gemini to generate a query related to that topic
+    const topicInstruction = topicKeyword
+      ? `The search MUST be related to the topic: "${topicKeyword}" — but still find ${catEntry.hint}.\n`
+      : `Generate ONE short Pixabay image search query (3–5 words) that will find ${catEntry.hint}.\n`;
     const geminiPrompt =
       `You are helping choose a Pixabay photo for a children's comprehension activity.\n\n` +
-      `Generate ONE short Pixabay image search query (3–5 words) that will find ${catEntry.hint}.\n\n` +
-      `Rules:\n` +
+      topicInstruction +
+      `\nRules:\n` +
       `- The query must be child-safe and educational\n` +
       `- Prefer queries that return photos with clear subjects and visible activity\n` +
       `- Be SPECIFIC and creative — avoid generic terms like "nature" or "landscape"\n` +
