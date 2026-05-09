@@ -389,7 +389,7 @@ function _renderLib(inp, dd, key, f = '') {
       try {
         if (!window._stcVidMetaCache) window._stcVidMetaCache = {};
         if (!window._stcVidMetaCache[url]) {
-          const r = await fetch(`/api/youtube-meta?url=${encodeURIComponent(url)}`);
+          const r = await fetch(`https://noembed.com/embed?url=${encodeURIComponent(url)}`);
           if (r.ok) window._stcVidMetaCache[url] = await r.json();
           else window._stcVidMetaCache[url] = { error: true };
         }

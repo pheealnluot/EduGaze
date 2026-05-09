@@ -7202,19 +7202,31 @@ window._qsFindPicture = async () => {
   let topic = null;
   try {
     const recentList = window._qsPicRecentQueries.slice(-8).join(', ');
-    // If a topic keyword is set, guide Gemini to generate a query related to that topic
-    const topicInstruction = topicKeyword
-      ? `The search MUST be related to the topic: "${topicKeyword}" — but still find ${catEntry.hint}.\n`
-      : `Generate ONE short Pixabay image search query (3–5 words) that will find ${catEntry.hint}.\n`;
-    const geminiPrompt =
-      `You are helping choose a Pixabay photo for a children's comprehension activity.\n\n` +
-      topicInstruction +
-      `\nRules:\n` +
-      `- The query must be child-safe and educational\n` +
-      `- Prefer queries that return photos with clear subjects and visible activity\n` +
-      `- Be SPECIFIC and creative — avoid generic terms like "nature" or "landscape"\n` +
-      `- Do NOT repeat any of these recent queries: ${recentList || 'none yet'}\n\n` +
-      `Return ONLY the search query as a plain string — no quotes, no JSON, no explanation.`;
+    let geminiPrompt;
+    if (topicKeyword) {
+      // Keyword mode: topic is the ONLY constraint — no category hint
+      geminiPrompt =
+        `You are helping choose a Pixabay photo for a children's comprehension activity.\n\n` +
+        `TOPIC (MANDATORY): The search MUST be about "${topicKeyword}". Do not choose a different topic.\n\n` +
+        `Generate ONE short, specific Pixabay image search query (3–5 words) that will find a clear, educational photo about "${topicKeyword}".\n` +
+        `Rules:\n` +
+        `- Must be related to "${topicKeyword}"\n` +
+        `- Must be child-safe and educational\n` +
+        `- Be specific and creative — avoid generic terms like "nature" or "landscape"\n` +
+        `- Do NOT repeat any of these recent queries: ${recentList || 'none yet'}\n\n` +
+        `Return ONLY the search query as a plain string — no quotes, no JSON, no explanation.`;
+    } else {
+      // No keyword — use category-based search for variety
+      geminiPrompt =
+        `You are helping choose a Pixabay photo for a children's comprehension activity.\n\n` +
+        `Generate ONE short Pixabay image search query (3–5 words) that will find ${catEntry.hint}.\n` +
+        `\nRules:\n` +
+        `- The query must be child-safe and educational\n` +
+        `- Prefer queries that return photos with clear subjects and visible activity\n` +
+        `- Be SPECIFIC and creative — avoid generic terms like "nature" or "landscape"\n` +
+        `- Do NOT repeat any of these recent queries: ${recentList || 'none yet'}\n\n` +
+        `Return ONLY the search query as a plain string — no quotes, no JSON, no explanation.`;
+    }
 
     const gResp = await fetch('/api/quiz-generate', {
       method: 'POST',
@@ -7241,24 +7253,37 @@ window._qsFindPicture = async () => {
     console.warn('[findPicture] Gemini query generation failed, using fallback:', e.message);
   }
 
-  // ── Fallback bank per category — used if Gemini is unavailable ─────────────
+  // ── Fallback — used if Gemini is unavailable ─────────────────────────────────
   if (!topic) {
-    const fallbacks = {
-      action:       ['children planting trees school', 'firefighters rescuing flood victim', 'athletes competing track race',
-                     'fishermen hauling nets boat', 'baker kneading bread dough', 'surgeon performing operation hospital',
-                     'dancer performing stage spotlight', 'astronaut floating space station'],
-      cause_effect: ['volcanic lava flowing village', 'flood rescue emergency boat', 'deforestation rainforest cleared land',
-                     'caterpillar becoming butterfly metamorphosis', 'wildfire smoke dramatic landscape', 'dam releasing water turbines'],
-      narrative:    ['market vendors selling spices asia', 'grandmother teaching grandchild cooking', 'explorer discovering cave paintings',
-                     'scientists collecting ocean samples', 'children outdoor classroom africa', 'rescue team saving stranded hiker'],
-      objects:      ['colorful exotic tropical fruits', 'ancient roman artefacts museum', 'scientific lab glassware experiment',
-                     'traditional musical instruments world', 'sea shells collection macro', 'precious gems minerals collection'],
-      scenery:      ['bioluminescent bay glowing ocean', 'mangrove forest aerial roots water', 'volcanic crater steaming dramatic',
-                     'aurora borealis mountain reflection', 'salt flats bolivia mirror reflection', 'coral reef diverse fish colorful'],
-    };
-    const pool = fallbacks[catEntry.type] || fallbacks.scenery;
-    topic = pool[Math.floor(Math.random() * pool.length)];
-    console.log(`[findPicture] Fallback query (${catEntry.type}): "${topic}"`);
+    if (topicKeyword) {
+      // Keyword-aware fallbacks — always use the topic
+      const kwFallbacks = [
+        `${topicKeyword} educational photo`,
+        `${topicKeyword} children learning`,
+        `${topicKeyword} nature close up`,
+        `${topicKeyword} kids activity`,
+        `${topicKeyword} colorful vivid`,
+      ];
+      topic = kwFallbacks[Math.floor(Math.random() * kwFallbacks.length)];
+      console.log(`[findPicture] Keyword fallback query: "${topic}"`);
+    } else {
+      const fallbacks = {
+        action:       ['children planting trees school', 'firefighters rescuing flood victim', 'athletes competing track race',
+                       'fishermen hauling nets boat', 'baker kneading bread dough', 'surgeon performing operation hospital',
+                       'dancer performing stage spotlight', 'astronaut floating space station'],
+        cause_effect: ['volcanic lava flowing village', 'flood rescue emergency boat', 'deforestation rainforest cleared land',
+                       'caterpillar becoming butterfly metamorphosis', 'wildfire smoke dramatic landscape', 'dam releasing water turbines'],
+        narrative:    ['market vendors selling spices asia', 'grandmother teaching grandchild cooking', 'explorer discovering cave paintings',
+                       'scientists collecting ocean samples', 'children outdoor classroom africa', 'rescue team saving stranded hiker'],
+        objects:      ['colorful exotic tropical fruits', 'ancient roman artefacts museum', 'scientific lab glassware experiment',
+                       'traditional musical instruments world', 'sea shells collection macro', 'precious gems minerals collection'],
+        scenery:      ['bioluminescent bay glowing ocean', 'mangrove forest aerial roots water', 'volcanic crater steaming dramatic',
+                       'aurora borealis mountain reflection', 'salt flats bolivia mirror reflection', 'coral reef diverse fish colorful'],
+      };
+      const pool = fallbacks[catEntry.type] || fallbacks.scenery;
+      topic = pool[Math.floor(Math.random() * pool.length)];
+      console.log(`[findPicture] Fallback query (${catEntry.type}): "${topic}"`);
+    }
   }
 
   // Randomise Pixabay page (1–3) for variety within the same query
