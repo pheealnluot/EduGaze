@@ -541,3 +541,4 @@ exports.spotCharGenerate = onRequest(
   }
 
   res.json({ imageData: imageBase64, mimeType, bboxes, theme: rawTheme, findCount: findN, aiHard, aiSource });
+});
