@@ -859,7 +859,7 @@
       </div>
 
       <!-- Game View -->
-      <div id="stc-game-view" style="display:none;flex-direction:column;align-items:center;gap:12px;width:100%;">
+      <div id="stc-game-view" style="display:none;position:relative;flex-direction:column;align-items:center;gap:12px;width:100%;">
         <!-- Header bar -->
         <div class="stc-game-header">
           <div class="stc-game-header-left">
@@ -869,6 +869,8 @@
           <div class="stc-game-btns">
             <button class="stc-hint-btn" onclick="window.stcOpenSettings()"
               style="border-color:rgba(99,102,241,0.3);color:#818cf8;">⚙️ Settings</button>
+            <button class="stc-hint-btn" onclick="window.stcToggleInfo()" title="View AI Generation Info"
+              style="border-color:rgba(56,189,248,0.3);color:#38bdf8;">ℹ️ Info</button>
             <button class="stc-hint-btn" onclick="window.stcShowHint()" title="Show a hint">💡 Hint</button>
             <button class="stc-hint-btn" id="stc-mark-btn" onclick="window.stcToggleMark()" title="Click canvas to mark a character"
               style="border-color:rgba(251,191,36,0.3);color:#fbbf24;display:none;">📌 Mark</button>
@@ -878,6 +880,15 @@
             <button class="stc-playagain-btn" onclick="window.stcGoHome()"
               style="border-color:rgba(148,163,184,0.2);color:#64748b;">🏠 Home</button>
           </div>
+        </div>
+
+        <!-- Info Panel -->
+        <div id="stc-info-panel" style="display:none;position:absolute;top:60px;right:20px;z-index:1000;background:#0f172a;border:1px solid rgba(56,189,248,0.3);border-radius:12px;padding:16px;width:340px;box-shadow:0 10px 25px rgba(0,0,0,0.5);color:#e2e8f0;font-size:0.9rem;text-align:left;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;border-bottom:1px solid rgba(255,255,255,0.1);padding-bottom:8px;">
+            <h4 style="margin:0;color:#38bdf8;font-size:1.05rem;">AI Generation Info</h4>
+            <button onclick="window.stcToggleInfo()" style="background:transparent;border:none;color:#94a3b8;cursor:pointer;font-size:1.2rem;line-height:1;">&times;</button>
+          </div>
+          <div id="stc-info-content" style="display:flex;flex-direction:column;gap:10px;"></div>
         </div>
 
         <!-- Canvas (image + overlay drawn here) -->

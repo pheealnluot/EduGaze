@@ -113,6 +113,7 @@ let _origImg      = null;
 let _hintTimer    = null; // kept for cleanup, no longer auto-scheduled
 let _lastReqBody  = null;
 let _mimeType     = 'image/png';
+let _aiSource     = 'generation';
 let _gameStartMs  = 0;   // Date.now() when game canvas first shown
 let _markMode     = false; // true when user is placing a manual target
 let _removeMode   = false; // true when user is removing a target
@@ -401,6 +402,7 @@ async function _generate(body) {
     clearInterval(window._stcTipInt);
     _stopCounter();
     _mimeType = d.mimeType || 'image/png';
+    _aiSource = d.aiSource || 'generation';
     _targets = (d.bboxes || []).map(b => ({ bbox:b, found:false, inBbox:false, dwellTimer:null, dwellEl:null }));
     _theme   = d.theme || body.theme;
     _requestedFindN = body.findCount || 3;
@@ -432,6 +434,38 @@ function _tipCycle(theme, scene, n) {
   if(tip) tip.textContent = tips[0];
   window._stcTipInt = setInterval(()=>{ if(tip) tip.textContent = tips[++i % tips.length]; }, 2500);
 }
+
+window.stcToggleInfo = function() {
+  const panel = document.getElementById('stc-info-panel');
+  if (!panel) return;
+  if (panel.style.display !== 'none') {
+    panel.style.display = 'none';
+    return;
+  }
+  
+  const content = document.getElementById('stc-info-content');
+  let html = '';
+  
+  html += `<div><strong>Location Source:</strong> <span style="color:#10b981;">${_aiSource === 'generation' ? 'Image Generation Model (Suggested at creation)' : 'Vision Fallback Model (Scanned after creation)'}</span></div>`;
+  
+  if (_aiSource === 'vision') {
+    html += `<div style="margin-top:4px;"><strong>Vision Confidence:</strong></div>`;
+    const bboxes = _targets.map(t => t.bbox).filter(Boolean);
+    if (bboxes.length === 0) {
+      html += `<div style="color:#f87171;margin-left:8px;">Vision AI failed to locate any characters.</div>`;
+    } else {
+      bboxes.forEach((b, i) => {
+        const conf = typeof b.confidence === 'number' ? (b.confidence * 100).toFixed(1) + '%' : 'N/A';
+        html += `<div style="margin-left:8px;color:#94a3b8;">Target #${i+1}: <span style="color:#f8fafc;">${conf}</span></div>`;
+      });
+    }
+  } else {
+    html += `<div style="margin-top:4px;color:#94a3b8;font-size:0.85rem;">The generation model reported its intended locations directly. Confidence scores are not applicable.</div>`;
+  }
+  
+  content.innerHTML = html;
+  panel.style.display = 'block';
+};
 
 // ── Game View ─────────────────────────────────────────────────────────────────
 async function _showGame(imageData, mime) {
