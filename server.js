@@ -1150,125 +1150,120 @@ app.post('/api/spot-char-generate', async (req, res) => {
   if (bboxes.length > 0) {
     console.log(`[SpotChar] Skipping vision step — ${bboxes.length} bbox(es) from generation model`);
   } else {
-  // Always runs — the dedicated vision model uses Gemini's NATIVE bounding-box
-  // format [ymin, xmin, ymax, xmax] on a 0–1000 integer scale, which maps
-  // proportionally to the image regardless of aspect ratio.
-  // Uses rawTheme (original character name) for better recognition accuracy.
-  try {
-    console.log(`[SpotChar] Vision step: locating ${findN}x "${rawTheme}" in generated image…`);
-    const visionPrompt =
-      `Look carefully at this image. It is a "Spot the Character" game scene.\n` +
-      `It contains EXACTLY ${findN} character(s) that look like "${rawTheme}".\n\n` +
-      `Find ALL ${findN} of them and return their bounding boxes.\n` +
-      `For each one, return a bounding box as [ymin, xmin, ymax, xmax] where each value is\n` +
-      `an integer from 0 to 1000 (0 = top/left edge, 1000 = bottom/right edge).\n` +
-      `The box should tightly enclose the full character body from head to feet.\n` +
-      `Also include a "confidence" score from 0.0 to 1.0.\n\n` +
-      `IMPORTANT RULES:\n` +
-      `- Only report characters that clearly look like "${rawTheme}" — not generic background characters\n` +
-      `- You MUST find exactly ${findN} matches — they are guaranteed to be in the image\n` +
-      `- Maximum ${findN} results\n\n` +
-      `Return ONLY a JSON array — no markdown, no code fences, no prose:\n` +
-      `[{"box_2d":[ymin, xmin, ymax, xmax],"label":"${rawTheme}","confidence":0.9}]`;
 
+  // Helper: run a single vision detection pass and return parsed bboxes
+  async function _visionPass(prompt, passLabel) {
     const vResp = await fetch(GEMINI_URL, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       signal: AbortSignal.timeout(45000),
       body: JSON.stringify({
         contents: [{ role: 'user', parts: [
           { inlineData: { mimeType, data: imageBase64 } },
-          { text: visionPrompt },
+          { text: prompt },
         ]}],
         generationConfig: { thinkingConfig: { thinkingBudget: 4096 }, maxOutputTokens: 2048 },
       }),
     });
-    const vData  = await vResp.json();
+    const vData = await vResp.json();
     if (!vResp.ok) {
-      console.warn(`[SpotChar] Vision API error: ${vResp.status}`, JSON.stringify(vData?.error || vData).slice(0, 300));
+      console.warn(`[SpotChar] ${passLabel} API error: ${vResp.status}`);
+      return [];
     }
-    // Text part may be after a thinking part
     const allParts = vData?.candidates?.[0]?.content?.parts || [];
-    const rawText = allParts
-      .filter(p => p.text && !p.thought)
-      .map(p => p.text).join('');
-    console.log(`[SpotChar] Vision raw response (${rawText.length} chars): ${rawText.slice(0, 500)}`);
-
-    if (!rawText) {
-      console.warn(`[SpotChar] Vision returned no text. Parts:`, allParts.map(p => ({
-        hasText: !!p.text, isThought: !!p.thought, textLen: p.text?.length || 0,
-      })));
-    }
-
-    // Strip markdown code fences that Gemini sometimes wraps JSON in
+    const rawText = allParts.filter(p => p.text && !p.thought).map(p => p.text).join('');
+    console.log(`[SpotChar] ${passLabel} raw (${rawText.length} chars): ${rawText.slice(0, 400)}`);
     const cleanText = rawText.replace(/```(?:json)?\s*/gi, '').trim();
-    console.log(`[SpotChar] Cleaned text: ${cleanText.slice(0, 300)}`);
-
-    // Match the JSON array
     const arrMatch = cleanText.match(/\[[\s\S]*\]/);
-    if (arrMatch) {
-      const parsed = JSON.parse(arrMatch[0]);
-      console.log(`[SpotChar] Parsed ${parsed.length} raw bbox(es) from vision`);
-
-      const MARGIN = 0.12;
-      const CONFIDENCE_MIN = 0.50; // lowered from 0.75 — vision model is already conservative
-
-      // Convert native 0–1000 [ymin,xmin,ymax,xmax] format to 0.0–1.0 {x,y,w,h}
-      const converted = parsed
-        .filter(b => {
-          if (!Array.isArray(b.box_2d) || b.box_2d.length < 4) return false;
-          if (typeof b.confidence === 'number' && b.confidence < CONFIDENCE_MIN) return false;
-          return true;
-        })
-        .map(b => {
-          const [ymin, xmin, ymax, xmax] = b.box_2d;
-          console.log(`[SpotChar]   raw box_2d: [${ymin}, ${xmin}, ${ymax}, ${xmax}] conf=${b.confidence}`);
-          const x = xmin / 1000;
-          const y = ymin / 1000;
-          const w = (xmax - xmin) / 1000;
-          const h = (ymax - ymin) / 1000;
-          const cx = x + w / 2;
-          const cy = y + h / 2;
-          return { x, y, w, h, cx, cy, confidence: b.confidence };
-        });
-
-      if (parsed.length > converted.length) {
-        console.log(`[SpotChar] Filtered ${parsed.length - converted.length} low-confidence or invalid bbox(es)`);
-      }
-
-      // Clamp and validate
-      const normalised = converted.map(b => {
-        let { cx, cy, w, h } = b;
-        cx = Math.max(MARGIN, Math.min(1 - MARGIN, cx));
-        cy = Math.max(MARGIN, Math.min(1 - MARGIN, cy));
-        w = Math.max(0.05, Math.min(0.45, w));
-        h = Math.max(0.05, Math.min(0.45, h));
-        const x = Math.max(0.01, Math.min(1 - w - 0.01, cx - w / 2));
-        const y = Math.max(0.01, Math.min(1 - h - 0.01, cy - h / 2));
-        return { x, y, w, h, cx, cy };
+    if (!arrMatch) { console.warn(`[SpotChar] ${passLabel}: no JSON array found`); return []; }
+    const parsed = JSON.parse(arrMatch[0]);
+    const MARGIN = 0.12;
+    return parsed
+      .filter(b => Array.isArray(b.box_2d) && b.box_2d.length >= 4)
+      .map(b => {
+        const [ymin, xmin, ymax, xmax] = b.box_2d;
+        console.log(`[SpotChar]   ${passLabel} box_2d: [${ymin}, ${xmin}, ${ymax}, ${xmax}]`);
+        let x = xmin/1000, y = ymin/1000;
+        let w = Math.max(0.05, Math.min(0.45, (xmax-xmin)/1000));
+        let h = Math.max(0.05, Math.min(0.45, (ymax-ymin)/1000));
+        let cx = Math.max(MARGIN, Math.min(1-MARGIN, x + w/2));
+        let cy = Math.max(MARGIN, Math.min(1-MARGIN, y + h/2));
+        x = Math.max(0.01, Math.min(1-w-0.01, cx - w/2));
+        y = Math.max(0.01, Math.min(1-h-0.01, cy - h/2));
+        return { x, y, w, h };
+      })
+      .filter(b => {
+        const cx = b.x + b.w/2, cy = b.y + b.h/2;
+        return cx >= MARGIN && cx <= 1-MARGIN && cy >= MARGIN && cy <= 1-MARGIN;
       });
+  }
 
-      const safeBoxes = normalised
-        .filter(b => b.cx >= MARGIN && b.cx <= 1 - MARGIN && b.cy >= MARGIN && b.cy <= 1 - MARGIN)
-        .map(({ x, y, w, h }) => ({ x, y, w, h }));
+  try {
+    // ── Pass 1: Direct name-based search ──
+    console.log(`[SpotChar] Vision Pass 1: locating ${findN}x "${rawTheme}"…`);
+    const pass1Prompt =
+      `Look carefully at this image. It is a "Spot the Character" game scene.\n` +
+      `It contains EXACTLY ${findN} character(s) that look like "${rawTheme}".\n` +
+      `NOTE: The characters may have been TRANSFORMED into a different art style (realistic, photorealistic, 3D, etc.) ` +
+      `but they will still have recognisable features inspired by "${rawTheme}".\n\n` +
+      `Find ALL ${findN} of them and return their bounding boxes.\n` +
+      `Format: [ymin, xmin, ymax, xmax] — integers 0 to 1000.\n` +
+      `Return ONLY a JSON array, no markdown, no code fences:\n` +
+      `[{"box_2d":[ymin,xmin,ymax,xmax],"label":"${rawTheme}"}]`;
 
-      bboxes = _removeOverlapping(safeBoxes, findN);
+    let pass1 = await _visionPass(pass1Prompt, 'Pass1');
+    pass1 = _removeOverlapping(pass1, findN);
+    console.log(`[SpotChar] Pass 1 found ${pass1.length}/${findN} bbox(es)`);
 
-      console.log(`[SpotChar] ✅ Vision found ${bboxes.length} bbox(es):`, JSON.stringify(bboxes));
+    if (pass1.length >= findN) {
+      bboxes = pass1;
     } else {
-      console.warn(`[SpotChar] ⚠️ No JSON array found in vision response. Raw text: "${rawText.slice(0, 200)}"`);
+      // ── Pass 2: Appearance-based retry ──
+      // Ask the model to first DESCRIBE what the target characters look like
+      // in this specific image, then find all instances.
+      console.log(`[SpotChar] Vision Pass 2: appearance-based retry for remaining characters…`);
+      const pass2Prompt =
+        `This image is a "Spot the Character" game. It contains EXACTLY ${findN} hidden character(s) ` +
+        `inspired by "${rawTheme}".\n\n` +
+        `The characters may look VERY DIFFERENT from the original cartoon — they may be photorealistic, ` +
+        `3D-rendered, or transformed into a completely different art style. However, they will share ` +
+        `KEY VISUAL TRAITS: similar clothing, accessories, colour scheme, pose, or silhouette.\n\n` +
+        `STEP 1: Look at ALL characters in this image. Identify which ${findN} characters look MOST ` +
+        `SIMILAR TO EACH OTHER — they are likely the "${rawTheme}" targets because the game generates ` +
+        `multiple copies of the SAME character type. They will share the same outfit, colours, or species ` +
+        `while the background characters are all different from each other.\n\n` +
+        `STEP 2: Return their bounding boxes as [ymin, xmin, ymax, xmax] (integers 0–1000).\n` +
+        `Return ONLY a JSON array, no markdown, no code fences:\n` +
+        `[{"box_2d":[ymin,xmin,ymax,xmax],"label":"${rawTheme}"}]`;
+
+      let pass2 = await _visionPass(pass2Prompt, 'Pass2');
+      pass2 = _removeOverlapping(pass2, findN);
+      console.log(`[SpotChar] Pass 2 found ${pass2.length}/${findN} bbox(es)`);
+
+      // Use whichever pass found more characters
+      bboxes = pass2.length > pass1.length ? pass2 : pass1;
     }
+
+    console.log(`[SpotChar] ✅ Final vision result: ${bboxes.length}/${findN} bbox(es):`, JSON.stringify(bboxes));
   } catch (err) {
-    console.warn('[SpotChar] Vision bbox failed (non-fatal):', err.message, err.stack?.split('\n')[1]);
+    console.warn('[SpotChar] Vision bbox failed (non-fatal):', err.message);
   }
   } // end vision fallback else
 
-  // Remove overlapping bboxes returned by the vision model
+  // Remove overlapping bboxes
   if (bboxes.length > 1) {
     bboxes = _removeOverlapping(bboxes, findN);
   }
 
-  // Fallback: evenly spread bboxes if vision failed
+  // ── Graceful reduction: if fewer characters found than requested,
+  // reduce findCount to actual found count instead of using fake fallback positions.
+  if (bboxes.length > 0 && bboxes.length < findN) {
+    console.log(`[SpotChar] ⚠️ Reducing findCount from ${findN} to ${bboxes.length} (only ${bboxes.length} located)`);
+    findN = bboxes.length;
+  }
+
+  // Last resort fallback — only if ZERO characters found
   if (bboxes.length === 0) {
+    console.warn(`[SpotChar] ⚠️ No characters located — using fallback positions`);
     const step = 1 / (findN + 1);
     bboxes = Array.from({ length: findN }, (_, i) => ({
       x: step * (i + 1) - 0.06, y: 0.35, w: 0.12, h: 0.25,
