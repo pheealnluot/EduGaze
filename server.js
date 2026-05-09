@@ -1161,7 +1161,7 @@ app.post('/api/spot-char-generate', async (req, res) => {
           { inlineData: { mimeType, data: imageBase64 } },
           { text: prompt },
         ]}],
-        generationConfig: { thinkingConfig: { thinkingBudget: 4096 }, maxOutputTokens: 2048 },
+        generationConfig: { thinkingConfig: { thinkingBudget: 2048 }, maxOutputTokens: 8192 },
       }),
     });
     const vData = await vResp.json();
@@ -1172,10 +1172,40 @@ app.post('/api/spot-char-generate', async (req, res) => {
     const allParts = vData?.candidates?.[0]?.content?.parts || [];
     const rawText = allParts.filter(p => p.text && !p.thought).map(p => p.text).join('');
     console.log(`[SpotChar] ${passLabel} raw (${rawText.length} chars): ${rawText.slice(0, 400)}`);
-    const cleanText = rawText.replace(/```(?:json)?\s*/gi, '').trim();
+    let cleanText = rawText.replace(/```(?:json)?\s*/gi, '').trim();
+
+    // Try to extract JSON array
     const arrMatch = cleanText.match(/\[[\s\S]*\]/);
-    if (!arrMatch) { console.warn(`[SpotChar] ${passLabel}: no JSON array found`); return []; }
-    const parsed = JSON.parse(arrMatch[0]);
+    let jsonStr = arrMatch ? arrMatch[0] : null;
+
+    // If no complete array found, try to repair truncated JSON
+    // (e.g. `[{"box_2d":[1,2,3,4],"label":"x"},{"box_2d":[5,6,7` → close it)
+    if (!jsonStr && cleanText.includes('[')) {
+      let partial = cleanText.slice(cleanText.indexOf('['));
+      // Remove the last incomplete object entry
+      const lastComplete = partial.lastIndexOf('},');
+      if (lastComplete > 0) {
+        jsonStr = partial.slice(0, lastComplete + 1) + ']';
+        console.log(`[SpotChar] ${passLabel}: repaired truncated JSON`);
+      } else {
+        const lastObj = partial.lastIndexOf('}');
+        if (lastObj > 0) {
+          jsonStr = partial.slice(0, lastObj + 1) + ']';
+          console.log(`[SpotChar] ${passLabel}: repaired truncated JSON (single obj)`);
+        }
+      }
+    }
+
+    if (!jsonStr) { console.warn(`[SpotChar] ${passLabel}: no JSON array found`); return []; }
+
+    let parsed;
+    try {
+      parsed = JSON.parse(jsonStr);
+    } catch (e) {
+      console.warn(`[SpotChar] ${passLabel}: JSON parse failed after repair: ${e.message}`);
+      return [];
+    }
+
     const MARGIN = 0.12;
     return parsed
       .filter(b => Array.isArray(b.box_2d) && b.box_2d.length >= 4)
@@ -1198,13 +1228,19 @@ app.post('/api/spot-char-generate', async (req, res) => {
   }
 
   try {
-    // ── Pass 1: Direct name-based search ──
-    console.log(`[SpotChar] Vision Pass 1: locating ${findN}x "${rawTheme}"…`);
+    // ── Pass 1: Name + visual description search ──
+    // Use the visual description (theme) when it differs from rawTheme
+    const visualHint = (theme !== rawTheme)
+      ? `\nVISUAL DESCRIPTION of what these characters look like: "${theme}"\n` +
+        `Use this description to identify the target characters — they may not look like the cartoon original.\n`
+      : '';
+    console.log(`[SpotChar] Vision Pass 1: locating ${findN}x "${rawTheme}"${visualHint ? ' (with visual hint)' : ''}…`);
     const pass1Prompt =
       `Look carefully at this image. It is a "Spot the Character" game scene.\n` +
-      `It contains EXACTLY ${findN} character(s) that look like "${rawTheme}".\n` +
-      `NOTE: The characters may have been TRANSFORMED into a different art style (realistic, photorealistic, 3D, etc.) ` +
-      `but they will still have recognisable features inspired by "${rawTheme}".\n\n` +
+      `It contains EXACTLY ${findN} character(s) inspired by "${rawTheme}".\n` +
+      visualHint +
+      `NOTE: The characters may have been TRANSFORMED into a different art style ` +
+      `(realistic, photorealistic, 3D, etc.) but they will still be recognisable.\n\n` +
       `Find ALL ${findN} of them and return their bounding boxes.\n` +
       `Format: [ymin, xmin, ymax, xmax] — integers 0 to 1000.\n` +
       `Return ONLY a JSON array, no markdown, no code fences:\n` +
@@ -1254,23 +1290,19 @@ app.post('/api/spot-char-generate', async (req, res) => {
     bboxes = _removeOverlapping(bboxes, findN);
   }
 
-  // ── Graceful reduction: if fewer characters found than requested,
-  // reduce findCount to actual found count instead of using fake fallback positions.
-  if (bboxes.length > 0 && bboxes.length < findN) {
-    console.log(`[SpotChar] ⚠️ Reducing findCount from ${findN} to ${bboxes.length} (only ${bboxes.length} located)`);
+  // Reduce findCount to actual detected count — no fake positions
+  let aiHard = false;
+  if (bboxes.length < findN) {
+    if (bboxes.length === 0) {
+      console.warn(`[SpotChar] ⚠️ No characters located by AI — game continues without hints`);
+      aiHard = true;
+    } else {
+      console.log(`[SpotChar] ⚠️ Reducing findCount from ${findN} to ${bboxes.length}`);
+    }
     findN = bboxes.length;
   }
 
-  // Last resort fallback — only if ZERO characters found
-  if (bboxes.length === 0) {
-    console.warn(`[SpotChar] ⚠️ No characters located — using fallback positions`);
-    const step = 1 / (findN + 1);
-    bboxes = Array.from({ length: findN }, (_, i) => ({
-      x: step * (i + 1) - 0.06, y: 0.35, w: 0.12, h: 0.25,
-    }));
-  }
-
-  res.json({ imageData: imageBase64, mimeType, bboxes, theme: rawTheme, findCount: findN });
+  res.json({ imageData: imageBase64, mimeType, bboxes, theme: rawTheme, findCount: findN, aiHard });
 });
 // ─────────────────────────────────────────────────────────────────────────────
 

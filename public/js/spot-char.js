@@ -300,6 +300,10 @@ async function _generate(body) {
     _targets = (d.bboxes || []).map(b => ({ bbox:b, found:false, inBbox:false, dwellTimer:null, dwellEl:null }));
     _theme   = d.theme || body.theme;
     await _showGame(d.imageData, _mimeType);
+    // If AI couldn't find any characters, show a discreet message
+    if (d.aiHard) {
+      _toast('🤯 This is so hard that AI can\'t find them!');
+    }
   } catch(e) {
     clearInterval(window._stcTipInt);
     _stopCounter();
