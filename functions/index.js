@@ -1536,3 +1536,8 @@ exports.youtubeVideoInfo = onRequest(
     }
   }
 );
+
+// ── Spot the Character — Image Generation Cloud Function ─────────────────────
+// Ported from server.js — generates scene images + locates hidden characters.
+const spotCharFn = require('./spot-char-fn.js');
+exports.spotCharGenerate = spotCharFn.spotCharGenerate;

@@ -43,6 +43,10 @@
         "function": "youtubeVideoInfo"
       },
       {
+        "source": "/api/spot-char-generate",
+        "function": "spotCharGenerate"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

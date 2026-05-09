@@ -7,6 +7,7 @@ const STC_KEY_COUNT     = 'stc_other_count';
 const STC_KEY_PAID_TIER = 'stc_paid_tier'; // persisted checkbox
 const STC_KEY_BG_STYLE  = 'stc_bg_style';   // background art style
 const STC_KEY_DESCRIBE  = 'stc_describe_visually'; // translate franchise to visual description
+const STC_KEY_DESCRIBE_SCENE = 'stc_describe_scene_visually'; // translate scene to visual description
 const STC_HINT_DELAY    = 30000;
 const STC_MIN_TARGET    = 0.10;  // minimum hit zone (fraction of display size)
 const BBOX_PAD          = 1.5;   // multiply bbox w/h — ensures full character is covered
@@ -32,6 +33,7 @@ let _origImg      = null;
 let _hintTimer    = null; // kept for cleanup, no longer auto-scheduled
 let _lastReqBody  = null;
 let _mimeType     = 'image/png';
+let _gameStartMs  = 0;   // Date.now() when game canvas first shown
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 window.initSpotChar = async function () {
@@ -74,10 +76,14 @@ function _bindEvents() {
   if (paidChk) paidChk.addEventListener('change', () => {
     localStorage.setItem(STC_KEY_PAID_TIER, paidChk.checked ? '1' : '0');
   });
-  // Describe visually checkbox — persist on change
+  // Describe visually checkboxes — persist on change
   const descChk = _el('stc-describe-chk');
   if (descChk) descChk.addEventListener('change', () => {
     localStorage.setItem(STC_KEY_DESCRIBE, descChk.checked ? '1' : '0');
+  });
+  const descSceneChk = _el('stc-describe-scene-chk');
+  if (descSceneChk) descSceneChk.addEventListener('change', () => {
+    localStorage.setItem(STC_KEY_DESCRIBE_SCENE, descSceneChk.checked ? '1' : '0');
   });
   // Background style pill buttons
   document.querySelectorAll('.stc-style-btn').forEach(btn => {
@@ -129,9 +135,11 @@ function _syncSliders() {
   // Paid tier checkbox
   const paidChk = _el('stc-paid-tier-chk');
   if (paidChk) paidChk.checked = localStorage.getItem(STC_KEY_PAID_TIER) === '1';
-  // Describe visually checkbox
+  // Describe visually checkboxes
   const descChk = _el('stc-describe-chk');
   if (descChk) descChk.checked = localStorage.getItem(STC_KEY_DESCRIBE) === '1';
+  const descSceneChk = _el('stc-describe-scene-chk');
+  if (descSceneChk) descSceneChk.checked = localStorage.getItem(STC_KEY_DESCRIBE_SCENE) === '1';
   // Background style
   const savedStyle = localStorage.getItem(STC_KEY_BG_STYLE) || 'kids';
   _setStyleBtn(savedStyle);
@@ -238,11 +246,29 @@ async function _start() {
   const usePaidTier = _el('stc-paid-tier-chk')?.checked ?? false;
   const bgStyle    = localStorage.getItem(STC_KEY_BG_STYLE) || 'kids';
   const describeVisually = _el('stc-describe-chk')?.checked ?? false;
+  const describeSceneVisually = _el('stc-describe-scene-chk')?.checked ?? false;
   if (!theme) { _el('stc-char-input').focus(); _err('Please enter a theme to find!'); return; }
   if (!scene) { _el('stc-scene-input').focus(); _err('Please describe a background scene!'); return; }
   _saveH(STC_KEY_THEME, theme); _saveH(STC_KEY_SCENE, scene);
   _theme = theme; _targets=[]; _foundCount=0; _attempts=0; _failedClicks=0; _allFound=false;
-  _lastReqBody = { theme, scene, otherCount: count, findCount: findN, usePaidTier, bgStyle, describeVisually };
+  _lastReqBody = { theme, scene, otherCount: count, findCount: findN, usePaidTier, bgStyle, describeVisually, describeSceneVisually };
+  // ── Initialize Spot-the-Character Report Tracking ─────────────────────
+  window.stcReport = {
+    sessionType: 'spot-char',
+    startedAt: new Date().toISOString(),
+    theme, scene,
+    findCount: findN, otherCount: count,
+    bgStyle, usePaidTier,
+    modelName: usePaidTier ? 'Imagen 4' : 'Gemini Flash Image',
+    describeVisually, describeSceneVisually,
+    dwellMs: _dwellMs,
+    targets: [],
+    totalAttempts: 0,
+    totalFailedClicks: 0,
+    allFound: false,
+    thumbnailDataUrl: null,
+    userId: window.user?.uid || null,
+  };
   if (window.stcPersist) window.stcPersist.save();
   await _generate(_lastReqBody);
 }
@@ -318,6 +344,21 @@ async function _showGame(imageData, mime) {
   canvas.width  = _origImg.naturalWidth  || 1024;
   canvas.height = _origImg.naturalHeight || 576;
   wrap.replaceChild(canvas, oldCanvas);
+
+  // ── Generate downscaled thumbnail for report ───────────────────────────
+  _gameStartMs = Date.now();
+  try {
+    const thumbCanvas = document.createElement('canvas');
+    const THUMB_W = 400;
+    const aspect = _origImg.naturalHeight / _origImg.naturalWidth;
+    thumbCanvas.width = THUMB_W;
+    thumbCanvas.height = Math.round(THUMB_W * aspect);
+    const tCtx = thumbCanvas.getContext('2d');
+    tCtx.drawImage(_origImg, 0, 0, thumbCanvas.width, thumbCanvas.height);
+    if (window.stcReport) {
+      window.stcReport.thumbnailDataUrl = thumbCanvas.toDataURL('image/jpeg', 0.65);
+    }
+  } catch (e) { console.warn('[STC Report] Thumbnail generation failed:', e.message); }
 
   _redraw(canvas);
   _bindCanvas(canvas);
@@ -600,6 +641,18 @@ function _onFound(canvas, t, idx) {
   _foundCount++;
   _redraw(canvas);
 
+  // ── Record per-target timing in report ──────────────────────────────────
+  if (window.stcReport && window.stcReport.targets) {
+    const foundAtMs = _gameStartMs > 0 ? Date.now() - _gameStartMs : 0;
+    // Ensure targets array is large enough
+    while (window.stcReport.targets.length <= idx) window.stcReport.targets.push(null);
+    window.stcReport.targets[idx] = {
+      bbox: t.bbox ? { x: t.bbox.x, y: t.bbox.y, w: t.bbox.w, h: t.bbox.h } : null,
+      found: true,
+      foundAtMs,
+    };
+  }
+
   // Partial win: mini confetti + sound
   _miniConfetti(PROF_COLORS[idx%PROF_COLORS.length]);
   if (window.playJoySound) window.playJoySound();
@@ -616,6 +669,9 @@ function _onAllFound(canvas) {
   _targets.forEach(t => _cancelDwell(t));
   _launchConfetti();
   if (window.playSuccessSound) window.playSuccessSound();
+
+  // ── Finalize and save Spot-the-Character report ────────────────────────
+  _finalizeStcReport(true);
 
   // Show celebration banner (not fullscreen — user can still observe)
   const wrap = canvas.parentElement;
@@ -701,10 +757,46 @@ function _toast(msg) {
   setTimeout(()=>{ el.style.opacity='0'; setTimeout(()=>el.remove(),300); },2500);
 }
 
+// ── Report Finalization & Saving ──────────────────────────────────────────────
+function _finalizeStcReport(allFoundFlag) {
+  if (!window.stcReport || window.stcReport._saved) return;
+  window.stcReport.allFound = allFoundFlag;
+  window.stcReport.totalAttempts = _attempts;
+  window.stcReport.totalFailedClicks = _failedClicks;
+  window.stcReport.endedAt = new Date().toISOString();
+  window.stcReport.durationMs = _gameStartMs > 0 ? Date.now() - _gameStartMs : 0;
+  // Fill in any unfound targets
+  _targets.forEach((t, i) => {
+    if (!window.stcReport.targets[i]) {
+      window.stcReport.targets[i] = {
+        bbox: t.bbox ? { x: t.bbox.x, y: t.bbox.y, w: t.bbox.w, h: t.bbox.h } : null,
+        found: !!t.found,
+        foundAtMs: null,
+      };
+    }
+  });
+  window.saveStcReportNow();
+}
+
+window.saveStcReportNow = async function () {
+  if (!window.stcReport) return;
+  if (window.stcReport._saved) return;
+  window.stcReport._saved = true;
+  try {
+    const { addDoc: _addDoc, collection: _col } = await import('https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore.js');
+    const docRef = await _addDoc(_col(window.db, 'quiz_reports'), window.stcReport);
+    console.log('[StcReport] Saved! Doc ID:', docRef.id);
+    window.stcReport = null;
+  } catch (err) {
+    console.error('[StcReport] Failed to save:', err.code, err.message);
+    window.stcReport._saved = false; // allow retry
+  }
+};
+
 // ── Navigation ────────────────────────────────────────────────────────────────
-window.stcOpenSettings = () => { _targets.forEach(t=>_cancelDwell(t)); const w=_el('stc-canvas-wrap'); if(w) w.querySelectorAll('.stc-result-overlay,.stc-hint-pulse,.stc-dwell-ring,#stc-all-found-banner').forEach(e=>e.remove()); _showSettings(); };
+window.stcOpenSettings = () => { _finalizeStcReport(false); _targets.forEach(t=>_cancelDwell(t)); const w=_el('stc-canvas-wrap'); if(w) w.querySelectorAll('.stc-result-overlay,.stc-hint-pulse,.stc-dwell-ring,#stc-all-found-banner').forEach(e=>e.remove()); _showSettings(); };
 window.stcPlayAgain    = () => { _targets.forEach(t=>_cancelDwell(t)); const w=_el('stc-canvas-wrap'); if(w) w.querySelectorAll('.stc-result-overlay,.stc-hint-pulse,.stc-dwell-ring,#stc-all-found-banner').forEach(e=>e.remove()); _showSettings(); };
-window.stcGoHome       = () => { _targets.forEach(t=>_cancelDwell(t)); if(window.setMode) window.setMode('landing'); };
+window.stcGoHome       = () => { _finalizeStcReport(false); _targets.forEach(t=>_cancelDwell(t)); if(window.setMode) window.setMode('landing'); };
 window.stcRetry        = async () => { if(_lastReqBody) { _sec('loading'); _tipCycle(_lastReqBody.theme,_lastReqBody.scene,_lastReqBody.findCount); await _generate(_lastReqBody); } };
 
 // ── Error ─────────────────────────────────────────────────────────────────────

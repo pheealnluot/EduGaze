@@ -326,6 +326,38 @@
             <div id="admin-comp-empty" class="admin-empty hidden">No comprehension adventures found.</div>
           </div>
         </div>
+
+        <!-- Admin Spot the Character Table -->
+        <div id="admin-stc-adventures-wrap" style="margin-top:28px;">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding-top:20px;border-top:1px solid rgba(255,255,255,0.06);">
+            <span style="font-size:1rem;font-weight:900;color:#06b6d4;">🔍</span>
+            <h3 style="font-size:0.95rem;font-weight:800;color:#06b6d4;margin:0;">Spot the Character</h3>
+            <span style="font-size:0.62rem;color:#475569;font-style:italic;">All users</span>
+          </div>
+          <div class="admin-table-wrap" style="max-height:50vh;overflow-y:auto;">
+            <table class="admin-table" id="admin-stc-table" style="display:none;">
+              <thead style="position:sticky;top:0;z-index:2;background:#0f172a;">
+                <tr>
+                  <th style="width:32px;text-align:center;">#</th>
+                  <th>Date</th>
+                  <th>User</th>
+                  <th>Preview</th>
+                  <th>Theme</th>
+                  <th>Scene</th>
+                  <th>Style</th>
+                  <th>Model</th>
+                  <th>Found</th>
+                  <th>Attempts</th>
+                  <th>Duration</th>
+                  <th>Rating</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="admin-stc-tbody"></tbody>
+            </table>
+            <div id="admin-stc-empty" class="admin-empty hidden">No Spot the Character sessions found.</div>
+          </div>
+        </div>
       </div>
 
       <!-- Image Ratings Tab -->
@@ -483,6 +515,42 @@
             <tbody id="user-comp-tbody"></tbody>
           </table>
           <div id="user-comp-empty" class="admin-empty hidden">No comprehension adventures yet. Start one from the Knowledge Explorer!</div>
+        </div>
+      </div>
+
+      <!-- Spot the Character Table -->
+      <div id="user-stc-adventures-wrap" class="w-full mt-10">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:1.2rem;font-weight:900;color:#06b6d4;">🔍</span>
+            <h3 style="font-size:1.1rem;font-weight:800;color:#06b6d4;margin:0;">Spot the Character</h3>
+          </div>
+          <span style="font-size:0.68rem;color:#475569;font-style:italic;">AI-generated hidden character game sessions</span>
+        </div>
+        <div class="admin-table-wrap w-full" style="max-height:55vh;overflow-y:auto;">
+          <div id="user-stc-loading" class="admin-empty" style="display:none;">
+            <div class="admin-spinner mx-auto mb-3"></div>Loading sessions…
+          </div>
+          <table class="admin-table" id="user-stc-table" style="display:none;">
+            <thead style="position:sticky;top:0;z-index:2;background:#0f172a;">
+              <tr>
+                <th style="width:32px;text-align:center;">#</th>
+                <th>Date</th>
+                <th>Preview</th>
+                <th>Theme</th>
+                <th>Scene</th>
+                <th>Style</th>
+                <th>Model</th>
+                <th>Found</th>
+                <th>Attempts</th>
+                <th>Duration</th>
+                <th>Rating</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="user-stc-tbody"></tbody>
+          </table>
+          <div id="user-stc-empty" class="admin-empty hidden">No Spot the Character sessions yet. Play a game from the home screen!</div>
         </div>
       </div>
     </div>
@@ -662,6 +730,15 @@
                 <div id="stc-scene-dropdown" class="stc-history-dropdown"></div>
               </div>
               <button id="stc-scene-clear" class="stc-clear-btn" title="Clear">✕ Clear</button>
+            </div>
+            <!-- Describe scene visually toggle -->
+            <div style="margin-top:10px;display:flex;align-items:flex-start;gap:8px;">
+              <input type="checkbox" id="stc-describe-scene-chk"
+                style="width:16px;height:16px;accent-color:#06b6d4;cursor:pointer;margin-top:1px;flex-shrink:0;">
+              <label for="stc-describe-scene-chk" style="cursor:pointer;user-select:none;">
+                <span style="font-size:0.74rem;font-weight:700;color:#94a3b8;">Describe visually</span>
+                <span style="font-size:0.65rem;color:#475569;display:block;margin-top:2px;">Translates franchise/world names into visual descriptions so the art style isn't overridden</span>
+              </label>
             </div>
           </div>
 

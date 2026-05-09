@@ -27,6 +27,7 @@
       dwellMs:      parseInt(localStorage.getItem('stc_dwell_ms')) || 2000,
       bgStyle:      localStorage.getItem('stc_bg_style') || 'kids',
       describeVisually: localStorage.getItem('stc_describe_visually') === '1',
+      describeSceneVisually: localStorage.getItem('stc_describe_scene_visually') === '1',
       libraryTheme: libT || [],
       libraryScene: libS || [],
     };
@@ -90,6 +91,11 @@
       localStorage.setItem('stc_describe_visually', s.describeVisually ? '1' : '0');
       const chk = _el('stc-describe-chk');
       if (chk) chk.checked = s.describeVisually;
+    }
+    if (typeof s.describeSceneVisually === 'boolean') {
+      localStorage.setItem('stc_describe_scene_visually', s.describeSceneVisually ? '1' : '0');
+      const chk = _el('stc-describe-scene-chk');
+      if (chk) chk.checked = s.describeSceneVisually;
     }
 
     // Restore library lists

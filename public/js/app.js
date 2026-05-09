@@ -10845,9 +10845,10 @@ window.renderAdminReportsPanel = async () => {
     const allDocs = [];
     snap.forEach(d => allDocs.push(d));
 
-    // Separate comprehension from quiz
-    const quizDocs = allDocs.filter(d => (d.data().sessionType || '') !== 'comprehension');
+    // Separate comprehension and spot-char from quiz
+    const quizDocs = allDocs.filter(d => { const st = d.data().sessionType || ''; return st !== 'comprehension' && st !== 'spot-char'; });
     const compDocs = allDocs.filter(d => (d.data().sessionType || '') === 'comprehension');
+    const stcDocs  = allDocs.filter(d => (d.data().sessionType || '') === 'spot-char');
 
     allDocs.forEach(d => {
       window._adminReportsCache[d.id] = _normalizeReportData(d.data());
@@ -10867,6 +10868,11 @@ window.renderAdminReportsPanel = async () => {
     // Render admin comprehension table
     compDocs.forEach(d => { window._adminCompReportsCache[d.id] = window._adminReportsCache[d.id]; });
     window.renderAdminCompReports(compDocs, window._adminCompReportsCache);
+
+    // Render admin spot-the-character table
+    window._adminStcReportsCache = {};
+    stcDocs.forEach(d => { window._adminStcReportsCache[d.id] = window._adminReportsCache[d.id]; });
+    window.renderAdminStcReports(stcDocs, window._adminStcReportsCache);
 
   } catch (err) {
     console.error('[renderAdminReportsPanel]', err);
@@ -11884,6 +11890,310 @@ window.openAdminCompReportModal = (docId) => {
   _renderCompReportModal(data, docId, true);
 };
 
+// ── Spot the Character Reports ───────────────────────────────────────────────
+
+// Style label + colour map for badges
+const _STC_STYLE_MAP = {
+  wally:     { label: "Where's Wally", color: '#f59e0b', bg: 'rgba(245,158,11,0.12)' },
+  realistic: { label: 'Realistic',     color: '#3b82f6', bg: 'rgba(59,130,246,0.12)' },
+  stylistic: { label: 'Stylistic',     color: '#a78bfa', bg: 'rgba(167,139,250,0.12)' },
+  comic:     { label: 'Comic',         color: '#ef4444', bg: 'rgba(239,68,68,0.12)' },
+  kids:      { label: 'Kids',          color: '#34d399', bg: 'rgba(52,211,153,0.12)' },
+  scene:     { label: 'Scene Style',   color: '#0d9488', bg: 'rgba(13,148,136,0.12)' },
+  character: { label: 'Char Style',    color: '#f97316', bg: 'rgba(249,115,22,0.12)' },
+};
+
+function _buildStcReportRow(d, data, rowIdx, isAdmin) {
+  const docId   = d.id;
+  const targets = Array.isArray(data.targets) ? data.targets : [];
+  const found   = targets.filter(t => t && t.found).length;
+  const total   = data.findCount || targets.length || 0;
+  const durSec  = Math.round((data.durationMs || 0) / 1000);
+  const durStr  = durSec >= 60 ? `${Math.floor(durSec/60)}m ${durSec%60}s` : `${durSec}s`;
+  const dateShort = new Date(data.startedAt).toLocaleDateString(undefined, { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+
+  // Style badge
+  const styleInfo = _STC_STYLE_MAP[data.bgStyle] || { label: data.bgStyle || '—', color: '#64748b', bg: 'rgba(100,116,139,0.12)' };
+  const styleBadge = `<span style="font-size:0.68rem;font-weight:700;padding:2px 8px;border-radius:5px;background:${styleInfo.bg};color:${styleInfo.color};white-space:nowrap;">${styleInfo.label}</span>`;
+
+  // Model badge
+  const modelLabel = data.usePaidTier ? '⚡ Imagen 4' : '🍌 Gemini Flash';
+  const modelColor = data.usePaidTier ? '#c4b5fd' : '#fbbf24';
+  const modelBg    = data.usePaidTier ? 'rgba(196,181,253,0.12)' : 'rgba(251,191,36,0.12)';
+  const modelBadge = `<span style="font-size:0.65rem;font-weight:700;padding:2px 8px;border-radius:5px;background:${modelBg};color:${modelColor};white-space:nowrap;">${modelLabel}</span>`;
+
+  // Found badge
+  const allFoundBadge = data.allFound
+    ? `<span style="color:#34d399;font-weight:700;">${found}/${total} ✓</span>`
+    : `<span style="color:#f59e0b;font-weight:700;">${found}/${total}</span>`;
+
+  // Thumbnail preview
+  const thumbHtml = data.thumbnailDataUrl
+    ? `<img src="${data.thumbnailDataUrl}" style="width:80px;height:45px;object-fit:cover;border-radius:6px;border:1px solid rgba(255,255,255,0.08);" loading="lazy">`
+    : `<div style="width:80px;height:45px;background:#1e293b;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:1.4rem;">🔍</div>`;
+
+  // Image rating
+  const ratingVal = data.stcImageRating;
+  const ratingHtml = ratingVal === 1 ? `<span style="color:#34d399;font-size:0.78rem;">👍</span>`
+    : ratingVal === 0 ? `<span style="color:#818cf8;font-size:0.78rem;">😐</span>`
+    : ratingVal === -1 ? `<span style="color:#f87171;font-size:0.78rem;">👎</span>`
+    : `<span style="color:#334155;font-size:0.65rem;">—</span>`;
+
+  const viewFn  = isAdmin ? `openAdminStcReportModal('${docId}')` : `openUserStcReportModal('${docId}')`;
+  const viewCls = isAdmin ? 'bg-violet-600/20 hover:bg-violet-600/40 text-violet-300' : 'bg-cyan-600/20 hover:bg-cyan-600/40 text-cyan-300';
+  const delBtn  = `<button onclick="deleteQuizReport('${docId}',${isAdmin})" style="margin-left:5px;padding:3px 9px;border:1px solid rgba(248,113,113,0.3);border-radius:6px;background:rgba(248,113,113,0.07);color:#f87171;font-size:0.67rem;cursor:pointer;">🗑</button>`;
+
+  const tr = document.createElement('tr');
+  tr.id = `report-row-${docId}`;
+  tr.dataset.date   = data.startedAt || '';
+  tr.dataset.dur    = durSec;
+  tr.dataset.score  = total > 0 ? (found / total) : 0;
+  tr.dataset.type   = 'spot-char';
+  tr.dataset.search = [dateShort, data.theme || '', data.scene || '', data.bgStyle || '', data.userId || ''].join(' ').toLowerCase();
+
+  tr.innerHTML = `
+    <td style="font-size:0.68rem;color:#475569;font-weight:600;text-align:center;">${rowIdx}</td>
+    <td><div style="font-size:0.72rem;color:#cbd5e1;white-space:nowrap;">${dateShort}</div></td>
+    ${isAdmin ? `<td><div style="font-size:0.65rem;color:#475569;font-family:monospace;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${data.userId||''}">${(data.userId||'').slice(0,14)}</div></td>` : ''}
+    <td>${thumbHtml}</td>
+    <td><div style="font-size:0.72rem;color:#e2e8f0;font-weight:600;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(data.theme||'').replace(/"/g,'&quot;')}">${data.theme || '—'}</div></td>
+    <td><div style="font-size:0.68rem;color:#94a3b8;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(data.scene||'').replace(/"/g,'&quot;')}">${data.scene || '—'}</div></td>
+    <td>${styleBadge}</td>
+    <td>${modelBadge}</td>
+    <td><div style="font-size:0.75rem;">${allFoundBadge}</div></td>
+    <td><div style="font-size:0.72rem;color:#94a3b8;text-align:center;">${data.totalAttempts || 0}</div></td>
+    <td><div style="font-size:0.72rem;color:#94a3b8;">${durStr}</div></td>
+    <td id="stc-rating-cell-${docId}">${ratingHtml}</td>
+    <td style="white-space:nowrap;">
+      <button onclick="${viewFn}" class="px-2 py-1 ${viewCls} rounded text-xs transition-colors">View</button>
+      ${delBtn}
+    </td>`;
+  return tr;
+}
+
+// Render Spot the Character detail modal
+function _renderStcReportModal(data, docId, isAdminView) {
+  const modal = document.getElementById('admin-report-modal');
+  const title = document.getElementById('admin-report-title');
+  const sub   = document.getElementById('admin-report-subtitle');
+  const body  = document.getElementById('admin-report-body');
+  if (!modal || !body) return;
+
+  const modalInner = modal.firstElementChild;
+  if (modalInner) { modalInner.style.width = '96vw'; modalInner.style.maxWidth = '1400px'; modalInner.style.maxHeight = '94vh'; }
+
+  const targets = Array.isArray(data.targets) ? data.targets : [];
+  const found   = targets.filter(t => t && t.found).length;
+  const total   = data.findCount || targets.length || 0;
+  const durSec  = Math.round((data.durationMs || 0) / 1000);
+
+  title.textContent = isAdminView ? 'Spot the Character Report' : 'My Spot the Character Report';
+  sub.textContent   = `${new Date(data.startedAt).toLocaleString()}  ·  ${durSec}s  ·  ${found}/${total} found  ·  ${data.totalAttempts || 0} attempts`;
+
+  const pc = (lbl, val) =>
+    `<div style="min-width:100px;"><div style="font-size:0.58rem;color:#64748b;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:3px;">${lbl}</div><div style="font-size:0.78rem;color:#f1f5f9;font-weight:600;">${val}</div></div>`;
+
+  // Style info
+  const styleInfo = _STC_STYLE_MAP[data.bgStyle] || { label: data.bgStyle || '—', color: '#64748b' };
+  const modelLabel = data.usePaidTier ? '⚡ Imagen 4' : '🍌 Gemini Flash Image';
+  const descVisBadge = data.describeVisually ? '<span style="color:#34d399;">✓ On</span>' : '<span style="color:#475569;">Off</span>';
+  const descSceneBadge = data.describeSceneVisually ? '<span style="color:#34d399;">✓ On</span>' : '<span style="color:#475569;">Off</span>';
+
+  // Image rating buttons
+  const ratingVal = data.stcImageRating;
+  const _rBtn = (v, icon) => {
+    const sel = (ratingVal === v);
+    const s = sel
+      ? 'background:rgba(251,191,36,0.22);color:#fbbf24;border:1px solid rgba(251,191,36,0.45);font-weight:700;'
+      : 'background:rgba(255,255,255,0.04);color:#334155;border:1px solid transparent;';
+    return `<button id="stcrb-${docId}-${v}" onclick="setStcImageRating('${docId}',${v})" style="${s}border-radius:6px;padding:4px 10px;cursor:pointer;font-size:1rem;transition:all 0.2s;">${icon}</button>`;
+  };
+
+  let html = `
+    <div style="display:flex;flex-wrap:wrap;gap:10px 24px;margin-bottom:1.25rem;padding:12px 16px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:12px;">
+      ${pc('Theme', data.theme || '—')}
+      ${pc('Scene', data.scene || '—')}
+      ${pc('Art Style', `<span style="color:${styleInfo.color}">${styleInfo.label}</span>`)}
+      ${pc('Model', modelLabel)}
+      ${pc('Find Count', total)}
+      ${pc('Bg Characters', data.otherCount || '—')}
+      ${pc('Dwell Time', data.dwellMs ? `${(data.dwellMs/1000).toFixed(1)}s` : '—')}
+      ${pc('Describe Character', descVisBadge)}
+      ${pc('Describe Scene', descSceneBadge)}
+      ${pc('Total Attempts', data.totalAttempts || 0)}
+      ${pc('Failed Clicks', data.totalFailedClicks || 0)}
+      ${pc('All Found', data.allFound ? '<span style="color:#34d399;">✓ Yes</span>' : '<span style="color:#f59e0b;">No</span>')}
+      ${isAdminView ? pc('User', `<span style="font-size:0.62rem;font-family:monospace;color:#94a3b8;">${data.userId}</span>`) : ''}
+    </div>`;
+
+  // Image preview
+  if (data.thumbnailDataUrl) {
+    html += `
+      <div style="margin-bottom:18px;background:rgba(6,182,212,0.05);border:1px solid rgba(6,182,212,0.2);border-radius:14px;padding:14px 16px;">
+        <div style="font-size:0.62rem;color:#06b6d4;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">🖼 Generated Scene</div>
+        <img src="${data.thumbnailDataUrl}" style="width:100%;max-height:400px;object-fit:contain;border-radius:10px;display:block;background:#070d1a;" onerror="this.style.display='none'">
+        <div style="display:flex;align-items:center;gap:6px;margin-top:10px;">
+          <span style="font-size:0.6rem;color:#475569;">Image Quality?</span>
+          ${_rBtn(1,  '👍')}
+          ${_rBtn(0,  '😐')}
+          ${_rBtn(-1, '👎')}
+        </div>
+      </div>`;
+  }
+
+  // Per-character breakdown table
+  html += `
+    <div style="margin-bottom:18px;">
+      <div style="font-size:0.72rem;font-weight:700;color:#e2e8f0;margin-bottom:10px;">📊 Per-Character Breakdown</div>
+      <table style="width:100%;border-collapse:collapse;font-size:0.78rem;">
+        <thead>
+          <tr style="border-bottom:1px solid rgba(255,255,255,0.08);">
+            <th style="text-align:left;padding:8px 12px;color:#64748b;font-size:0.65rem;font-weight:700;text-transform:uppercase;">Character</th>
+            <th style="text-align:left;padding:8px 12px;color:#64748b;font-size:0.65rem;font-weight:700;text-transform:uppercase;">Status</th>
+            <th style="text-align:left;padding:8px 12px;color:#64748b;font-size:0.65rem;font-weight:700;text-transform:uppercase;">Time to Find</th>
+            <th style="text-align:left;padding:8px 12px;color:#64748b;font-size:0.65rem;font-weight:700;text-transform:uppercase;">Position (Center)</th>
+          </tr>
+        </thead>
+        <tbody>`;
+
+  targets.forEach((t, i) => {
+    if (!t) return;
+    const statusHtml = t.found
+      ? '<span style="color:#34d399;font-weight:700;">✓ Found</span>'
+      : '<span style="color:#f87171;font-weight:700;">✗ Not Found</span>';
+    const timeStr = t.found && t.foundAtMs != null
+      ? `<span style="color:#fbbf24;font-weight:600;">${(t.foundAtMs / 1000).toFixed(1)}s</span>`
+      : '<span style="color:#475569;">—</span>';
+    const posStr = t.bbox
+      ? `<span style="color:#94a3b8;font-family:monospace;font-size:0.7rem;">(${(t.bbox.x + (t.bbox.w||0)/2).toFixed(2)}, ${(t.bbox.y + (t.bbox.h||0)/2).toFixed(2)})</span>`
+      : '<span style="color:#475569;">—</span>';
+    const rowBg = i % 2 === 0 ? 'background:rgba(255,255,255,0.02);' : '';
+    html += `
+          <tr style="${rowBg}border-bottom:1px solid rgba(255,255,255,0.04);">
+            <td style="padding:8px 12px;"><span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:10px;height:10px;border-radius:50%;background:${'#06b6d4,#8b5cf6,#f59e0b,#10b981,#f87171'.split(',')[i % 5]};display:inline-block;"></span> #${i + 1}</span></td>
+            <td style="padding:8px 12px;">${statusHtml}</td>
+            <td style="padding:8px 12px;">${timeStr}</td>
+            <td style="padding:8px 12px;">${posStr}</td>
+          </tr>`;
+  });
+
+  html += `
+        </tbody>
+      </table>
+    </div>`;
+
+  body.innerHTML = html;
+  modal.style.display = 'flex';
+}
+
+// Rating for STC image
+window.setStcImageRating = async (docId, value) => {
+  if (typeof _ensureRatingCSS === 'function') _ensureRatingCSS();
+  if (typeof _playRatingSound === 'function') _playRatingSound(value);
+  const popBtn = document.getElementById(`stcrb-${docId}-${value}`);
+  if (popBtn) { popBtn.classList.remove('thumb-pop'); void popBtn.offsetWidth; popBtn.classList.add('thumb-pop'); }
+  // Update all three buttons visually
+  [1, 0, -1].forEach(v => {
+    const btn = document.getElementById(`stcrb-${docId}-${v}`);
+    if (!btn) return;
+    const sel = (v === value);
+    btn.style.background = sel ? 'rgba(251,191,36,0.22)' : 'rgba(255,255,255,0.04)';
+    btn.style.color = sel ? '#fbbf24' : '#334155';
+    btn.style.border = sel ? '1px solid rgba(251,191,36,0.45)' : '1px solid transparent';
+    btn.style.fontWeight = sel ? '700' : '';
+  });
+  // Update table cell
+  const cell = document.getElementById(`stc-rating-cell-${docId}`);
+  if (cell) {
+    cell.innerHTML = value === 1 ? '<span style="color:#34d399;font-size:0.78rem;">👍</span>'
+      : value === 0 ? '<span style="color:#818cf8;font-size:0.78rem;">😐</span>'
+      : '<span style="color:#f87171;font-size:0.78rem;">👎</span>';
+  }
+  // Update caches
+  const cache = window._adminStcReportsCache?.[docId] ? window._adminStcReportsCache : window._userStcReportsCache;
+  if (cache?.[docId]) cache[docId].stcImageRating = value;
+  // Persist to Firestore
+  try {
+    const { doc, updateDoc } = await import('https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore.js');
+    await updateDoc(doc(db, 'quiz_reports', docId), { stcImageRating: value });
+  } catch(e) { console.error('[setStcImageRating]', e); }
+};
+
+// Render user STC reports table
+window.renderUserStcReports = (stcDocs, cache) => {
+  const wrap    = document.getElementById('user-stc-adventures-wrap');
+  const tableEl = document.getElementById('user-stc-table');
+  const tbody   = document.getElementById('user-stc-tbody');
+  const emptyEl = document.getElementById('user-stc-empty');
+  const loadEl  = document.getElementById('user-stc-loading');
+  if (!wrap) return;
+
+  if (loadEl) loadEl.style.display = 'none';
+  if (tbody) tbody.innerHTML = '';
+  if (!stcDocs || stcDocs.length === 0) {
+    if (emptyEl) emptyEl.classList.remove('hidden');
+    if (tableEl) tableEl.style.display = 'none';
+    return;
+  }
+  if (emptyEl) emptyEl.classList.add('hidden');
+  if (tableEl) tableEl.style.display = '';
+
+  stcDocs.forEach((d, i) => {
+    const data = cache[d.id] || d.data();
+    cache[d.id] = data;
+    tbody.appendChild(_buildStcReportRow(d, data, i + 1, false));
+  });
+};
+
+// Render admin STC reports table
+window.renderAdminStcReports = (stcDocs, cache) => {
+  const wrap    = document.getElementById('admin-stc-adventures-wrap');
+  const tableEl = document.getElementById('admin-stc-table');
+  const tbody   = document.getElementById('admin-stc-tbody');
+  const emptyEl = document.getElementById('admin-stc-empty');
+  if (!wrap) return;
+
+  if (tbody) tbody.innerHTML = '';
+  if (!stcDocs || stcDocs.length === 0) {
+    if (emptyEl) emptyEl.classList.remove('hidden');
+    if (tableEl) tableEl.style.display = 'none';
+    return;
+  }
+  if (emptyEl) emptyEl.classList.add('hidden');
+  if (tableEl) tableEl.style.display = '';
+
+  stcDocs.forEach((d, i) => {
+    const data = cache[d.id] || d.data();
+    cache[d.id] = data;
+    tbody.appendChild(_buildStcReportRow(d, data, i + 1, true));
+  });
+};
+
+// Open user STC report modal
+window.openUserStcReportModal = async (docId) => {
+  window._activeReportCtx = { docId, isAdmin: false, isStc: true };
+  const cached = window._userStcReportsCache?.[docId];
+  if (cached) { _renderStcReportModal(cached, docId, false); return; }
+  try {
+    const { doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore.js');
+    const snap = await getDoc(doc(db, 'quiz_reports', docId));
+    if (snap.exists()) {
+      const fresh = snap.data();
+      if (!window._userStcReportsCache) window._userStcReportsCache = {};
+      window._userStcReportsCache[docId] = fresh;
+      _renderStcReportModal(fresh, docId, false);
+    }
+  } catch(e) { console.error('[openUserStcReportModal]', e); }
+};
+
+// Open admin STC report modal
+window.openAdminStcReportModal = (docId) => {
+  window._activeReportCtx = { docId, isAdmin: true, isStc: true };
+  const data = window._adminStcReportsCache?.[docId];
+  if (!data) return;
+  _renderStcReportModal(data, docId, true);
+};
+
 // ── Image Ratings Panel ──────────────────────────────────────────
 window.renderImageRatingsPanel = async () => {
 
@@ -12071,9 +12381,10 @@ window.renderUserReports = async () => {
     snap.forEach(d => repDocs.push(d));
     const repCount = repDocs.length;
 
-    // Separate comprehension adventures from quiz reports
-    const quizDocs = repDocs.filter(d => (d.data().sessionType || '') !== 'comprehension');
+    // Separate comprehension adventures and spot-char from quiz reports
+    const quizDocs = repDocs.filter(d => { const st = d.data().sessionType || ''; return st !== 'comprehension' && st !== 'spot-char'; });
     const compDocs = repDocs.filter(d => (d.data().sessionType || '') === 'comprehension');
+    const stcDocs  = repDocs.filter(d => (d.data().sessionType || '') === 'spot-char');
 
     // Populate the all-reports cache (needed for ratings etc.)
     repDocs.forEach(d => {
@@ -12102,6 +12413,13 @@ window.renderUserReports = async () => {
       window._userCompReportsCache[d.id] = window._userReportsCache[d.id];
     });
     window.renderUserCompReports(compDocs, window._userCompReportsCache);
+
+    // Populate spot-char cache and render STC table
+    window._userStcReportsCache = window._userStcReportsCache || {};
+    stcDocs.forEach(d => {
+      window._userStcReportsCache[d.id] = window._userReportsCache[d.id];
+    });
+    window.renderUserStcReports(stcDocs, window._userStcReportsCache);
 
   } catch (err) {
     console.error('[renderUserReports]', err);

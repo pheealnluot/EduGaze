@@ -864,46 +864,58 @@ function _removeOverlapping(boxes, maxCount, iouThreshold = 0.15) {
 app.post('/api/spot-char-generate', async (req, res) => {
   if (!GEMINI_API_KEY) return res.status(503).json({ error: 'GEMINI_API_KEY not configured' });
 
-  const { theme: rawTheme, scene, otherCount = 10, findCount = 1, usePaidTier = false, bgStyle = 'kids', describeVisually = false } = req.body || {};
-  if (!rawTheme || !scene) return res.status(400).json({ error: 'theme and scene are required' });
+  const { theme: rawTheme, scene: rawScene, otherCount = 10, findCount = 1, usePaidTier = false, bgStyle = 'kids', describeVisually = false, describeSceneVisually = false } = req.body || {};
+  if (!rawTheme || !rawScene) return res.status(400).json({ error: 'theme and scene are required' });
 
-  // ── Optional: translate franchise name → visual description ────────────────
+  // ── Optional: translate franchise/world names → visual descriptions ────────
   // When enabled, this prevents the franchise's canonical art style from
-  // overriding the user's selected art style. E.g. "Kiki's Delivery Service" →
-  // "a young girl in a dark navy-blue dress riding a broomstick, accompanied by
-  // a small black cat with bright eyes"
+  // overriding the user's selected art style.
   let theme = rawTheme;
-  if (describeVisually) {
+  let scene = rawScene;
+
+  // Helper: call Gemini to translate a name into a visual description
+  const _translateVisual = async (name, type) => {
+    const typePrompt = type === 'character'
+      ? `Convert this franchise/character name into a VISUAL-ONLY description.\n` +
+        `Describe ONLY what the character(s) LOOK like: body shape, clothing, colours, accessories, distinctive features.`
+      : `Convert this world/location name into a VISUAL-ONLY environment description.\n` +
+        `Describe ONLY what the place LOOKS like: architecture, landscape, colours, lighting, atmosphere, key visual elements.`;
     try {
-      console.log(`[SpotChar] Translating franchise → visual description: "${rawTheme}"`);
-      const descResp = await fetch(GEMINI_URL, {
+      console.log(`[SpotChar] Translating ${type} → visual description: "${name}"`);
+      const resp = await fetch(GEMINI_URL, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         signal: AbortSignal.timeout(15000),
         body: JSON.stringify({
           contents: [{ role: 'user', parts: [{ text:
             `You are a visual description translator for an AI image generator.\n` +
-            `Convert this franchise/character name into a VISUAL-ONLY description.\n` +
+            `${typePrompt}\n` +
             `DO NOT mention the franchise name, studio, or any copyrighted terms.\n` +
-            `Describe ONLY what the character(s) LOOK like: body shape, clothing, colours, accessories, distinctive features.\n` +
             `Keep it concise (1-2 sentences max).\n\n` +
-            `Franchise: "${rawTheme}"\n\n` +
+            `Name: "${name}"\n\n` +
             `Visual description:`
           }] }],
           generationConfig: { maxOutputTokens: 150, temperature: 0.2 },
         }),
       });
-      const descData = await descResp.json();
-      const descText = descData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-      if (descText && descText.length > 10) {
-        theme = descText;
-        console.log(`[SpotChar] ✅ Translated to: "${theme}"`);
-      } else {
-        console.warn(`[SpotChar] Translation returned empty — using original: "${rawTheme}"`);
+      const data = await resp.json();
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+      if (text && text.length > 10) {
+        console.log(`[SpotChar] ✅ ${type} translated to: "${text}"`);
+        return text;
       }
     } catch (e) {
-      console.warn(`[SpotChar] Translation failed (non-fatal): ${e.message} — using original: "${rawTheme}"`);
+      console.warn(`[SpotChar] ${type} translation failed (non-fatal): ${e.message}`);
     }
-  }
+    return null; // fallback to original
+  };
+
+  // Run translations in parallel if both are enabled
+  const [translatedTheme, translatedScene] = await Promise.all([
+    describeVisually      ? _translateVisual(rawTheme, 'character') : Promise.resolve(null),
+    describeSceneVisually ? _translateVisual(rawScene, 'scene')     : Promise.resolve(null),
+  ]);
+  if (translatedTheme) theme = translatedTheme;
+  if (translatedScene) scene = translatedScene;
 
   const bgCount   = Math.min(Math.max(parseInt(otherCount) || 10, 2), 50);
   const findN     = Math.min(Math.max(parseInt(findCount)  || 1,  1), 5);
