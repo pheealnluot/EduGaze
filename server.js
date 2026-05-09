@@ -856,11 +856,74 @@ function _removeOverlapping(boxes, maxCount, iouThreshold = 0.15) {
   return accepted;
 }
 
+app.get('/api/spot-char-gallery', (req, res) => {
+  try {
+    const assetsDir = path.join(__dirname, 'public', 'assets');
+    const images = [];
+
+    function walk(dir) {
+      const files = fs.readdirSync(dir);
+      for (const f of files) {
+        const p = path.join(dir, f);
+        if (fs.statSync(p).isDirectory()) {
+          const folderName = path.basename(p).toLowerCase();
+          // Skip known non-character folders
+          if (folderName === 'wrong png' || folderName === 'raw_image' || folderName === 'archive' || folderName === 'backgrounds') continue;
+          walk(p);
+        } else if (p.endsWith('.png') || p.endsWith('.webp')) {
+          const lowerF = f.toLowerCase();
+          // Skip background files
+          if (lowerF.includes('background') || lowerF.includes('skyline') || lowerF.includes('water')) continue;
+          
+          const relPath = p.substring(assetsDir.length + 1).replace(/\\/g, '/');
+          
+          // Generate a readable name from the filename
+          let name = f.replace(/\.(png|webp)$/i, '')
+                      .replace(/-removebg-preview/i, '')
+                      .replace(/_[a-z0-9]+$/i, '')
+                      .replace(/[-_]/g, ' ')
+                      .trim();
+                      
+          // Capitalize first letter of each word
+          name = name.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+          
+          images.push({ url: 'assets/' + relPath, name });
+        }
+      }
+    }
+    
+    walk(assetsDir);
+    // Sort alphabetically by name
+    images.sort((a, b) => a.name.localeCompare(b.name));
+    
+    res.json({ images });
+  } catch (err) {
+    console.error('[SpotChar] Gallery error:', err);
+    res.status(500).json({ error: 'Failed to load gallery' });
+  }
+});
+
 app.post('/api/spot-char-generate', async (req, res) => {
   if (!GEMINI_API_KEY) return res.status(503).json({ error: 'GEMINI_API_KEY not configured' });
 
-  const { theme: rawTheme, scene: rawScene, otherCount = 10, findCount = 1, bgStyle = 'kids', describeVisually = false, describeSceneVisually = false } = req.body || {};
+  const { theme: rawTheme, scene: rawScene, otherCount = 10, findCount = 1, bgStyle = 'kids', describeVisually = false, describeSceneVisually = false, targetImageUrl } = req.body || {};
   if (!rawTheme || !rawScene) return res.status(400).json({ error: 'theme and scene are required' });
+
+  let inlineTargetImage = null;
+  if (targetImageUrl) {
+    try {
+      const fullPath = path.join(__dirname, 'public', targetImageUrl);
+      const fileData = readFileSync(fullPath);
+      const ext = path.extname(fullPath).toLowerCase();
+      let mime = 'image/png';
+      if (ext === '.jpg' || ext === '.jpeg') mime = 'image/jpeg';
+      else if (ext === '.webp') mime = 'image/webp';
+      inlineTargetImage = { inlineData: { mimeType: mime, data: fileData.toString('base64') } };
+      console.log(`[SpotChar] Loaded target image from ${targetImageUrl}`);
+    } catch (e) {
+      console.warn(`[SpotChar] Failed to load target image ${targetImageUrl}:`, e.message);
+    }
+  }
 
   // ── Optional: translate franchise/world names → visual descriptions ────────
   // When enabled, this prevents the franchise's canonical art style from
@@ -913,7 +976,7 @@ app.post('/api/spot-char-generate', async (req, res) => {
   if (translatedScene) scene = translatedScene;
 
   const bgCount   = Math.min(Math.max(parseInt(otherCount) || 10, 2), 50);
-  const findN     = Math.min(Math.max(parseInt(findCount)  || 1,  1), 5);
+  let findN     = Math.min(Math.max(parseInt(findCount)  || 1,  1), 5);
 
 
   // ── Background art style mapping ──────────────────────────────────────────
@@ -1068,7 +1131,10 @@ app.post('/api/spot-char-generate', async (req, res) => {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         signal: AbortSignal.timeout(90000),
         body: JSON.stringify({
-          contents: [{ role: 'user', parts: [{ text: imagePrompt }] }],
+          contents: [{ role: 'user', parts: [
+            ...(inlineTargetImage ? [inlineTargetImage] : []),
+            { text: imagePrompt }
+          ] }],
           generationConfig: {
             responseModalities: ['IMAGE', 'TEXT'],
             imageConfig: {
@@ -1159,6 +1225,10 @@ app.post('/api/spot-char-generate', async (req, res) => {
       body: JSON.stringify({
         contents: [{ role: 'user', parts: [
           { inlineData: { mimeType, data: imageBase64 } },
+          ...(inlineTargetImage ? [
+            { text: "CRITICAL INSTRUCTION: I have provided a reference image for the exact character you need to find. Study the reference image carefully. You must ONLY identify characters in the scene that physically look like the character in the reference image (matching colors, clothing, body shape, species)." },
+            inlineTargetImage
+          ] : []),
           { text: prompt },
         ]}],
         generationConfig: { thinkingConfig: { thinkingBudget: 2048 }, maxOutputTokens: 8192 },
@@ -1207,11 +1277,20 @@ app.post('/api/spot-char-generate', async (req, res) => {
     }
 
     const MARGIN = 0.12;
+    const CONFIDENCE_MIN = 0.70;
     return parsed
-      .filter(b => Array.isArray(b.box_2d) && b.box_2d.length >= 4)
+      .filter(b => {
+        if (!Array.isArray(b.box_2d) || b.box_2d.length < 4) return false;
+        // Filter by confidence — reject uncertain detections
+        if (typeof b.confidence === 'number' && b.confidence < CONFIDENCE_MIN) {
+          console.log(`[SpotChar]   ${passLabel} REJECTED (conf=${b.confidence}): "${b.description || '?'}"`);
+          return false;
+        }
+        return true;
+      })
       .map(b => {
         const [ymin, xmin, ymax, xmax] = b.box_2d;
-        console.log(`[SpotChar]   ${passLabel} box_2d: [${ymin}, ${xmin}, ${ymax}, ${xmax}]`);
+        console.log(`[SpotChar]   ${passLabel} box_2d: [${ymin}, ${xmin}, ${ymax}, ${xmax}] conf=${b.confidence} desc="${(b.description || '').slice(0, 60)}"`);
         let x = xmin/1000, y = ymin/1000;
         let w = Math.max(0.05, Math.min(0.45, (xmax-xmin)/1000));
         let h = Math.max(0.05, Math.min(0.45, (ymax-ymin)/1000));
@@ -1228,55 +1307,64 @@ app.post('/api/spot-char-generate', async (req, res) => {
   }
 
   try {
-    // ── Pass 1: Name + visual description search ──
-    // Use the visual description (theme) when it differs from rawTheme
+    // ── Pass 1: Find characters WITHOUT a target count ──
+    // Key insight: telling the model "find exactly N" causes it to hallucinate
+    // to meet the quota. Instead, ask it to find ALL matching characters
+    // and describe what it sees. Then we verify the descriptions.
     const visualHint = (theme !== rawTheme)
       ? `\nVISUAL DESCRIPTION of what these characters look like: "${theme}"\n` +
-        `Use this description to identify the target characters — they may not look like the cartoon original.\n`
+        `Use this description to identify the target characters.\n`
       : '';
-    console.log(`[SpotChar] Vision Pass 1: locating ${findN}x "${rawTheme}"${visualHint ? ' (with visual hint)' : ''}…`);
+    console.log(`[SpotChar] Vision Pass 1: locating "${rawTheme}"${visualHint ? ' (with visual hint)' : ''}…`);
     const pass1Prompt =
       `Look carefully at this image. It is a "Spot the Character" game scene.\n` +
-      `It contains EXACTLY ${findN} character(s) inspired by "${rawTheme}".\n` +
+      `Some characters in this image are inspired by "${rawTheme}".\n` +
       visualHint +
-      `NOTE: The characters may have been TRANSFORMED into a different art style ` +
-      `(realistic, photorealistic, 3D, etc.) but they will still be recognisable.\n\n` +
-      `Find ALL ${findN} of them and return their bounding boxes.\n` +
-      `Format: [ymin, xmin, ymax, xmax] — integers 0 to 1000.\n` +
+      (inlineTargetImage ? `\nA REFERENCE IMAGE is provided above. Find ONLY the characters in the scene that match the provided reference image. Do not guess.\n` : '') +
+      `Find ONLY the characters that CLEARLY match "${rawTheme}". ` +
+      `Do NOT guess or force matches — if you're not sure, leave it out.\n\n` +
+      `For each match, return:\n` +
+      `- "box_2d": [ymin, xmin, ymax, xmax] (integers 0–1000)\n` +
+      `- "description": briefly describe what this character looks like (clothes, hair, features)\n` +
+      `- "confidence": 0.0 to 1.0 — how confident you are this is a "${rawTheme}" character\n\n` +
+      `Only include detections with confidence >= 0.7.\n` +
+      `If you cannot find ANY matching characters, return an empty array: []\n\n` +
       `Return ONLY a JSON array, no markdown, no code fences:\n` +
-      `[{"box_2d":[ymin,xmin,ymax,xmax],"label":"${rawTheme}"}]`;
+      `[{"box_2d":[ymin,xmin,ymax,xmax],"label":"${rawTheme}","description":"...","confidence":0.9}]`;
 
     let pass1 = await _visionPass(pass1Prompt, 'Pass1');
     pass1 = _removeOverlapping(pass1, findN);
     console.log(`[SpotChar] Pass 1 found ${pass1.length}/${findN} bbox(es)`);
 
     if (pass1.length >= findN) {
-      bboxes = pass1;
+      bboxes = pass1.slice(0, findN);
     } else {
       // ── Pass 2: Appearance-based retry ──
-      // Ask the model to first DESCRIBE what the target characters look like
-      // in this specific image, then find all instances.
-      console.log(`[SpotChar] Vision Pass 2: appearance-based retry for remaining characters…`);
+      // Find characters that look most similar to each other (same outfit/species)
+      console.log(`[SpotChar] Vision Pass 2: appearance-based retry…`);
       const pass2Prompt =
-        `This image is a "Spot the Character" game. It contains EXACTLY ${findN} hidden character(s) ` +
-        `inspired by "${rawTheme}".\n\n` +
-        `The characters may look VERY DIFFERENT from the original cartoon — they may be photorealistic, ` +
-        `3D-rendered, or transformed into a completely different art style. However, they will share ` +
-        `KEY VISUAL TRAITS: similar clothing, accessories, colour scheme, pose, or silhouette.\n\n` +
-        `STEP 1: Look at ALL characters in this image. Identify which ${findN} characters look MOST ` +
-        `SIMILAR TO EACH OTHER — they are likely the "${rawTheme}" targets because the game generates ` +
-        `multiple copies of the SAME character type. They will share the same outfit, colours, or species ` +
-        `while the background characters are all different from each other.\n\n` +
-        `STEP 2: Return their bounding boxes as [ymin, xmin, ymax, xmax] (integers 0–1000).\n` +
+        `This image is a "Spot the Character" game.\n\n` +
+        `TASK: Find all characters that look like they DON'T BELONG in this scene — ` +
+        `characters that are visually different from the crowd, possibly from a different franchise or world.\n` +
+        `They may share similar outfits, colors, or species with each other but look different from everyone else.\n\n` +
+        (visualHint ? `They are inspired by "${rawTheme}": ${theme}\n\n` : '') +
+        (inlineTargetImage ? `\nA REFERENCE IMAGE is provided above. Find ONLY the characters in the scene that match the provided reference image. Do not guess.\n` : '') +
+        `For each match, return:\n` +
+        `- "box_2d": [ymin, xmin, ymax, xmax] (integers 0–1000)\n` +
+        `- "description": briefly describe what this character looks like\n` +
+        `- "confidence": 0.0 to 1.0\n\n` +
+        `Only include detections with confidence >= 0.7.\n` +
+        `If you find NOTHING that clearly stands out, return []\n\n` +
         `Return ONLY a JSON array, no markdown, no code fences:\n` +
-        `[{"box_2d":[ymin,xmin,ymax,xmax],"label":"${rawTheme}"}]`;
+        `[{"box_2d":[ymin,xmin,ymax,xmax],"label":"${rawTheme}","description":"...","confidence":0.9}]`;
 
       let pass2 = await _visionPass(pass2Prompt, 'Pass2');
       pass2 = _removeOverlapping(pass2, findN);
       console.log(`[SpotChar] Pass 2 found ${pass2.length}/${findN} bbox(es)`);
 
-      // Use whichever pass found more characters
-      bboxes = pass2.length > pass1.length ? pass2 : pass1;
+      // Use whichever pass found more (up to findN)
+      const best = pass2.length > pass1.length ? pass2 : pass1;
+      bboxes = best.slice(0, findN);
     }
 
     console.log(`[SpotChar] ✅ Final vision result: ${bboxes.length}/${findN} bbox(es):`, JSON.stringify(bboxes));

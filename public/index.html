@@ -728,6 +728,8 @@
                     placeholder="e.g. Peppa Pig, SpongeBob, Pokémon…" autocomplete="off" spellcheck="false">
                   <div id="stc-char-dropdown" class="stc-history-dropdown"></div>
                 </div>
+                <img id="stc-gallery-thumb" src="" style="display:none; width:36px; height:36px; object-fit:contain; border-radius:4px; background:rgba(255,255,255,0.1);" />
+                <button id="stc-gallery-btn" class="stc-clear-btn" title="Choose from Gallery" onclick="window.stcOpenGallery()" style="padding:0 8px; font-size:1.2rem;">🖼️</button>
                 <button id="stc-char-clear" class="stc-clear-btn" title="Clear">✕ Clear</button>
               </div>
               <!-- Describe visually toggle -->
@@ -868,6 +870,10 @@
             <button class="stc-hint-btn" onclick="window.stcOpenSettings()"
               style="border-color:rgba(99,102,241,0.3);color:#818cf8;">⚙️ Settings</button>
             <button class="stc-hint-btn" onclick="window.stcShowHint()" title="Show a hint">💡 Hint</button>
+            <button class="stc-hint-btn" id="stc-mark-btn" onclick="window.stcToggleMark()" title="Click canvas to mark a character"
+              style="border-color:rgba(251,191,36,0.3);color:#fbbf24;display:none;">📌 Mark</button>
+            <button class="stc-hint-btn" id="stc-unmark-btn" onclick="window.stcToggleUnmark()" title="Click a target to remove it"
+              style="border-color:rgba(248,113,113,0.3);color:#f87171;display:none;">🗑 Remove</button>
             <button class="stc-playagain-btn" onclick="window.stcPlayAgain()">🔄 Play Again</button>
             <button class="stc-playagain-btn" onclick="window.stcGoHome()"
               style="border-color:rgba(148,163,184,0.2);color:#64748b;">🏠 Home</button>
@@ -879,6 +885,20 @@
           <canvas id="stc-game-canvas" class="stc-game-canvas"></canvas>
         </div>
       </div>
+
+      <!-- Character Gallery Modal -->
+      <div id="stc-gallery-modal" style="display:none;position:fixed;inset:0;z-index:9000;background:rgba(2,6,23,0.9);align-items:center;justify-content:center;padding:20px;">
+        <div style="background:#0f172a;border:1px solid rgba(255,255,255,0.1);border-radius:16px;width:100%;max-width:800px;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 20px 40px rgba(0,0,0,0.5);">
+          <div style="padding:16px 24px;border-bottom:1px solid rgba(255,255,255,0.08);display:flex;justify-content:space-between;align-items:center;">
+            <h3 style="margin:0;font-size:1.4rem;font-weight:800;color:#f8fafc;">Select a Character</h3>
+            <button onclick="window.stcCloseGallery()" style="background:transparent;border:none;color:#94a3b8;font-size:1.5rem;cursor:pointer;">&times;</button>
+          </div>
+          <div id="stc-gallery-grid" style="padding:20px;display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:16px;overflow-y:auto;flex:1;">
+            <!-- Gallery items injected here -->
+          </div>
+        </div>
+      </div>
+
     </div>
     <!-- END SPOT THE CHARACTER VIEW -->
 

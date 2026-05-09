@@ -12,6 +12,86 @@ const STC_HINT_DELAY    = 30000;
 const STC_MIN_TARGET    = 0.10;  // minimum hit zone (fraction of display size)
 const BBOX_PAD          = 1.5;   // multiply bbox w/h — ensures full character is covered
 const PROF_COLORS       = ['#06b6d4','#8b5cf6','#f59e0b','#10b981','#f87171'];
+
+// ── Custom Cursors (SVG data URIs) ───────────────────────────────────────────
+// Pin cursor for Mark mode — 32×32 with hot-spot at pin tip (16,30)
+const CURSOR_PIN = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Cdefs%3E%3Cfilter id='s'%3E%3CfeDropShadow dx='0' dy='1' stdDeviation='1' flood-opacity='0.4'/%3E%3C/filter%3E%3C/defs%3E%3Cg filter='url(%23s)'%3E%3Ccircle cx='16' cy='10' r='7' fill='%23fbbf24' stroke='%23b45309' stroke-width='1.5'/%3E%3Crect x='15' y='16' width='2' height='12' rx='1' fill='%23713f12'/%3E%3Ccircle cx='16' cy='10' r='3' fill='%23fef3c7' opacity='0.6'/%3E%3C/g%3E%3C/svg%3E") 16 30, crosshair`;
+// Trash bin cursor for Remove mode — 32×32 with hot-spot at base centre (16,28)
+const CURSOR_BIN = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Cdefs%3E%3Cfilter id='s'%3E%3CfeDropShadow dx='0' dy='1' stdDeviation='1' flood-opacity='0.4'/%3E%3C/filter%3E%3C/defs%3E%3Cg filter='url(%23s)'%3E%3Crect x='8' y='8' width='16' height='2.5' rx='1' fill='%23ef4444'/%3E%3Crect x='13' y='5' width='6' height='4' rx='1' fill='none' stroke='%23ef4444' stroke-width='1.5'/%3E%3Crect x='9.5' y='11' width='13' height='16' rx='2' fill='%23ef4444'/%3E%3Cline x1='13' y1='14' x2='13' y2='24' stroke='%23fecaca' stroke-width='1.2' stroke-linecap='round'/%3E%3Cline x1='16' y1='14' x2='16' y2='24' stroke='%23fecaca' stroke-width='1.2' stroke-linecap='round'/%3E%3Cline x1='19' y1='14' x2='19' y2='24' stroke='%23fecaca' stroke-width='1.2' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E") 16 28, not-allowed`;
+
+// ── Sound Effects (Web Audio API — no external files) ────────────────────────
+let _audioCtx = null;
+function _getAudioCtx() {
+  if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return _audioCtx;
+}
+
+// Bright 'tag placed' chime — two quick ascending tones
+function _playTagSound() {
+  try {
+    const ctx = _getAudioCtx();
+    const now = ctx.currentTime;
+    [660, 880].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now + i * 0.08);
+      gain.gain.setValueAtTime(0.25, now + i * 0.08);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.08 + 0.15);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(now + i * 0.08);
+      osc.stop(now + i * 0.08 + 0.15);
+    });
+  } catch (_) {}
+}
+
+// Satisfying 'recycle bin' sound — descending whoosh with crumple noise
+function _playBinSound() {
+  try {
+    const ctx = _getAudioCtx();
+    const now = ctx.currentTime;
+    // Descending tone (whoosh)
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(600, now);
+    osc.frequency.exponentialRampToValueAtTime(120, now + 0.25);
+    gain.gain.setValueAtTime(0.2, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(now); osc.stop(now + 0.3);
+    // Short crumple noise burst
+    const bufLen = ctx.sampleRate * 0.08;
+    const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < bufLen; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / bufLen);
+    const noise = ctx.createBufferSource();
+    const nGain = ctx.createGain();
+    noise.buffer = buf;
+    nGain.gain.setValueAtTime(0.12, now + 0.05);
+    nGain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+    noise.connect(nGain).connect(ctx.destination);
+    noise.start(now + 0.05);
+  } catch (_) {}
+}
+
+// Harsh negative buzzer — dissonant low tone
+function _playBuzzerSound() {
+  try {
+    const ctx = _getAudioCtx();
+    const now = ctx.currentTime;
+    [150, 185].forEach(freq => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(freq, now);
+      gain.gain.setValueAtTime(0.15, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(now); osc.stop(now + 0.35);
+    });
+  } catch (_) {}
+}
 const STC_PRESETS = [
   'Noise Nora','Tiger Came to Tea','Encanto',"Kiki's Delivery Service",
   'Castle in the Sky','Up (Disney)','Dug Days','Bluey','Lilo and Stitch',
@@ -34,6 +114,10 @@ let _hintTimer    = null; // kept for cleanup, no longer auto-scheduled
 let _lastReqBody  = null;
 let _mimeType     = 'image/png';
 let _gameStartMs  = 0;   // Date.now() when game canvas first shown
+let _markMode     = false; // true when user is placing a manual target
+let _removeMode   = false; // true when user is removing a target
+let _requestedFindN = 0;  // original requested character count
+let _targetImageUrl = null; // optional user-selected image for the target character
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 window.initSpotChar = async function () {
@@ -54,6 +138,13 @@ function _showSettings() {
   if (_hintTimer) { clearTimeout(_hintTimer); _hintTimer=null; }
   _clearErr();
   _syncSliders();
+  const thumb = _el('stc-gallery-thumb');
+  if (thumb && _targetImageUrl) {
+    thumb.style.display = 'block';
+    thumb.src = _targetImageUrl;
+  } else if (thumb) {
+    thumb.style.display = 'none';
+  }
 }
 
 function _sec(s) {
@@ -93,6 +184,13 @@ function _bindEvents() {
   _hist('stc-scene-input', 'stc-scene-dropdown', 'stc-scene-clear', STC_KEY_SCENE);
   const startBtn = _el('stc-start-btn');
   if (startBtn) startBtn.addEventListener('click', _start);
+
+  const charClear = _el('stc-char-clear');
+  if (charClear) charClear.addEventListener('click', () => {
+    _targetImageUrl = null;
+    const thumb = _el('stc-gallery-thumb');
+    if (thumb) thumb.style.display = 'none';
+  });
 }
 
 function _bindSlider(sliderId, valId, fmt, suffix, extra) {
@@ -245,7 +343,7 @@ async function _start() {
   if (!scene) { _el('stc-scene-input').focus(); _err('Please describe a background scene!'); return; }
   _saveH(STC_KEY_THEME, theme); _saveH(STC_KEY_SCENE, scene);
   _theme = theme; _targets=[]; _foundCount=0; _attempts=0; _failedClicks=0; _allFound=false;
-  _lastReqBody = { theme, scene, otherCount: count, findCount: findN, bgStyle, describeVisually, describeSceneVisually };
+  _lastReqBody = { theme, scene, otherCount: count, findCount: findN, bgStyle, describeVisually, describeSceneVisually, targetImageUrl: _targetImageUrl };
   // ── Initialize Spot-the-Character Report Tracking ─────────────────────
   window.stcReport = {
     sessionType: 'spot-char',
@@ -299,10 +397,19 @@ async function _generate(body) {
     _mimeType = d.mimeType || 'image/png';
     _targets = (d.bboxes || []).map(b => ({ bbox:b, found:false, inBbox:false, dwellTimer:null, dwellEl:null }));
     _theme   = d.theme || body.theme;
+    _requestedFindN = body.findCount || 3;
+    _markMode = false;
     await _showGame(d.imageData, _mimeType);
-    // If AI couldn't find any characters, show a discreet message
+    // Show Mark + Remove buttons — always available for manual target management
+    const markBtn = _el('stc-mark-btn');
+    if (markBtn) markBtn.style.display = '';
+    const unmarkBtn = _el('stc-unmark-btn');
+    if (unmarkBtn) unmarkBtn.style.display = '';
+    // If AI couldn't find any/all characters, show a discreet message
     if (d.aiHard) {
-      _toast('🤯 This is so hard that AI can\'t find them!');
+      _toast('🤯 This is so hard that AI can\'t find them! Use 📌 Mark to add targets.');
+    } else if (_targets.length < _requestedFindN) {
+      _toast(`🔍 AI found ${_targets.length}/${_requestedFindN}. Use 📌 Mark to add more.`);
     }
   } catch(e) {
     clearInterval(window._stcTipInt);
@@ -527,8 +634,68 @@ function _bindCanvas(canvas) {
     });
   });
 
-  // click: immediate selection OR count as a failed click (every 10 → 1 auto-hint)
+  // click: mark mode (manual target placement) OR normal selection
   canvas.addEventListener('click', e => {
+    // ── Mark mode: place a manual observation area ──
+    if (_markMode) {
+      const rect = canvas.getBoundingClientRect();
+      const rx = (e.clientX - rect.left) / rect.width;  // 0.0–1.0
+      const ry = (e.clientY - rect.top) / rect.height;
+      const DEFAULT_W = 0.12, DEFAULT_H = 0.20;
+      const bbox = {
+        x: Math.max(0.01, Math.min(0.87, rx - DEFAULT_W / 2)),
+        y: Math.max(0.01, Math.min(0.79, ry - DEFAULT_H / 2)),
+        w: DEFAULT_W, h: DEFAULT_H,
+      };
+      const idx = _targets.length;
+      _targets.push({ bbox, found: false, inBbox: false, dwellTimer: null, dwellEl: null });
+      _markMode = false;
+      const markBtn = _el('stc-mark-btn');
+      if (markBtn) { markBtn.style.borderColor = 'rgba(251,191,36,0.3)'; markBtn.style.background = ''; }
+      canvas.style.cursor = '';
+      _redraw(canvas);
+      _playTagSound();
+      _toast(`📌 Target #${idx + 1} placed! Click or hover to find it.`);
+      return;
+    }
+    // ── Remove mode: remove the closest target under the click ──
+    if (_removeMode) {
+      const rect = canvas.getBoundingClientRect();
+      const rx = e.clientX - rect.left, ry = e.clientY - rect.top;
+      let closestIdx = -1;
+      let closestDist = Infinity;
+      _targets.forEach((t, i) => {
+        if (!t.bbox) return;
+        // Check if click is inside or near the bbox
+        const b = _dispBbox(canvas, t, i);
+        if (!b) return;
+        const dx = Math.abs(rx - b.cx), dy = Math.abs(ry - b.cy);
+        // Accept clicks inside the padded bbox
+        if (dx <= b.hw && dy <= b.hh) {
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < closestDist) { closestDist = dist; closestIdx = i; }
+        }
+      });
+      if (closestIdx >= 0) {
+        const removed = _targets[closestIdx];
+        _cancelDwell(removed);
+        if (removed.found) _foundCount = Math.max(0, _foundCount - 1);
+        _targets.splice(closestIdx, 1);
+        // Remove any hint pulses for this or higher indices
+        const wrap = canvas.parentElement;
+        if (wrap) wrap.querySelectorAll('.stc-hint-pulse').forEach(el => {
+          const idx = parseInt(el.dataset.targetIdx, 10);
+          if (idx >= closestIdx) el.remove();
+        });
+        _redraw(canvas);
+        _playBinSound();
+        _toast(`🗑 Target #${closestIdx + 1} removed! (${_targets.length} remaining)`);
+      } else {
+        _playBuzzerSound();
+        _toast('❌ No target under click — try clicking closer to a marked area.');
+      }
+      return;
+    }
     if (_allFound) return;
     const rect = canvas.getBoundingClientRect();
     const rx = e.clientX-rect.left, ry = e.clientY-rect.top;
@@ -877,7 +1044,49 @@ window.saveStcReportNow = async function () {
 // ── Navigation ────────────────────────────────────────────────────────────────
 window.stcOpenSettings = () => { _finalizeStcReport(false); _targets.forEach(t=>_cancelDwell(t)); const w=_el('stc-canvas-wrap'); if(w) w.querySelectorAll('.stc-result-overlay,.stc-hint-pulse,.stc-dwell-ring,#stc-all-found-banner').forEach(e=>e.remove()); _showSettings(); };
 window.stcPlayAgain    = () => { _targets.forEach(t=>_cancelDwell(t)); const w=_el('stc-canvas-wrap'); if(w) w.querySelectorAll('.stc-result-overlay,.stc-hint-pulse,.stc-dwell-ring,#stc-all-found-banner').forEach(e=>e.remove()); _showSettings(); };
-window.stcGoHome       = () => { _finalizeStcReport(false); _targets.forEach(t=>_cancelDwell(t)); if(window.setMode) window.setMode('landing'); };
+window.stcGoHome       = () => { _finalizeStcReport(false); _markMode=false; _removeMode=false; _targets.forEach(t=>_cancelDwell(t)); if(window.setMode) window.setMode('landing'); };
+
+// ── Mark Target Toggle ───────────────────────────────────────────────────────
+window.stcToggleMark = () => {
+  const canvas = _el('stc-game-canvas');
+  const btn = _el('stc-mark-btn');
+  if (!canvas) return;
+  // Deactivate remove mode if active
+  if (_removeMode) {
+    _removeMode = false;
+    const ubtn = _el('stc-unmark-btn');
+    if (ubtn) { ubtn.style.borderColor = 'rgba(248,113,113,0.3)'; ubtn.style.background = ''; }
+  }
+  _markMode = !_markMode;
+  if (_markMode) {
+    canvas.style.cursor = CURSOR_PIN;
+    if (btn) { btn.style.borderColor = '#fbbf24'; btn.style.background = 'rgba(251,191,36,0.15)'; }
+    _toast('📌 Click on the image to place a target area');
+  } else {
+    canvas.style.cursor = '';
+    if (btn) { btn.style.borderColor = 'rgba(251,191,36,0.3)'; btn.style.background = ''; }
+  }
+};
+window.stcToggleUnmark = () => {
+  const canvas = _el('stc-game-canvas');
+  const btn = _el('stc-unmark-btn');
+  if (!canvas) return;
+  // Deactivate mark mode if active
+  if (_markMode) {
+    _markMode = false;
+    const mbtn = _el('stc-mark-btn');
+    if (mbtn) { mbtn.style.borderColor = 'rgba(251,191,36,0.3)'; mbtn.style.background = ''; }
+  }
+  _removeMode = !_removeMode;
+  if (_removeMode) {
+    canvas.style.cursor = CURSOR_BIN;
+    if (btn) { btn.style.borderColor = '#f87171'; btn.style.background = 'rgba(248,113,113,0.15)'; }
+    _toast('🗑 Click on a target to remove it');
+  } else {
+    canvas.style.cursor = '';
+    if (btn) { btn.style.borderColor = 'rgba(248,113,113,0.3)'; btn.style.background = ''; }
+  }
+};
 window.stcRetry        = async () => { if(_lastReqBody) { _sec('loading'); _tipCycle(_lastReqBody.theme,_lastReqBody.scene,_lastReqBody.findCount); await _generate(_lastReqBody); } };
 
 // ── Error ─────────────────────────────────────────────────────────────────────
@@ -888,3 +1097,53 @@ function _err(msg, retry=false) {
 }
 function _clearErr() { const b=_el('stc-error-box'); if(b){b.style.display='none';b.innerHTML='';} }
 
+// ── Gallery Data & Logic ───────────────────────────────────────────────────────
+let STC_GALLERY_IMAGES = [];
+
+window.stcOpenGallery = async function() {
+  const modal = document.getElementById('stc-gallery-modal');
+  const grid = document.getElementById('stc-gallery-grid');
+  if (!modal || !grid) return;
+  
+  modal.style.display = 'flex';
+  
+  if (STC_GALLERY_IMAGES.length === 0) {
+    grid.innerHTML = '<div style="color:#94a3b8;grid-column:1/-1;text-align:center;padding:40px;">Loading characters...</div>';
+    try {
+      const res = await fetch('/api/spot-char-gallery');
+      const data = await res.json();
+      if (data.images) STC_GALLERY_IMAGES = data.images;
+    } catch(e) {
+      grid.innerHTML = '<div style="color:#ef4444;grid-column:1/-1;text-align:center;padding:40px;">Failed to load characters</div>';
+      return;
+    }
+  }
+  
+  grid.innerHTML = STC_GALLERY_IMAGES.map((img, i) => `
+    <div onclick="window.stcSelectGalleryItem(${i})" style="cursor:pointer;background:rgba(255,255,255,0.05);border-radius:12px;padding:12px;display:flex;flex-direction:column;align-items:center;transition:all 0.2s;border:2px solid transparent;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'">
+      <img src="${img.url}" style="width:100%;height:100px;object-fit:contain;margin-bottom:8px;" />
+      <span style="font-size:0.8rem;color:#cbd5e1;text-align:center;font-weight:600;">${img.name}</span>
+    </div>
+  `).join('');
+};
+
+window.stcCloseGallery = function() {
+  const modal = document.getElementById('stc-gallery-modal');
+  if (modal) modal.style.display = 'none';
+};
+
+window.stcSelectGalleryItem = function(idx) {
+  const img = STC_GALLERY_IMAGES[idx];
+  _targetImageUrl = img.url;
+  
+  const inp = document.getElementById('stc-char-input');
+  if (inp) inp.value = img.name;
+  
+  const thumb = document.getElementById('stc-gallery-thumb');
+  if (thumb) {
+    thumb.src = img.url;
+    thumb.style.display = 'block';
+  }
+  
+  window.stcCloseGallery();
+};
