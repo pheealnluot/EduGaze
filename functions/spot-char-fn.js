@@ -38,6 +38,8 @@ exports.spotCharGenerate = onRequest(
 
   if (!apiKey) return res.status(503).json({ error: 'apiKey not configured' });
 
+  if (!apiKey) return res.status(503).json({ error: 'apiKey not configured' });
+
   const { theme: rawTheme, scene: rawScene, otherCount = 10, findCount = 1, bgStyle = 'kids', describeVisually = false, describeSceneVisually = false, targetImageUrl } = req.body || {};
   if (!rawTheme || !rawScene) return res.status(400).json({ error: 'theme and scene are required' });
 
@@ -130,6 +132,12 @@ exports.spotCharGenerate = onRequest(
                'Characters must look like real animals, real people, or physically plausible 3D-rendered creatures — NOT cartoons, NOT illustrations, NOT anime. ' +
                'The entire scene should look like a high-end nature documentary, wildlife photography, or cinematic CGI film frame. ' +
                'NO cartoon outlines, NO flat colours, NO cel-shading, NO illustrated style anywhere in the image.',
+    },
+    rogerrabbit: {
+      prefix:  'WHO FRAMED ROGER RABBIT HYBRID STYLE — ',
+      suffix:  'Art style: A HYBRID image where the entire background environment and all generic background characters MUST be rendered in ultra-realistic, cinematic photography (photorealism). ' +
+               'However, the TARGET CHARACTERS MUST be rendered as completely 2D or 3D animated cartoons seamlessly integrated into this highly realistic world. ' +
+               'The contrast between the highly realistic physical world and the animated cartoon target characters must be stark and obvious, exactly like the movie Who Framed Roger Rabbit.',
     },
     stylistic: {
       prefix:  'BOLD STYLISTIC DIGITAL ILLUSTRATION — ',
@@ -255,7 +263,7 @@ exports.spotCharGenerate = onRequest(
     );
   };
 
-  let imageBase64 = null, mimeType = 'image/png', bboxes = [];
+  let imageBase64 = null, mimeType = 'image/png', bboxes = [], aiSource = 'generation';
   try {
     {
       // ── Gemini 3.1 Flash Image 🍌 — /generateContent endpoint ──────────
@@ -327,7 +335,7 @@ exports.spotCharGenerate = onRequest(
                 cy = Math.max(MARGIN, Math.min(1 - MARGIN, cy));
                 const fx = Math.max(0.01, Math.min(1 - w - 0.01, cx - w / 2));
                 const fy = Math.max(0.01, Math.min(1 - h - 0.01, cy - h / 2));
-                return { x: fx, y: fy, w, h };
+                return { x: fx, y: fy, w, h, confidence: 1.0 };
               })
               .slice(0, findN);
             if (genBboxes.length > 0) {
@@ -348,6 +356,7 @@ exports.spotCharGenerate = onRequest(
   if (bboxes.length > 0) {
     console.log(`[SpotChar] Skipping vision step — ${bboxes.length} bbox(es) from generation model`);
   } else {
+    aiSource = 'vision';
 
   // Helper: run a single vision detection pass and return parsed bboxes
   async function _visionPass(prompt, passLabel) {
@@ -430,7 +439,7 @@ exports.spotCharGenerate = onRequest(
         let cy = Math.max(MARGIN, Math.min(1-MARGIN, y + h/2));
         x = Math.max(0.01, Math.min(1-w-0.01, cx - w/2));
         y = Math.max(0.01, Math.min(1-h-0.01, cy - h/2));
-        return { x, y, w, h };
+        return { x, y, w, h, confidence: b.confidence };
       })
       .filter(b => {
         const cx = b.x + b.w/2, cy = b.y + b.h/2;
@@ -522,7 +531,4 @@ exports.spotCharGenerate = onRequest(
     findN = bboxes.length;
   }
 
-  res.json({ imageData: imageBase64, mimeType, bboxes, theme: rawTheme, findCount: findN, aiHard });
-
-  }
-);
+  res.json({ imageData: imageBase64, mimeType, bboxes, theme: rawTheme, findCount: findN, aiHard, aiSource });

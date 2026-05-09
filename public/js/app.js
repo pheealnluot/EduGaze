@@ -2949,7 +2949,13 @@ function quizSpeakCancel() {
 }
 // ─────────────────────────────────────────────────────────────────────────
 
+// Tracks which app mode was active when Quiz Settings was opened.
+// Used by closeQuizSettings to decide whether to return to landing.
+let _quizSettingsOpenedFromMode = null;
+
 window.openQuizSettings = () => {
+  // Remember what mode we're leaving so X can return there correctly
+  _quizSettingsOpenedFromMode = typeof mode !== 'undefined' ? mode : null;
   initQuizSettingsUI();
   const _settingsOv = document.getElementById('quiz-settings-overlay');
   // Clear any inline display:none set by startComprehensionFromQuizSettings so the CSS .show class wins
@@ -2960,6 +2966,10 @@ window.openQuizSettings = () => {
 };
 window.closeQuizSettings = () => {
   document.getElementById('quiz-settings-overlay').classList.remove('show');
+  // If settings were opened from the landing page (or an equivalent pre-game state),
+  // return the user to the landing page when they hit X.
+  const fromLanding = !_quizSettingsOpenedFromMode || _quizSettingsOpenedFromMode === 'landing';
+  if (fromLanding && typeof setMode === 'function') setMode('landing');
 };
 
 function updateQuizScoreBar() {

@@ -1097,6 +1097,14 @@ app.post('/api/spot-char-generate', async (req, res) => {
                'The entire scene should look like a high-end nature documentary, wildlife photography, or cinematic CGI film frame. ' +
                'NO cartoon outlines, NO flat colours, NO cel-shading, NO illustrated style anywhere in the image.',
     },
+    rogerrabbit: {
+      prefix:  'PHOTOREALISTIC BACKGROUND WITH CARTOON TARGETS — ',
+      suffix:  'Art style: A HYBRID image. The ENTIRE BACKGROUND, ENVIRONMENT, AND ALL GENERIC BACKGROUND CHARACTERS MUST be STRICTLY HYPER-REALISTIC — rendered as a high-resolution photograph or cinematic 3D render. ' +
+               'Use cinematic lighting, real-world textures, physical depth of field, atmospheric perspective, and natural shadows. ' +
+               'Background characters must look like real human beings or real animals. ' +
+               'However, the TARGET CHARACTERS MUST be rendered as 2D or 3D animated cartoons seamlessly integrated into this highly realistic physical world. ' +
+               'CRITICAL RULE: The contrast between the highly realistic photograph background and the cartoon target characters must be stark and obvious.',
+    },
     stylistic: {
       prefix:  'BOLD STYLISTIC DIGITAL ILLUSTRATION — ',
       suffix:  'Art style: modern stylistic concept art with a strong graphic design sensibility. ' +
