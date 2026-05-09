@@ -1174,30 +1174,23 @@ app.post('/api/spot-char-generate', async (req, res) => {
   // Always runs — the dedicated vision model uses Gemini's NATIVE bounding-box
   // format [ymin, xmin, ymax, xmax] on a 0–1000 integer scale, which maps
   // proportionally to the image regardless of aspect ratio.
-  // (The image generation model's self-reported coords are unreliable and skipped.)
+  // Uses rawTheme (original character name) for better recognition accuracy.
   try {
+    console.log(`[SpotChar] Vision step: locating ${findN}x "${rawTheme}" in generated image…`);
     const visionPrompt =
       `Look carefully at this image. It is a "Spot the Character" game scene.\n` +
-      `It should contain ${findN} character(s) visually inspired by "${theme}".\n\n` +
-      `STEP 1 — Think about what a "${theme}"-inspired character looks LIKE visually:\n` +
-      `Consider distinctive features: body shape, colours, markings, clothing, size.\n` +
-      `For example: a tiger has an orange/black striped ANIMAL BODY. A panda has black/white fur.\n` +
-      `Do NOT report buildings, props, signs, windows, or background scenery — only living character bodies.\n\n` +
-      `STEP 2 — Find and locate each "${theme}"-inspired character you can CLEARLY SEE.\n` +
+      `It contains EXACTLY ${findN} character(s) that look like "${rawTheme}".\n\n` +
+      `Find ALL ${findN} of them and return their bounding boxes.\n` +
       `For each one, return a bounding box as [ymin, xmin, ymax, xmax] where each value is\n` +
       `an integer from 0 to 1000 (0 = top/left edge, 1000 = bottom/right edge).\n` +
       `The box should tightly enclose the full character body from head to feet.\n` +
       `Also include a "confidence" score from 0.0 to 1.0.\n\n` +
-      `ANTI-HALLUCINATION RULES — read VERY carefully:\n` +
-      `- You MUST be at least 75% certain that each character truly matches the visual features of "${theme}"\n` +
-      `- A character that merely has a vaguely similar colour or pose is NOT a match — it must have MULTIPLE distinctive features of "${theme}"\n` +
-      `- Do NOT report background characters that belong to the scene unless they CLEARLY match "${theme}"\n` +
-      `- If a character could be either a "${theme}" character OR a generic scene character, do NOT include it\n` +
-      `- Report FEWER characters rather than hallucinate extras — return [] rather than a wrong detection\n` +
-      `- Maximum ${findN} character(s). If you find more, keep only the ${findN} most confident\n` +
-      `- Only include entries with confidence >= 0.75\n\n` +
-      `Return ONLY a JSON array — no prose, no explanation:\n` +
-      `[{"box_2d":[ymin, xmin, ymax, xmax],"label":"${theme}","confidence":0.9}]`;
+      `IMPORTANT RULES:\n` +
+      `- Only report characters that clearly look like "${rawTheme}" — not generic background characters\n` +
+      `- You MUST find exactly ${findN} matches — they are guaranteed to be in the image\n` +
+      `- Maximum ${findN} results\n\n` +
+      `Return ONLY a JSON array — no markdown, no code fences, no prose:\n` +
+      `[{"box_2d":[ymin, xmin, ymax, xmax],"label":"${rawTheme}","confidence":0.9}]`;
 
     const vResp = await fetch(GEMINI_URL, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1207,35 +1200,45 @@ app.post('/api/spot-char-generate', async (req, res) => {
           { inlineData: { mimeType, data: imageBase64 } },
           { text: visionPrompt },
         ]}],
-        // Increased thinking budget for better spatial reasoning
         generationConfig: { thinkingConfig: { thinkingBudget: 4096 }, maxOutputTokens: 1024 },
       }),
     });
     const vData  = await vResp.json();
+    if (!vResp.ok) {
+      console.warn(`[SpotChar] Vision API error: ${vResp.status}`, JSON.stringify(vData?.error || vData).slice(0, 300));
+    }
     // Text part may be after a thinking part
-    const rawText = (vData?.candidates?.[0]?.content?.parts || [])
+    const allParts = vData?.candidates?.[0]?.content?.parts || [];
+    const rawText = allParts
       .filter(p => p.text && !p.thought)
       .map(p => p.text).join('');
-    console.log(`[SpotChar] Vision raw response: ${rawText.slice(0, 300)}`);
-    const arrMatch = rawText.match(/\[[\s\S]*?\]/);
+    console.log(`[SpotChar] Vision raw response (${rawText.length} chars): ${rawText.slice(0, 500)}`);
+
+    if (!rawText) {
+      console.warn(`[SpotChar] Vision returned no text. Parts:`, allParts.map(p => ({
+        hasText: !!p.text, isThought: !!p.thought, textLen: p.text?.length || 0,
+      })));
+    }
+
+    // Use greedy regex to catch full JSON array (lazy regex can match just `[]`)
+    const arrMatch = rawText.match(/\[[\s\S]*\]/);
     if (arrMatch) {
       const parsed = JSON.parse(arrMatch[0]);
+      console.log(`[SpotChar] Parsed ${parsed.length} raw bbox(es) from vision`);
 
-      const MARGIN = 0.12; // safe zone: center must be within [0.12, 0.88]
-      const CONFIDENCE_MIN = 0.75;
+      const MARGIN = 0.12;
+      const CONFIDENCE_MIN = 0.50; // lowered from 0.75 — vision model is already conservative
 
       // Convert native 0–1000 [ymin,xmin,ymax,xmax] format to 0.0–1.0 {x,y,w,h}
       const converted = parsed
         .filter(b => {
-          // Must have box_2d array with 4 numbers
           if (!Array.isArray(b.box_2d) || b.box_2d.length < 4) return false;
-          // Confidence filter
           if (typeof b.confidence === 'number' && b.confidence < CONFIDENCE_MIN) return false;
           return true;
         })
         .map(b => {
           const [ymin, xmin, ymax, xmax] = b.box_2d;
-          // Convert 0–1000 integers to 0.0–1.0 fractions
+          console.log(`[SpotChar]   raw box_2d: [${ymin}, ${xmin}, ${ymax}, ${xmax}] conf=${b.confidence}`);
           const x = xmin / 1000;
           const y = ymin / 1000;
           const w = (xmax - xmin) / 1000;
@@ -1252,13 +1255,10 @@ app.post('/api/spot-char-generate', async (req, res) => {
       // Clamp and validate
       const normalised = converted.map(b => {
         let { cx, cy, w, h } = b;
-        // Clamp center to safe zone
         cx = Math.max(MARGIN, Math.min(1 - MARGIN, cx));
         cy = Math.max(MARGIN, Math.min(1 - MARGIN, cy));
-        // Clamp size
         w = Math.max(0.05, Math.min(0.45, w));
         h = Math.max(0.05, Math.min(0.45, h));
-        // Compute top-left, ensuring bbox stays fully inside [0,1]
         const x = Math.max(0.01, Math.min(1 - w - 0.01, cx - w / 2));
         const y = Math.max(0.01, Math.min(1 - h - 0.01, cy - h / 2));
         return { x, y, w, h, cx, cy };
@@ -1270,10 +1270,12 @@ app.post('/api/spot-char-generate', async (req, res) => {
 
       bboxes = _removeOverlapping(safeBoxes, findN);
 
-      console.log(`[SpotChar] ✅ Found ${bboxes.length} bbox(es) (native 0-1000 format):`, JSON.stringify(bboxes));
+      console.log(`[SpotChar] ✅ Vision found ${bboxes.length} bbox(es):`, JSON.stringify(bboxes));
+    } else {
+      console.warn(`[SpotChar] ⚠️ No JSON array found in vision response. Raw text: "${rawText.slice(0, 200)}"`);
     }
   } catch (err) {
-    console.warn('[SpotChar] Vision bbox failed (non-fatal):', err.message);
+    console.warn('[SpotChar] Vision bbox failed (non-fatal):', err.message, err.stack?.split('\n')[1]);
   }
 
   // Remove overlapping bboxes returned by the vision model
