@@ -1178,8 +1178,10 @@ app.post('/api/spot-char-generate', async (req, res) => {
     `HORIZONTAL WIDESCREEN LANDSCAPE IMAGE ONLY — 16:9 aspect ratio like a cinema screen. ` +
     `DO NOT generate a portrait or square image under any circumstances. ` +
     // ③ Scene content
-    `Draw an original, richly detailed background scene set in the world of "${scene}". ` +
-    `Fill this scene with ${bgCount} unique original characters whose visual design fits the world of "${scene}" — ` +
+    (styleKey === 'rogerrabbit'
+      ? `STEP 1: Draw a hyper-realistic, physical background environment based on the location: "${scene}". Fill this photorealistic environment with ${bgCount} highly realistic human or animal background characters. NO cartoons allowed in the background or background characters.\nSTEP 2: Superimpose EXACTLY ${findN} 2D/3D animated cartoon characters inspired by "${theme}" into this realistic world. `
+      : `Draw an original, richly detailed background scene set in the world of "${scene}". ` +
+        `Fill this scene with ${bgCount} unique original characters whose visual design fits the world of "${scene}" — `) +
     `each clearly different from one another, no two alike. ` +
     `ABSOLUTE RULE: NONE of these ${bgCount} background characters may look like, resemble, or be confused with "${theme}". ` +
     `Background characters must be COMPLETELY DIFFERENT species/types/shapes from "${theme}" — ` +
