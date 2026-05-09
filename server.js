@@ -1161,6 +1161,7 @@ app.post('/api/spot-char-generate', async (req, res) => {
   // overriding photorealistic or other non-cartoon styles.
   const styleQuality = {
     realistic:  'CRITICAL: The ENTIRE image — background AND all characters — must be STRICTLY PHOTOREALISTIC. No cartoons, no illustrations, no anime. Everything must look like a real photograph or cinematic 3D render.',
+    rogerrabbit: 'CRITICAL ABSOLUTE RULE: The entire background environment and all non-target background elements MUST be 100% ultra-realistic photorealism, like a real photograph. The ONLY cartoons in the entire image should be the target characters. DO NOT illustrate the background.',
     stylistic:  'Bold graphic design aesthetic throughout — intentional composition, curated colour palette, expressive silhouettes. No cartoons.',
     comic:      'Classic comic-book art throughout — bold ink outlines, halftone shading, flat primary colours. No photorealism, no soft gradients.',
     wally:      'Dense hand-drawn crowd illustration style throughout — hundreds of tiny characters, bold flat colours, packed with meticulous detail.',

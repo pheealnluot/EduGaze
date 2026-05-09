@@ -40,6 +40,8 @@ exports.spotCharGenerate = onRequest(
 
   if (!apiKey) return res.status(503).json({ error: 'apiKey not configured' });
 
+  if (!apiKey) return res.status(503).json({ error: 'apiKey not configured' });
+
   const { theme: rawTheme, scene: rawScene, otherCount = 10, findCount = 1, bgStyle = 'kids', describeVisually = false, describeSceneVisually = false, targetImageUrl } = req.body || {};
   if (!rawTheme || !rawScene) return res.status(400).json({ error: 'theme and scene are required' });
 
@@ -134,10 +136,12 @@ exports.spotCharGenerate = onRequest(
                'NO cartoon outlines, NO flat colours, NO cel-shading, NO illustrated style anywhere in the image.',
     },
     rogerrabbit: {
-      prefix:  'WHO FRAMED ROGER RABBIT HYBRID STYLE — ',
-      suffix:  'Art style: A HYBRID image where the entire background environment and all generic background characters MUST be rendered in ultra-realistic, cinematic photography (photorealism). ' +
-               'However, the TARGET CHARACTERS MUST be rendered as completely 2D or 3D animated cartoons seamlessly integrated into this highly realistic world. ' +
-               'The contrast between the highly realistic physical world and the animated cartoon target characters must be stark and obvious, exactly like the movie Who Framed Roger Rabbit.',
+      prefix:  'PHOTOREALISTIC BACKGROUND WITH CARTOON TARGETS — ',
+      suffix:  'Art style: A HYBRID image. The ENTIRE BACKGROUND, ENVIRONMENT, AND ALL GENERIC BACKGROUND CHARACTERS MUST be STRICTLY HYPER-REALISTIC — rendered as a high-resolution photograph or cinematic 3D render. ' +
+               'Use cinematic lighting, real-world textures, physical depth of field, atmospheric perspective, and natural shadows. ' +
+               'Background characters must look like real human beings or real animals. ' +
+               'However, the TARGET CHARACTERS MUST be rendered as 2D or 3D animated cartoons seamlessly integrated into this highly realistic physical world. ' +
+               'CRITICAL RULE: The contrast between the highly realistic photograph background and the cartoon target characters must be stark and obvious.',
     },
     stylistic: {
       prefix:  'BOLD STYLISTIC DIGITAL ILLUSTRATION — ',
@@ -195,6 +199,7 @@ exports.spotCharGenerate = onRequest(
   // overriding photorealistic or other non-cartoon styles.
   const styleQuality = {
     realistic:  'CRITICAL: The ENTIRE image — background AND all characters — must be STRICTLY PHOTOREALISTIC. No cartoons, no illustrations, no anime. Everything must look like a real photograph or cinematic 3D render.',
+    rogerrabbit: 'CRITICAL ABSOLUTE RULE: The entire background environment and all non-target background elements MUST be 100% ultra-realistic photorealism, like a real photograph. The ONLY cartoons in the entire image should be the target characters. DO NOT illustrate the background.',
     stylistic:  'Bold graphic design aesthetic throughout — intentional composition, curated colour palette, expressive silhouettes. No cartoons.',
     comic:      'Classic comic-book art throughout — bold ink outlines, halftone shading, flat primary colours. No photorealism, no soft gradients.',
     wally:      'Dense hand-drawn crowd illustration style throughout — hundreds of tiny characters, bold flat colours, packed with meticulous detail.',
