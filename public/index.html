@@ -16,8 +16,13 @@
   <link rel="stylesheet" href="css/spot-char.css">
   <style>
     @keyframes compLoadPulse {
-      0%   { transform: translateX(-100%); }
-      100% { transform: translateX(250%); }
+      0% {
+        transform: translateX(-100%);
+      }
+
+      100% {
+        transform: translateX(250%);
+      }
     }
   </style>
 </head>
@@ -298,7 +303,8 @@
 
         <!-- Admin Comprehension Adventures Table -->
         <div id="admin-comp-adventures-wrap" style="margin-top:28px;">
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding-top:20px;border-top:1px solid rgba(255,255,255,0.06);">
+          <div
+            style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding-top:20px;border-top:1px solid rgba(255,255,255,0.06);">
             <span style="font-size:1rem;font-weight:900;color:#0d9488;">🎬</span>
             <h3 style="font-size:0.95rem;font-weight:800;color:#0d9488;margin:0;">Comprehension Adventures</h3>
             <span style="font-size:0.62rem;color:#475569;font-style:italic;">All users</span>
@@ -329,7 +335,8 @@
 
         <!-- Admin Spot the Character Table -->
         <div id="admin-stc-adventures-wrap" style="margin-top:28px;">
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding-top:20px;border-top:1px solid rgba(255,255,255,0.06);">
+          <div
+            style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding-top:20px;border-top:1px solid rgba(255,255,255,0.06);">
             <span style="font-size:1rem;font-weight:900;color:#06b6d4;">🔍</span>
             <h3 style="font-size:0.95rem;font-weight:800;color:#06b6d4;margin:0;">Spot the Character</h3>
             <span style="font-size:0.62rem;color:#475569;font-style:italic;">All users</span>
@@ -490,7 +497,8 @@
             <span style="font-size:1.2rem;font-weight:900;color:#0d9488;">🎬</span>
             <h3 style="font-size:1.1rem;font-weight:800;color:#0d9488;margin:0;">Comprehension Adventures</h3>
           </div>
-          <span style="font-size:0.68rem;color:#475569;font-style:italic;">Videos &amp; images you explored with Q&amp;A</span>
+          <span style="font-size:0.68rem;color:#475569;font-style:italic;">Videos &amp; images you explored with
+            Q&amp;A</span>
         </div>
         <div class="admin-table-wrap w-full" style="max-height:55vh;overflow-y:auto;">
           <div id="user-comp-loading" class="admin-empty" style="display:none;">
@@ -514,7 +522,8 @@
             </thead>
             <tbody id="user-comp-tbody"></tbody>
           </table>
-          <div id="user-comp-empty" class="admin-empty hidden">No comprehension adventures yet. Start one from the Knowledge Explorer!</div>
+          <div id="user-comp-empty" class="admin-empty hidden">No comprehension adventures yet. Start one from the
+            Knowledge Explorer!</div>
         </div>
       </div>
 
@@ -525,7 +534,8 @@
             <span style="font-size:1.2rem;font-weight:900;color:#06b6d4;">🔍</span>
             <h3 style="font-size:1.1rem;font-weight:800;color:#06b6d4;margin:0;">Spot the Character</h3>
           </div>
-          <span style="font-size:0.68rem;color:#475569;font-style:italic;">AI-generated hidden character game sessions</span>
+          <span style="font-size:0.68rem;color:#475569;font-style:italic;">AI-generated hidden character game
+            sessions</span>
         </div>
         <div class="admin-table-wrap w-full" style="max-height:55vh;overflow-y:auto;">
           <div id="user-stc-loading" class="admin-empty" style="display:none;">
@@ -550,7 +560,8 @@
             </thead>
             <tbody id="user-stc-tbody"></tbody>
           </table>
-          <div id="user-stc-empty" class="admin-empty hidden">No Spot the Character sessions yet. Play a game from the home screen!</div>
+          <div id="user-stc-empty" class="admin-empty hidden">No Spot the Character sessions yet. Play a game from the
+            home screen!</div>
         </div>
       </div>
     </div>
@@ -559,46 +570,61 @@
     <!-- ══════════════════════════════════════════════════════════ -->
     <!-- COMPREHENSION ADVENTURE VIEW                              -->
     <!-- ══════════════════════════════════════════════════════════ -->
-    <div id="view-comprehension" class="hidden" style="position:fixed;inset:0;z-index:500;background:#0a0f1a;display:none;flex-direction:column;">
+    <div id="view-comprehension" class="hidden"
+      style="position:fixed;inset:0;z-index:500;background:#0a0f1a;display:none;flex-direction:column;">
 
       <!-- ── Transition Stage ──────────────────────────────────────────── -->
-      <div id="comp-transition-stage" style="display:none;flex-direction:column;align-items:center;justify-content:center;width:100%;height:100%;background:linear-gradient(135deg,#020617,#0f172a);gap:24px;text-align:center;overflow:hidden;">
+      <div id="comp-transition-stage"
+        style="display:none;flex-direction:column;align-items:center;justify-content:center;width:100%;height:100%;background:linear-gradient(135deg,#020617,#0f172a);gap:24px;text-align:center;overflow:hidden;">
         <video id="comp-trans-video" style="display:none;width:100%;height:100%;object-fit:cover;"></video>
-        <div id="comp-trans-static-content" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px;">
-          <div id="comp-trans-character-box" style="width:180px;height:180px;display:flex;align-items:center;justify-content:center;"></div>
+        <div id="comp-trans-static-content"
+          style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px;">
+          <div id="comp-trans-character-box"
+            style="width:180px;height:180px;display:flex;align-items:center;justify-content:center;"></div>
           <div style="max-width:500px;padding:0 20px;">
-            <h2 style="font-size:2rem;font-weight:900;color:#fff;margin-bottom:8px;" id="comp-trans-title">Great watching!</h2>
-            <p style="font-size:1.1rem;color:#0d9488;font-weight:700;" id="comp-trans-msg">Now, let's answer the questions!</p>
+            <h2 style="font-size:2rem;font-weight:900;color:#fff;margin-bottom:8px;" id="comp-trans-title">Great
+              watching!</h2>
+            <p style="font-size:1.1rem;color:#0d9488;font-weight:700;" id="comp-trans-msg">Now, let's answer the
+              questions!</p>
           </div>
         </div>
       </div>
 
       <!-- ── Question Stage ─────────────────────────────────────────────── -->
       <!-- flex-row: left sidebar + main content, mirrors image quiz layout -->
-      <div id="comp-question-stage" style="display:none;flex-direction:row;width:100%;height:100%;position:relative;flex:1;min-height:0;overflow:hidden;">
+      <div id="comp-question-stage"
+        style="display:none;flex-direction:row;width:100%;height:100%;position:relative;flex:1;min-height:0;overflow:hidden;">
 
         <!-- Left Sidebar -->
-        <div id="comp-sidebar" style="width:56px;min-width:56px;height:100%;background:rgba(15,23,42,0.98);border-right:1px solid rgba(255,255,255,0.08);display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:12px 0;flex-shrink:0;z-index:20;">
+        <div id="comp-sidebar"
+          style="width:56px;min-width:56px;height:100%;background:rgba(15,23,42,0.98);border-right:1px solid rgba(255,255,255,0.08);display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:12px 0;flex-shrink:0;z-index:20;">
           <div style="display:flex;flex-direction:column;align-items:center;gap:10px;">
             <span class="quiz-sidebar-logo" id="comp-sb-home" title="Double-click: back to home">EduGaze</span>
             <div id="comp-sidebar-user" class="quiz-sidebar-user" title="Guest">G</div>
           </div>
           <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
             <button id="comp-btn-replay" class="quiz-sidebar-btn" title="Replay Video (double-click)">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.5"/>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="1 4 1 10 7 10" />
+                <path d="M3.51 15a9 9 0 1 0 .49-4.5" />
               </svg>
             </button>
             <button id="comp-btn-settings" class="quiz-sidebar-btn" title="Quiz Settings (double-click)">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="3" />
+                <path
+                  d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
               </svg>
             </button>
           </div>
           <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
             <button id="comp-btn-exit" class="quiz-sidebar-btn" title="Exit Adventure" style="color:#f87171;">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
             </button>
           </div>
@@ -607,8 +633,10 @@
         <!-- Main content panel -->
         <div id="comp-main-panel" style="flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;">
           <!-- Score bar -->
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 16px;background:rgba(2,6,23,0.7);flex-shrink:0;">
-            <div style="font-size:0.7rem;font-weight:700;color:#0d9488;text-transform:uppercase;letter-spacing:0.08em;">Comprehension Questions</div>
+          <div
+            style="display:flex;align-items:center;justify-content:space-between;padding:8px 16px;background:rgba(2,6,23,0.7);flex-shrink:0;">
+            <div style="font-size:0.7rem;font-weight:700;color:#0d9488;text-transform:uppercase;letter-spacing:0.08em;">
+              Comprehension Questions</div>
             <div style="display:flex;align-items:center;gap:10px;">
               <span id="comp-q-counter" style="font-size:0.78rem;color:#64748b;font-weight:600;">Q 1 / 5</span>
               <span id="comp-score-badge" style="font-size:0.78rem;font-weight:900;color:#0d9488;">⭐ 0</span>
@@ -638,7 +666,8 @@
             style="display:none;position:absolute;inset:0;z-index:300;background:rgba(2,6,23,0.92);flex-direction:column;align-items:center;justify-content:flex-start;gap:20px;text-align:center;padding-top:4vh;padding-left:24px;padding-right:24px;">
 
             <div style="font-size:3rem;font-weight:900;color:#f1f5f9;" id="comp-win-message">Adventure Complete!</div>
-            <div style="font-size:1.5rem;color:#0d9488;font-weight:700;" id="comp-win-score">You answered X out of Y correctly!</div>
+            <div style="font-size:1.5rem;color:#0d9488;font-weight:700;" id="comp-win-score">You answered X out of Y
+              correctly!</div>
             <div style="display:flex;gap:16px;margin-top:4px;">
               <button onclick="window.compPlayAgain()"
                 style="padding:18px 40px;border:none;border-radius:14px;background:linear-gradient(135deg,#0d9488,#0284c7);color:#fff;font-weight:800;font-size:1.4rem;cursor:pointer;">
@@ -649,7 +678,9 @@
                 🏠 Exit
               </button>
             </div>
-            <div id="comp-win-char-box" style="flex:1;min-height:0;max-height:280px;display:flex;align-items:center;justify-content:center;"></div>
+            <div id="comp-win-char-box"
+              style="flex:1;min-height:0;max-height:280px;display:flex;align-items:center;justify-content:center;">
+            </div>
           </div>
         </div>
       </div>
@@ -672,136 +703,156 @@
               style="display:inline-flex;align-items:center;gap:8px;background:rgba(96,165,250,0.08);border:1.5px solid rgba(96,165,250,0.22);border-radius:999px;padding:7px 20px 7px 14px;cursor:pointer;transition:all 0.2s ease;text-decoration:none;"
               onmouseover="this.style.background='rgba(96,165,250,0.16)';this.style.borderColor='rgba(96,165,250,0.5)';this.style.boxShadow='0 0 18px rgba(96,165,250,0.18)';"
               onmouseout="this.style.background='rgba(96,165,250,0.08)';this.style.borderColor='rgba(96,165,250,0.22)';this.style.boxShadow='';">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;opacity:0.8;">
-                <path d="M15 18l-6-6 6-6"/>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2.5"
+                stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;opacity:0.8;">
+                <path d="M15 18l-6-6 6-6" />
               </svg>
-              <span style="font-size:0.82rem;font-weight:900;letter-spacing:0.07em;color:#60a5fa;text-transform:uppercase;">EduGaze</span>
+              <span
+                style="font-size:0.82rem;font-weight:900;letter-spacing:0.07em;color:#60a5fa;text-transform:uppercase;">EduGaze</span>
             </button>
           </div>
           <h2 class="stc-game-title">🔍 Spot the Character</h2>
           <p class="stc-game-subtitle">AI-powered hidden character game for sharp eyes!</p>
 
-          <!-- Number of Characters to Find (NEW — at top) -->
-          <div class="stc-field-group">
-            <label class="stc-field-label">Number of Characters to Find</label>
-            <div class="stc-slider-row">
-              <input type="range" id="stc-find-slider" class="stc-slider"
-                min="1" max="5" step="1" value="1" style="--pct:0%">
-              <div class="stc-slider-value" id="stc-find-value">1</div>
-            </div>
-            <div class="stc-slider-labels">
-              <span>1 (Easy)</span>
-              <span>3</span>
-              <span>5 (Hard)</span>
-            </div>
-          </div>
+          <!-- ═══ Two-column grid ═══ -->
+          <div class="stc-settings-grid">
 
-          <!-- Theme of characters to find -->
-          <div class="stc-field-group">
-            <label class="stc-field-label" for="stc-char-input">Theme of Characters to Find</label>
-            <div class="stc-input-row">
-              <div class="stc-dropdown-wrap" style="flex:1;position:relative;">
-                <input type="text" id="stc-char-input" class="stc-text-input"
-                  placeholder="e.g. Peppa Pig, SpongeBob, Pokémon…"
-                  autocomplete="off" spellcheck="false">
-                <div id="stc-char-dropdown" class="stc-history-dropdown"></div>
+            <!-- LEFT COLUMN: Text inputs -->
+
+            <!-- Theme of characters to find -->
+            <div class="stc-field-group">
+              <label class="stc-field-label" for="stc-char-input">Theme of Characters to Find</label>
+              <div class="stc-input-row">
+                <div class="stc-dropdown-wrap" style="flex:1;position:relative;">
+                  <input type="text" id="stc-char-input" class="stc-text-input"
+                    placeholder="e.g. Peppa Pig, SpongeBob, Pokémon…" autocomplete="off" spellcheck="false">
+                  <div id="stc-char-dropdown" class="stc-history-dropdown"></div>
+                </div>
+                <button id="stc-char-clear" class="stc-clear-btn" title="Clear">✕ Clear</button>
               </div>
-              <button id="stc-char-clear" class="stc-clear-btn" title="Clear">✕ Clear</button>
+              <!-- Describe visually toggle -->
+              <div style="margin-top:8px;display:flex;align-items:flex-start;gap:8px;">
+                <input type="checkbox" id="stc-describe-chk"
+                  style="width:16px;height:16px;accent-color:#06b6d4;cursor:pointer;margin-top:1px;flex-shrink:0;">
+                <label for="stc-describe-chk" style="cursor:pointer;user-select:none;">
+                  <span style="font-size:0.72rem;font-weight:700;color:#94a3b8;">Describe visually</span>
+                  <span style="font-size:0.62rem;color:#475569;display:block;margin-top:1px;">Translates franchise names
+                    into visual descriptions</span>
+                </label>
+              </div>
             </div>
-            <!-- Describe visually toggle -->
-            <div style="margin-top:10px;display:flex;align-items:flex-start;gap:8px;">
-              <input type="checkbox" id="stc-describe-chk"
-                style="width:16px;height:16px;accent-color:#06b6d4;cursor:pointer;margin-top:1px;flex-shrink:0;">
-              <label for="stc-describe-chk" style="cursor:pointer;user-select:none;">
-                <span style="font-size:0.74rem;font-weight:700;color:#94a3b8;">Describe visually</span>
-                <span style="font-size:0.65rem;color:#475569;display:block;margin-top:2px;">Translates franchise names into visual descriptions so the art style isn't overridden by the franchise's look</span>
+
+            <!-- RIGHT COLUMN: Find count slider -->
+            <div class="stc-field-group">
+              <label class="stc-field-label">Characters to Find</label>
+              <div class="stc-slider-row">
+                <input type="range" id="stc-find-slider" class="stc-slider" min="1" max="5" step="1" value="1"
+                  style="--pct:0%">
+                <div class="stc-slider-value" id="stc-find-value">1</div>
+              </div>
+              <div class="stc-slider-labels">
+                <span>1 (Easy)</span>
+                <span>3</span>
+                <span>5 (Hard)</span>
+              </div>
+            </div>
+
+            <!-- LEFT COLUMN: Background Scene -->
+            <div class="stc-field-group">
+              <label class="stc-field-label" for="stc-scene-input">Background Scene</label>
+              <div class="stc-input-row">
+                <div class="stc-dropdown-wrap" style="flex:1;position:relative;">
+                  <input type="text" id="stc-scene-input" class="stc-text-input"
+                    placeholder="e.g. My Neighbour Totoro, a snowy park…" autocomplete="off" spellcheck="false">
+                  <div id="stc-scene-dropdown" class="stc-history-dropdown"></div>
+                </div>
+                <button id="stc-scene-clear" class="stc-clear-btn" title="Clear">✕ Clear</button>
+              </div>
+              <!-- Describe scene visually toggle -->
+              <div style="margin-top:8px;display:flex;align-items:flex-start;gap:8px;">
+                <input type="checkbox" id="stc-describe-scene-chk"
+                  style="width:16px;height:16px;accent-color:#06b6d4;cursor:pointer;margin-top:1px;flex-shrink:0;">
+                <label for="stc-describe-scene-chk" style="cursor:pointer;user-select:none;">
+                  <span style="font-size:0.72rem;font-weight:700;color:#94a3b8;">Describe visually</span>
+                  <span style="font-size:0.62rem;color:#475569;display:block;margin-top:1px;">Translates franchise/world
+                    names into visual descriptions</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- RIGHT COLUMN: Background character count -->
+            <div class="stc-field-group">
+              <label class="stc-field-label">Background Characters</label>
+              <div class="stc-slider-row">
+                <input type="range" id="stc-count-slider" class="stc-slider" min="2" max="50" step="1" value="10"
+                  style="--pct:16.7%">
+                <div class="stc-slider-value" id="stc-count-value">10</div>
+              </div>
+              <div class="stc-slider-labels">
+                <span>2 (Easy)</span>
+                <span>25 (Medium)</span>
+                <span>50 (Hard)</span>
+              </div>
+            </div>
+
+            <!-- FULL WIDTH: Background Art Style -->
+            <div class="stc-field-group stc-field-full">
+              <label class="stc-field-label">Background Art Style</label>
+              <div id="stc-bg-style-group" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;">
+                <button type="button" class="stc-style-btn" data-style="wally" id="stc-style-wally">Where's
+                  Wally</button>
+                <button type="button" class="stc-style-btn" data-style="realistic"
+                  id="stc-style-realistic">Realistic</button>
+                <button type="button" class="stc-style-btn" data-style="stylistic"
+                  id="stc-style-stylistic">Stylistic</button>
+                <button type="button" class="stc-style-btn" data-style="comic" id="stc-style-comic">Comic</button>
+                <button type="button" class="stc-style-btn stc-style-btn--active" data-style="kids"
+                  id="stc-style-kids">Kids Style</button>
+                <button type="button" class="stc-style-btn" data-style="scene" id="stc-style-scene">Scene Style</button>
+                <button type="button" class="stc-style-btn" data-style="character" id="stc-style-character">Character
+                  Style</button>
+              </div>
+            </div>
+
+            <!-- FULL WIDTH: Dwell Time + AI Tier in a row -->
+            <div class="stc-field-group">
+              <label class="stc-field-label">Dwell Duration
+                <span
+                  style="font-weight:500;color:#475569;text-transform:none;letter-spacing:0;margin-left:4px;font-size:0.6rem;">(hover
+                  to find)</span>
+              </label>
+              <div class="stc-slider-row">
+                <input type="range" id="stc-dwell-slider" class="stc-slider" min="500" max="5000" step="100"
+                  value="2000" style="--pct:31.6%">
+                <div class="stc-slider-value" id="stc-dwell-value">2.0s</div>
+              </div>
+              <div class="stc-slider-labels">
+                <span>0.5s (Fast)</span>
+                <span>2.5s</span>
+                <span>5s (Slow)</span>
+              </div>
+            </div>
+
+            <!-- AI Tier Toggle -->
+            <div class="stc-field-group" style="display:flex;align-items:center;">
+              <label class="stc-checkbox-row" for="stc-paid-tier-chk"
+                style="display:flex;align-items:center;gap:12px;cursor:pointer;user-select:none;">
+                <span style="position:relative;flex-shrink:0;">
+                  <input type="checkbox" id="stc-paid-tier-chk"
+                    style="width:18px;height:18px;accent-color:#8b5cf6;cursor:pointer;">
+                </span>
+                <span>
+                  <span
+                    style="font-size:0.78rem;font-weight:700;color:#c4b5fd;letter-spacing:0.04em;text-transform:uppercase;">⚡
+                    Use Paid AI Tier</span>
+                  <br>
+                  <span style="font-size:0.68rem;color:#475569;font-weight:500;">Paid: Imagen 4 · Free: Gemini Flash
+                    🍌</span>
+                </span>
               </label>
             </div>
-          </div>
 
-          <!-- Background Scene -->
-          <div class="stc-field-group">
-            <label class="stc-field-label" for="stc-scene-input">Background Scene</label>
-            <div class="stc-input-row">
-              <div class="stc-dropdown-wrap" style="flex:1;position:relative;">
-                <input type="text" id="stc-scene-input" class="stc-text-input"
-                  placeholder="e.g. My Neighbour Totoro, a snowy park…"
-                  autocomplete="off" spellcheck="false">
-                <div id="stc-scene-dropdown" class="stc-history-dropdown"></div>
-              </div>
-              <button id="stc-scene-clear" class="stc-clear-btn" title="Clear">✕ Clear</button>
-            </div>
-            <!-- Describe scene visually toggle -->
-            <div style="margin-top:10px;display:flex;align-items:flex-start;gap:8px;">
-              <input type="checkbox" id="stc-describe-scene-chk"
-                style="width:16px;height:16px;accent-color:#06b6d4;cursor:pointer;margin-top:1px;flex-shrink:0;">
-              <label for="stc-describe-scene-chk" style="cursor:pointer;user-select:none;">
-                <span style="font-size:0.74rem;font-weight:700;color:#94a3b8;">Describe visually</span>
-                <span style="font-size:0.65rem;color:#475569;display:block;margin-top:2px;">Translates franchise/world names into visual descriptions so the art style isn't overridden</span>
-              </label>
-            </div>
-          </div>
-
-          <!-- Background Art Style -->
-          <div class="stc-field-group">
-            <label class="stc-field-label">Background Art Style</label>
-            <div id="stc-bg-style-group" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;">
-              <button type="button" class="stc-style-btn" data-style="wally" id="stc-style-wally">Where's Wally</button>
-              <button type="button" class="stc-style-btn" data-style="realistic" id="stc-style-realistic">Realistic</button>
-              <button type="button" class="stc-style-btn" data-style="stylistic" id="stc-style-stylistic">Stylistic</button>
-              <button type="button" class="stc-style-btn" data-style="comic" id="stc-style-comic">Comic</button>
-              <button type="button" class="stc-style-btn stc-style-btn--active" data-style="kids" id="stc-style-kids">Kids Style</button>
-              <button type="button" class="stc-style-btn" data-style="scene" id="stc-style-scene">Scene Style</button>
-              <button type="button" class="stc-style-btn" data-style="character" id="stc-style-character">Character Style</button>
-            </div>
-          </div>
-
-          <!-- Number of Other Characters -->
-          <div class="stc-field-group">
-            <label class="stc-field-label">Number of Background Characters</label>
-            <div class="stc-slider-row">
-              <input type="range" id="stc-count-slider" class="stc-slider"
-                min="2" max="50" step="1" value="10" style="--pct:16.7%">
-              <div class="stc-slider-value" id="stc-count-value">10</div>
-            </div>
-            <div class="stc-slider-labels">
-              <span>2 (Easy)</span>
-              <span>25 (Medium)</span>
-              <span>50 (Hard)</span>
-            </div>
-          </div>
-
-          <!-- Dwell Time -->
-          <div class="stc-field-group" style="border-top:1px solid rgba(99,102,241,0.1);padding-top:20px;margin-top:4px;">
-            <label class="stc-field-label">Hold-to-Select Duration
-              <span style="font-weight:500;color:#475569;text-transform:none;letter-spacing:0;margin-left:6px;">(hover over a character to find them)</span>
-            </label>
-            <div class="stc-slider-row">
-              <input type="range" id="stc-dwell-slider" class="stc-slider"
-                min="500" max="5000" step="100" value="2000" style="--pct:31.6%">
-              <div class="stc-slider-value" id="stc-dwell-value">2.0s</div>
-            </div>
-            <div class="stc-slider-labels">
-              <span>0.5s (Fast)</span>
-              <span>2.5s</span>
-              <span>5s (Slow)</span>
-            </div>
-          </div>
-
-          <!-- AI Tier Toggle -->
-          <div class="stc-field-group" style="border-top:1px solid rgba(99,102,241,0.1);padding-top:18px;margin-top:4px;">
-            <label class="stc-checkbox-row" for="stc-paid-tier-chk" style="display:flex;align-items:center;gap:12px;cursor:pointer;user-select:none;">
-              <span style="position:relative;flex-shrink:0;">
-                <input type="checkbox" id="stc-paid-tier-chk"
-                  style="width:18px;height:18px;accent-color:#8b5cf6;cursor:pointer;">
-              </span>
-              <span>
-                <span style="font-size:0.82rem;font-weight:700;color:#c4b5fd;letter-spacing:0.04em;text-transform:uppercase;">⚡ Use Paid AI Tier</span>
-                <br>
-                <span style="font-size:0.72rem;color:#475569;font-weight:500;">Paid: Imagen 4 (~$0.13/image) &nbsp;·&nbsp; Free: Gemini 3.1 Flash Image 🍌</span>
-              </span>
-            </label>
-          </div>
+          </div><!-- /stc-settings-grid -->
 
           <!-- Start Button -->
           <button id="stc-start-btn" class="stc-start-btn">🎮 Start Game</button>
@@ -812,11 +863,14 @@
       </div>
 
       <!-- Loading View -->
-      <div id="stc-loading-view" style="display:none;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:24px;text-align:center;width:100%;">
+      <div id="stc-loading-view"
+        style="display:none;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:24px;text-align:center;width:100%;">
         <div class="stc-spinner-ring"></div>
         <div class="stc-loading-title">🎨 Creating your scene…</div>
         <div class="stc-loading-tip" id="stc-loading-tip">Painting the world, please wait…</div>
-        <div id="stc-loading-counter" style="font-size:2rem;font-weight:900;color:#6366f1;letter-spacing:0.05em;font-variant-numeric:tabular-nums;text-shadow:0 0 20px rgba(99,102,241,0.5);">0s</div>
+        <div id="stc-loading-counter"
+          style="font-size:2rem;font-weight:900;color:#6366f1;letter-spacing:0.05em;font-variant-numeric:tabular-nums;text-shadow:0 0 20px rgba(99,102,241,0.5);">
+          0s</div>
       </div>
 
       <!-- Game View -->
@@ -828,10 +882,12 @@
             <span class="stc-game-attempts" id="stc-attempts-display">Attempts: 0</span>
           </div>
           <div class="stc-game-btns">
-            <button class="stc-hint-btn" onclick="window.stcOpenSettings()" style="border-color:rgba(99,102,241,0.3);color:#818cf8;">⚙️ Settings</button>
+            <button class="stc-hint-btn" onclick="window.stcOpenSettings()"
+              style="border-color:rgba(99,102,241,0.3);color:#818cf8;">⚙️ Settings</button>
             <button class="stc-hint-btn" onclick="window.stcShowHint()" title="Show a hint">💡 Hint</button>
             <button class="stc-playagain-btn" onclick="window.stcPlayAgain()">🔄 Play Again</button>
-            <button class="stc-playagain-btn" onclick="window.stcGoHome()" style="border-color:rgba(148,163,184,0.2);color:#64748b;">🏠 Home</button>
+            <button class="stc-playagain-btn" onclick="window.stcGoHome()"
+              style="border-color:rgba(148,163,184,0.2);color:#64748b;">🏠 Home</button>
           </div>
         </div>
 
@@ -1146,7 +1202,8 @@
           <!-- ── Mode Toggle: Quiz / Comprehension ── -->
           <div id="qs-mode-toggle-wrap" class="flex rounded-xl overflow-hidden border border-slate-700">
             <button id="qs-mode-quiz" class="qs-mode-btn flex-1" onclick="window._qsModeSwitch('quiz')">🎯 Quiz</button>
-            <button id="qs-mode-comp" class="qs-mode-btn flex-1" onclick="window._qsModeSwitch('comp')">🎬 Comprehension</button>
+            <button id="qs-mode-comp" class="qs-mode-btn flex-1" onclick="window._qsModeSwitch('comp')">🎬
+              Comprehension</button>
           </div>
 
           <!-- ── Comprehension URL section (hidden unless comp mode) ── -->
@@ -1161,42 +1218,48 @@
             <!-- ── Find a Video / Find a Picture buttons ── -->
             <div style="display:flex;flex-direction:column;gap:8px;">
               <div style="display:flex;gap:8px;">
-                <button id="qs-find-video-btn" onclick="window._qsFindVideo()"
-                  style="flex:1;display:flex;align-items:center;justify-content:center;gap:7px;
+                <button id="qs-find-video-btn" onclick="window._qsFindVideo()" style="flex:1;display:flex;align-items:center;justify-content:center;gap:7px;
                          padding:9px 12px;border-radius:0.85rem;font-size:0.8rem;font-weight:800;
                          background:#1e293b;
                          border:1.5px solid rgba(148,163,184,0.2);color:#94a3b8;cursor:pointer;
                          transition:all 0.2s;"
                   onmouseenter="this.style.background='#334155';this.style.borderColor='rgba(148,163,184,0.45)';this.style.color='#f1f5f9'"
                   onmouseleave="this.style.background='#1e293b';this.style.borderColor='rgba(148,163,184,0.2)';this.style.color='#94a3b8'">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
                   Find a Video
                 </button>
-                <button id="qs-find-picture-btn" onclick="window._qsFindPicture()"
-                  style="flex:1;display:flex;align-items:center;justify-content:center;gap:7px;
+                <button id="qs-find-picture-btn" onclick="window._qsFindPicture()" style="flex:1;display:flex;align-items:center;justify-content:center;gap:7px;
                          padding:9px 12px;border-radius:0.85rem;font-size:0.8rem;font-weight:800;
                          background:#1e293b;
                          border:1.5px solid rgba(148,163,184,0.2);color:#94a3b8;cursor:pointer;
                          transition:all 0.2s;"
                   onmouseenter="this.style.background='#334155';this.style.borderColor='rgba(148,163,184,0.45)';this.style.color='#f1f5f9'"
                   onmouseleave="this.style.background='#1e293b';this.style.borderColor='rgba(148,163,184,0.2)';this.style.color='#94a3b8'">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <circle cx="8.5" cy="8.5" r="1.5" />
+                    <polyline points="21 15 16 10 5 21" />
+                  </svg>
                   Find a Picture
                 </button>
               </div>
               <!-- Max video length row -->
               <div id="qs-max-video-len-row" style="display:flex;align-items:center;gap:10px;padding:6px 10px;
                    background:#1e293b;border-radius:0.75rem;border:1px solid rgba(148,163,184,0.12);">
-                <label style="font-size:0.7rem;font-weight:700;color:#94a3b8;white-space:nowrap;flex-shrink:0;">🎞 Max video length:</label>
+                <label style="font-size:0.7rem;font-weight:700;color:#94a3b8;white-space:nowrap;flex-shrink:0;">🎞 Max
+                  video length:</label>
                 <input type="range" id="qs-max-video-len-slider" min="1" max="30" step="1" value="10"
                   style="flex:1;height:4px;accent-color:#64748b;"
                   oninput="document.getElementById('qs-max-video-len-display').textContent=this.value+' min'">
                 <span id="qs-max-video-len-display"
-                  style="font-size:0.75rem;font-weight:900;color:#cbd5e1;width:52px;text-align:right;flex-shrink:0;">10 min</span>
+                  style="font-size:0.75rem;font-weight:900;color:#cbd5e1;width:52px;text-align:right;flex-shrink:0;">10
+                  min</span>
               </div>
               <!-- Require transcript checkbox -->
-              <label id="qs-require-transcript-row"
-                style="display:flex;align-items:center;gap:8px;padding:7px 10px;
+              <label id="qs-require-transcript-row" style="display:flex;align-items:center;gap:8px;padding:7px 10px;
                        background:#1e293b;border-radius:0.75rem;border:1px solid rgba(148,163,184,0.12);
                        cursor:pointer;user-select:none;"
                 title="Only find videos that have captions — ensures questions are grounded in actual video content">
@@ -1215,21 +1278,19 @@
               <div style="display:flex;gap:6px;align-items:stretch;">
                 <input id="qs-comp-url" type="url" style="flex:1;"
                   placeholder="https://youtube.com/watch?v=... or https://example.com/image.jpg"
-                  oninput="window._qsCompUrlCheck(this.value)"
-                  onfocus="window._qsHistoryShow()">
-                <button id="qs-comp-history-btn" onclick="window._qsHistoryToggle()"
-                  title="Recent URLs"
-                  style="flex-shrink:0;width:36px;display:flex;align-items:center;justify-content:center;
+                  oninput="window._qsCompUrlCheck(this.value)" onfocus="window._qsHistoryShow()">
+                <button id="qs-comp-history-btn" onclick="window._qsHistoryToggle()" title="Recent URLs" style="flex-shrink:0;width:36px;display:flex;align-items:center;justify-content:center;
                          background:rgba(15,23,42,0.7);border:1.5px solid rgba(99,102,241,0.25);
                          border-radius:0.75rem;color:#64748b;cursor:pointer;transition:all 0.2s;"
                   onmouseenter="this.style.color='#a78bfa';this.style.borderColor='rgba(139,92,246,0.6)'"
                   onmouseleave="this.style.color='#64748b';this.style.borderColor='rgba(99,102,241,0.25)'">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <polyline points="12 6 12 12 16 14" />
                   </svg>
                 </button>
-                <button id="qs-comp-url-clear" onclick="window._qsCompUrlClear()"
-                  title="Clear URL"
+                <button id="qs-comp-url-clear" onclick="window._qsCompUrlClear()" title="Clear URL"
                   style="flex-shrink:0;width:36px;display:flex;align-items:center;justify-content:center;
                          background:rgba(15,23,42,0.7);border:1.5px solid rgba(248,113,113,0.2);
                          border-radius:0.75rem;color:#64748b;cursor:pointer;transition:all 0.2s;font-size:1.1rem;line-height:1;"
@@ -1237,8 +1298,7 @@
                   onmouseleave="this.style.color='#64748b';this.style.borderColor='rgba(248,113,113,0.2)'">&#x2715;</button>
               </div>
               <!-- History dropdown -->
-              <div id="qs-comp-history-dropdown"
-                style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:9999;
+              <div id="qs-comp-history-dropdown" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:9999;
                        background:linear-gradient(145deg,#1e293b,#0f172a);
                        border:1.5px solid rgba(139,92,246,0.25);border-radius:0.85rem;
                        box-shadow:0 12px 32px rgba(0,0,0,0.5);overflow:hidden;max-height:320px;overflow-y:auto;overflow-x:hidden;
@@ -1249,27 +1309,33 @@
             </div>
             <div id="qs-comp-url-feedback" class="info">Paste a YouTube video URL or a direct image URL.</div>
             <!-- Media preview card — shown when a valid URL is detected -->
-            <div id="qs-comp-preview" style="display:none;border-radius:12px;overflow:hidden;border:1.5px solid rgba(139,92,246,0.2);background:rgba(15,23,42,0.7);flex-direction:row;gap:0;align-items:stretch;margin-top:2px;">
-              <div id="qs-comp-preview-thumb" style="flex-shrink:0;width:120px;min-height:68px;background:#0f172a;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;">
+            <div id="qs-comp-preview"
+              style="display:none;border-radius:12px;overflow:hidden;border:1.5px solid rgba(139,92,246,0.2);background:rgba(15,23,42,0.7);flex-direction:row;gap:0;align-items:stretch;margin-top:2px;">
+              <div id="qs-comp-preview-thumb"
+                style="flex-shrink:0;width:120px;min-height:68px;background:#0f172a;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;">
                 <!-- filled by JS -->
               </div>
-              <div style="flex:1;padding:10px 12px;display:flex;flex-direction:column;justify-content:center;gap:4px;min-width:0;">
-                <div id="qs-comp-preview-title" style="font-size:0.78rem;font-weight:700;color:#e2e8f0;line-height:1.3;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">Loading…</div>
-                <div id="qs-comp-preview-meta" style="font-size:0.65rem;color:#64748b;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
+              <div
+                style="flex:1;padding:10px 12px;display:flex;flex-direction:column;justify-content:center;gap:4px;min-width:0;">
+                <div id="qs-comp-preview-title"
+                  style="font-size:0.78rem;font-weight:700;color:#e2e8f0;line-height:1.3;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">
+                  Loading…</div>
+                <div id="qs-comp-preview-meta"
+                  style="font-size:0.65rem;color:#64748b;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                </div>
               </div>
             </div>
             <!-- Time limit row — shown only for YouTube URLs (JS toggles visibility) -->
-            <div id="qs-comp-timelimit-row"
-              style="display:none;align-items:center;gap:10px;margin-top:2px;">
-              <label style="font-size:0.7rem;font-weight:700;color:#94a3b8;white-space:nowrap;flex-shrink:0;">⏱ Stop after</label>
+            <div id="qs-comp-timelimit-row" style="display:none;align-items:center;gap:10px;margin-top:2px;">
+              <label style="font-size:0.7rem;font-weight:700;color:#94a3b8;white-space:nowrap;flex-shrink:0;">⏱ Stop
+                after</label>
               <input type="range" id="qs-comp-timelimit-slider" min="0" max="600" step="5" value="0"
-                style="flex:1;height:4px;accent-color:#f59e0b;"
-                oninput="window._qsTimeLimitSync(this.value)">
+                style="flex:1;height:4px;accent-color:#f59e0b;" oninput="window._qsTimeLimitSync(this.value)">
               <span id="qs-comp-timelimit-display"
-                style="font-size:0.75rem;font-weight:900;color:#f59e0b;width:90px;text-align:right;flex-shrink:0;">No limit</span>
+                style="font-size:0.75rem;font-weight:900;color:#f59e0b;width:90px;text-align:right;flex-shrink:0;">No
+                limit</span>
             </div>
-            <p id="qs-comp-timelimit-hint"
-              style="display:none;font-size:0.65rem;color:#475569;margin:0;">
+            <p id="qs-comp-timelimit-hint" style="display:none;font-size:0.65rem;color:#475569;margin:0;">
               Stops the video at this point. The AI will only ask about content up to this time. (0 = no limit)
             </p>
           </div>
@@ -1277,96 +1343,98 @@
           <!-- ── Quiz-only sections (hidden in Comprehension mode) ── -->
           <div id="qs-quiz-only-sections">
 
-          <!-- Question Source -->
-          <div class="space-y-3">
-            <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">📡 Question Source</label>
-            <div class="grid grid-cols-2 gap-2">
-              <button id="qsrc-btn-ai" class="qsrc-pill active-source"
-                title="Questions are generated live by Gemini AI, personalised to the selected subjects and age">
-                🤖 AI Generated
-              </button>
-              <button id="qsrc-btn-bank" class="qsrc-pill"
-                title="Questions are drawn from the built-in question bank — no internet needed">
-                📚 Question Bank
-              </button>
+            <!-- Question Source -->
+            <div class="space-y-3">
+              <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">📡 Question Source</label>
+              <div class="grid grid-cols-2 gap-2">
+                <button id="qsrc-btn-ai" class="qsrc-pill active-source"
+                  title="Questions are generated live by Gemini AI, personalised to the selected subjects and age">
+                  🤖 AI Generated
+                </button>
+                <button id="qsrc-btn-bank" class="qsrc-pill"
+                  title="Questions are drawn from the built-in question bank — no internet needed">
+                  📚 Question Bank
+                </button>
+              </div>
+              <p class="text-[10px] text-slate-500">AI generates fresh questions every time. Question Bank uses the
+                built-in set (no AI needed).</p>
             </div>
-            <p class="text-[10px] text-slate-500">AI generates fresh questions every time. Question Bank uses the
-              built-in set (no AI needed).</p>
-          </div>
 
-          <!-- Subjects -->
-          <div class="space-y-3">
-            <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">Subjects</label>
-            <div class="flex flex-wrap gap-2" id="quiz-subject-chips">
-              <span class="quiz-subject-chip" data-subject="English">📖 English</span>
-              <span class="quiz-subject-chip" data-subject="Chinese">🈶 Chinese</span>
-              <span class="quiz-subject-chip" data-subject="Pure Chinese">🀄 Pure Chinese</span>
-              <span class="quiz-subject-chip" data-subject="Math">🔢 Math</span>
-              <span class="quiz-subject-chip" data-subject="Science">🔬 Science</span>
-              <span class="quiz-subject-chip" data-subject="General Knowledge">🌍 General Knowledge</span>
+            <!-- Subjects -->
+            <div class="space-y-3">
+              <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">Subjects</label>
+              <div class="flex flex-wrap gap-2" id="quiz-subject-chips">
+                <span class="quiz-subject-chip" data-subject="English">📖 English</span>
+                <span class="quiz-subject-chip" data-subject="Chinese">🈶 Chinese</span>
+                <span class="quiz-subject-chip" data-subject="Pure Chinese">🀄 Pure Chinese</span>
+                <span class="quiz-subject-chip" data-subject="Math">🔢 Math</span>
+                <span class="quiz-subject-chip" data-subject="Science">🔬 Science</span>
+                <span class="quiz-subject-chip" data-subject="General Knowledge">🌍 General Knowledge</span>
+              </div>
+              <!-- Custom subject free text -->
+              <div class="mt-2">
+                <input type="text" id="quiz-custom-subject"
+                  placeholder="✏️ Custom topic (e.g. Space, Dinosaurs, Coding)…"
+                  class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/40 transition-all">
+              </div>
+              <p class="text-[10px] text-slate-500">Select subjects and/or type a custom topic.</p>
             </div>
-            <!-- Custom subject free text -->
-            <div class="mt-2">
-              <input type="text" id="quiz-custom-subject" placeholder="✏️ Custom topic (e.g. Space, Dinosaurs, Coding)…"
-                class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/40 transition-all">
-            </div>
-            <p class="text-[10px] text-slate-500">Select subjects and/or type a custom topic.</p>
-          </div>
 
-          <!-- Content Type -->
-          <div class="space-y-3 border-t border-slate-800 pt-5">
-            <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">🖼️ Content Type</label>
-            <div class="flex gap-4">
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" id="quiz-content-text" class="w-4 h-4 rounded accent-violet-500">
-                <span class="text-sm text-slate-300">📝 Text</span>
-              </label>
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" id="quiz-content-image" class="w-4 h-4 rounded accent-violet-500">
-                <span class="text-sm text-slate-300">🖼️ Image</span>
-              </label>
+            <!-- Content Type -->
+            <div class="space-y-3 border-t border-slate-800 pt-5">
+              <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">🖼️ Content Type</label>
+              <div class="flex gap-4">
+                <label class="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" id="quiz-content-text" class="w-4 h-4 rounded accent-violet-500">
+                  <span class="text-sm text-slate-300">📝 Text</span>
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" id="quiz-content-image" class="w-4 h-4 rounded accent-violet-500">
+                  <span class="text-sm text-slate-300">🖼️ Image</span>
+                </label>
+              </div>
+              <p class="text-[10px] text-slate-500">Questions and answers will use the selected format(s). Selecting
+                both
+                mixes text and images.</p>
             </div>
-            <p class="text-[10px] text-slate-500">Questions and answers will use the selected format(s). Selecting both
-              mixes text and images.</p>
-          </div>
 
-          <!-- Image Source -->
-          <div class="space-y-3 border-t border-slate-800 pt-5">
-            <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">🖼️ Image Sources</label>
-            <div class="grid grid-cols-2 gap-2">
-              <label
-                class="flex items-center gap-2.5 cursor-pointer p-2 rounded-lg hover:bg-slate-800/60 transition-colors">
-                <input type="checkbox" id="img-src-chk-pixabay" class="w-4 h-4 rounded accent-emerald-500" checked>
-                <span class="text-sm text-slate-300 flex items-center gap-1.5">
-                  <span style="color:#10b981;font-weight:900;font-size:0.8rem">P</span> Pixabay
-                </span>
-              </label>
-              <label
-                class="flex items-center gap-2.5 cursor-pointer p-2 rounded-lg hover:bg-slate-800/60 transition-colors">
-                <input type="checkbox" id="img-src-chk-unsplash" class="w-4 h-4 rounded accent-amber-500">
-                <span class="text-sm text-slate-300 flex items-center gap-1.5">
-                  <span style="color:#f59e0b;font-weight:900;font-size:0.8rem">U</span> Unsplash
-                  <span class="text-[9px] text-slate-500 ml-0.5">(key req.)</span>
-                </span>
-              </label>
-              <label
-                class="flex items-center gap-2.5 cursor-pointer p-2 rounded-lg hover:bg-slate-800/60 transition-colors">
-                <input type="checkbox" id="img-src-chk-wikimedia" class="w-4 h-4 rounded accent-blue-500" checked>
-                <span class="text-sm text-slate-300 flex items-center gap-1.5">
-                  <span style="color:#3b82f6;font-weight:900;font-size:0.8rem">W</span> Wikimedia
-                </span>
-              </label>
-              <label
-                class="flex items-center gap-2.5 cursor-pointer p-2 rounded-lg hover:bg-slate-800/60 transition-colors">
-                <input type="checkbox" id="img-src-chk-ai" class="w-4 h-4 rounded accent-violet-500" checked>
-                <span class="text-sm text-slate-300 flex items-center gap-1.5">
-                  <span style="color:#8b5cf6;font-weight:900;font-size:0.8rem">A</span> AI Generated
-                </span>
-              </label>
+            <!-- Image Source -->
+            <div class="space-y-3 border-t border-slate-800 pt-5">
+              <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">🖼️ Image Sources</label>
+              <div class="grid grid-cols-2 gap-2">
+                <label
+                  class="flex items-center gap-2.5 cursor-pointer p-2 rounded-lg hover:bg-slate-800/60 transition-colors">
+                  <input type="checkbox" id="img-src-chk-pixabay" class="w-4 h-4 rounded accent-emerald-500" checked>
+                  <span class="text-sm text-slate-300 flex items-center gap-1.5">
+                    <span style="color:#10b981;font-weight:900;font-size:0.8rem">P</span> Pixabay
+                  </span>
+                </label>
+                <label
+                  class="flex items-center gap-2.5 cursor-pointer p-2 rounded-lg hover:bg-slate-800/60 transition-colors">
+                  <input type="checkbox" id="img-src-chk-unsplash" class="w-4 h-4 rounded accent-amber-500">
+                  <span class="text-sm text-slate-300 flex items-center gap-1.5">
+                    <span style="color:#f59e0b;font-weight:900;font-size:0.8rem">U</span> Unsplash
+                    <span class="text-[9px] text-slate-500 ml-0.5">(key req.)</span>
+                  </span>
+                </label>
+                <label
+                  class="flex items-center gap-2.5 cursor-pointer p-2 rounded-lg hover:bg-slate-800/60 transition-colors">
+                  <input type="checkbox" id="img-src-chk-wikimedia" class="w-4 h-4 rounded accent-blue-500" checked>
+                  <span class="text-sm text-slate-300 flex items-center gap-1.5">
+                    <span style="color:#3b82f6;font-weight:900;font-size:0.8rem">W</span> Wikimedia
+                  </span>
+                </label>
+                <label
+                  class="flex items-center gap-2.5 cursor-pointer p-2 rounded-lg hover:bg-slate-800/60 transition-colors">
+                  <input type="checkbox" id="img-src-chk-ai" class="w-4 h-4 rounded accent-violet-500" checked>
+                  <span class="text-sm text-slate-300 flex items-center gap-1.5">
+                    <span style="color:#8b5cf6;font-weight:900;font-size:0.8rem">A</span> AI Generated
+                  </span>
+                </label>
+              </div>
+              <p class="text-[10px] text-slate-500">Checked sources are tried in order: Pixabay → Unsplash → Wikimedia →
+                AI. At least one must remain active.</p>
             </div>
-            <p class="text-[10px] text-slate-500">Checked sources are tried in order: Pixabay → Unsplash → Wikimedia →
-              AI. At least one must remain active.</p>
-          </div>
 
           </div><!-- end #qs-quiz-only-sections -->
 

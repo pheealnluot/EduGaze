@@ -1125,10 +1125,9 @@ app.post('/api/spot-char-generate', async (req, res) => {
           contents: [{ role: 'user', parts: [{ text: imagePrompt }] }],
           generationConfig: {
             responseModalities: ['IMAGE', 'TEXT'],
-          },
-          // imageGenerationConfig is the correct field for aspect ratio in Gemini image models
-          imageGenerationConfig: {
-            aspectRatio: 'LANDSCAPE',   // values: LANDSCAPE | PORTRAIT | SQUARE
+            imageConfig: {
+              aspectRatio: '16:9',
+            },
           },
         }),
       });
@@ -1156,41 +1155,15 @@ app.post('/api/spot-char-generate', async (req, res) => {
       mimeType    = imgPart.inlineData.mimeType || 'image/png';
       console.log(`[SpotChar] ✅ Gemini 3.1 Flash Image 🍌 generated (${Math.round(imageBase64.length/1024)}KB)`);
 
-      // ── Try to extract character bboxes from the text part of the generation response ──
-      // The image gen model was asked to also output positions as JSON alongside the image.
+      // NOTE: We intentionally do NOT extract bboxes from the generation model's text output.
+      // The image generation model is NOT a vision model and does not reliably output
+      // coordinates in the 0–1000 normalized format — its values can be in pixel space
+      // (e.g. xmax=1200 for a 1792px-wide image), causing severe hit-zone misalignment.
+      // The dedicated Gemini vision model (Step 2 below) is specifically trained for the
+      // 0–1000 format and always gives accurate, aspect-ratio-proportional results.
       const genTextPart = parts.find(p => p.text);
       if (genTextPart?.text) {
-        console.log(`[SpotChar] Generation text output: ${genTextPart.text.slice(0, 300)}`);
-        const genArrMatch = genTextPart.text.match(/\[[\s\S]*?\]/);
-        if (genArrMatch) {
-          try {
-            const genParsed = JSON.parse(genArrMatch[0]);
-            const MARGIN = 0.12;
-            const genBboxes = genParsed
-              .filter(b => Array.isArray(b.box_2d) && b.box_2d.length >= 4)
-              .map(b => {
-                const [ymin, xmin, ymax, xmax] = b.box_2d;
-                const x = xmin / 1000, y = ymin / 1000;
-                const w = Math.max(0.05, Math.min(0.45, (xmax - xmin) / 1000));
-                const h = Math.max(0.05, Math.min(0.45, (ymax - ymin) / 1000));
-                let cx = x + w / 2, cy = y + h / 2;
-                cx = Math.max(MARGIN, Math.min(1 - MARGIN, cx));
-                cy = Math.max(MARGIN, Math.min(1 - MARGIN, cy));
-                const fx = Math.max(0.01, Math.min(1 - w - 0.01, cx - w / 2));
-                const fy = Math.max(0.01, Math.min(1 - h - 0.01, cy - h / 2));
-                return { x: fx, y: fy, w, h, cx, cy };
-              })
-              .filter(b => b.cx >= MARGIN && b.cx <= 1 - MARGIN && b.cy >= MARGIN && b.cy <= 1 - MARGIN)
-              .slice(0, findN)
-              .map(({ x, y, w, h }) => ({ x, y, w, h }));
-            if (genBboxes.length > 0) {
-              bboxes = genBboxes;
-              console.log(`[SpotChar] ✅ Extracted ${bboxes.length} bbox(es) from generation text:`, JSON.stringify(bboxes));
-            }
-          } catch (e) {
-            console.warn(`[SpotChar] Failed to parse generation bbox JSON:`, e.message);
-          }
-        }
+        console.log(`[SpotChar] Generation text (ignored for bbox): ${genTextPart.text.slice(0, 200)}`);
       }
     }
   } catch (err) {
@@ -1198,13 +1171,10 @@ app.post('/api/spot-char-generate', async (req, res) => {
   }
 
   // ── Step 2: Locate all findN theme characters via vision ──────────────────
-  // ONLY runs if we didn't already get bboxes from the image generation step.
-  // Uses Gemini's NATIVE bounding-box format [ymin, xmin, ymax, xmax] on a
-  // 0–1000 integer scale. This is the coordinate system the model was trained
-  // on, so spatial accuracy is significantly better than custom fractional formats.
-  if (bboxes.length > 0) {
-    console.log(`[SpotChar] Skipping vision step — ${bboxes.length} bbox(es) already extracted from generation`);
-  } else {
+  // Always runs — the dedicated vision model uses Gemini's NATIVE bounding-box
+  // format [ymin, xmin, ymax, xmax] on a 0–1000 integer scale, which maps
+  // proportionally to the image regardless of aspect ratio.
+  // (The image generation model's self-reported coords are unreliable and skipped.)
   try {
     const visionPrompt =
       `Look carefully at this image. It is a "Spot the Character" game scene.\n` +
@@ -1305,9 +1275,8 @@ app.post('/api/spot-char-generate', async (req, res) => {
   } catch (err) {
     console.warn('[SpotChar] Vision bbox failed (non-fatal):', err.message);
   }
-  } // end if (bboxes.length === 0)
 
-  // Apply overlap removal to generation-extracted bboxes too
+  // Remove overlapping bboxes returned by the vision model
   if (bboxes.length > 1) {
     bboxes = _removeOverlapping(bboxes, findN);
   }

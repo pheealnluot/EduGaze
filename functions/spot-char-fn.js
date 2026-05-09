@@ -207,8 +207,12 @@ exports.spotCharGenerate = onRequest(
           signal: AbortSignal.timeout(90000),
           body: JSON.stringify({
             contents: [{ role: 'user', parts: [{ text: imagePrompt }] }],
-            generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
-            imageGenerationConfig: { aspectRatio: 'LANDSCAPE' },
+            generationConfig: {
+              responseModalities: ['IMAGE', 'TEXT'],
+              imageConfig: {
+                aspectRatio: '16:9',
+              },
+            },
           }),
         });
         const imgData = await imgResp.json();

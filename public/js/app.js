@@ -10601,7 +10601,7 @@ window.openAdminModal = (uid) => {
   if (!u) return;
   _activeAdminUserId = uid;
   document.getElementById('admin-modal-title').textContent = u.displayName || u.email || 'User Details';
-  document.getElementById('admin-modal-subtitle').textContent = `UID: ${u.id}`;
+  document.getElementById('admin-modal-subtitle').textContent = u.email ? `${u.email}  ·  UID: ${u.id}` : `UID: ${u.id}`;
   document.getElementById('admin-content-modal').classList.add('open');
   window.switchAdminTab('activity');
 };
@@ -10747,7 +10747,7 @@ function _buildReportRow(d, data, rowIdx, isAdmin) {
   tr.innerHTML = `
     <td style="font-size:0.68rem;color:#475569;font-weight:600;text-align:center;">${rowIdx}</td>
     <td><div style="font-size:0.72rem;color:#cbd5e1;white-space:nowrap;">${dateShort}</div></td>
-    ${isAdmin ? `<td><div style="font-size:0.65rem;color:#475569;font-family:monospace;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${data.userId||''}"> ${(data.userId||'').slice(0,16)}</div></td>` : ''}
+    ${isAdmin ? (() => { const _u = window._adminUserEmailMap?.[data.userId]; const _em = _u?.email || ''; const _lbl = _em || 'Guest'; return `<td><div style="font-size:0.72rem;color:#94a3b8;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${_em || data.userId||''}">${_lbl}</div></td>`; })() : ''}
     <td><span style="font-size:0.68rem;font-weight:700;padding:2px 8px;border-radius:5px;background:${typeBg};color:${typeColor};white-space:nowrap;">${typeLabel}</span></td>
     <td><div style="font-size:0.75rem;color:#fbbf24;font-weight:700;">${correct}/${total}</div></td>
     <td><div style="font-size:0.72rem;color:#94a3b8;">${durStr}</div></td>
@@ -10832,6 +10832,12 @@ window.renderAdminReportsPanel = async () => {
   if (emptyEl)   emptyEl.classList.add('hidden');
 
   try {
+    // Build userId → email lookup from admin users cache
+    window._adminUserEmailMap = {};
+    (_adminUsersCache || []).forEach(u => {
+      window._adminUserEmailMap[u.id] = { email: u.email || '', displayName: u.displayName || '' };
+    });
+
     const { collection, getDocs, query, orderBy, limit } = await import('https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore.js');
     const q = query(collection(db, 'quiz_reports'), orderBy('startedAt', 'desc'), limit(200));
     const snap = await getDocs(q);
@@ -11600,7 +11606,7 @@ function _buildCompReportRow(d, data, rowIdx, isAdmin) {
   tr.innerHTML = `
     <td style="font-size:0.68rem;color:#475569;font-weight:600;text-align:center;">${rowIdx}</td>
     <td><div style="font-size:0.72rem;color:#cbd5e1;white-space:nowrap;">${dateShort}</div></td>
-    ${isAdmin ? `<td><div style="font-size:0.65rem;color:#475569;font-family:monospace;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${data.userId||''}">${(data.userId||'').slice(0,14)}</div></td>` : ''}
+    ${isAdmin ? (() => { const _u = window._adminUserEmailMap?.[data.userId]; const _em = _u?.email || ''; const _lbl = _em || 'Guest'; return `<td><div style="font-size:0.72rem;color:#94a3b8;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${_em || data.userId||''}">${_lbl}</div></td>`; })() : ''}
     <td>${mediaBadge}</td>
     <td>${thumbHtml}</td>
     <td>${titleCell}</td>
@@ -11954,7 +11960,7 @@ function _buildStcReportRow(d, data, rowIdx, isAdmin) {
   tr.innerHTML = `
     <td style="font-size:0.68rem;color:#475569;font-weight:600;text-align:center;">${rowIdx}</td>
     <td><div style="font-size:0.72rem;color:#cbd5e1;white-space:nowrap;">${dateShort}</div></td>
-    ${isAdmin ? `<td><div style="font-size:0.65rem;color:#475569;font-family:monospace;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${data.userId||''}">${(data.userId||'').slice(0,14)}</div></td>` : ''}
+    ${isAdmin ? (() => { const _u = window._adminUserEmailMap?.[data.userId]; const _em = _u?.email || ''; const _lbl = _em || 'Guest'; return `<td><div style="font-size:0.72rem;color:#94a3b8;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${_em || data.userId||''}">${_lbl}</div></td>`; })() : ''}
     <td>${thumbHtml}</td>
     <td><div style="font-size:0.72rem;color:#e2e8f0;font-weight:600;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(data.theme||'').replace(/"/g,'&quot;')}">${data.theme || '—'}</div></td>
     <td><div style="font-size:0.68rem;color:#94a3b8;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(data.scene||'').replace(/"/g,'&quot;')}">${data.scene || '—'}</div></td>
