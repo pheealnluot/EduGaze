@@ -814,13 +814,8 @@ app.get('/api/unsplash-search', async (req, res) => {
 // Uses gemini-2.0-flash-preview-image-generation to create the scene, then
 // uses gemini-2.5-flash (vision) to locate the hidden character's bounding box.
 
-// Image generation model URLs:
-// FREE  — gemini-3.1-flash-image-preview 🍌 (Nano Banana, supports aspectRatio param)
-// PAID  — imagen-4.0-generate-001 (highest quality, uses /predict endpoint)
 const GEMINI_IMAGE_GEN_URL =
   `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent?key=${GEMINI_API_KEY}`;
-const IMAGEN4_URL =
-  `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${GEMINI_API_KEY}`;
 
 // Helper: Greedily select non-overlapping bboxes.
 // Keeps the first bbox, then only adds subsequent ones if their IoU with all
@@ -864,7 +859,7 @@ function _removeOverlapping(boxes, maxCount, iouThreshold = 0.15) {
 app.post('/api/spot-char-generate', async (req, res) => {
   if (!GEMINI_API_KEY) return res.status(503).json({ error: 'GEMINI_API_KEY not configured' });
 
-  const { theme: rawTheme, scene: rawScene, otherCount = 10, findCount = 1, usePaidTier = false, bgStyle = 'kids', describeVisually = false, describeSceneVisually = false } = req.body || {};
+  const { theme: rawTheme, scene: rawScene, otherCount = 10, findCount = 1, bgStyle = 'kids', describeVisually = false, describeSceneVisually = false } = req.body || {};
   if (!rawTheme || !rawScene) return res.status(400).json({ error: 'theme and scene are required' });
 
   // ── Optional: translate franchise/world names → visual descriptions ────────
@@ -919,7 +914,7 @@ app.post('/api/spot-char-generate', async (req, res) => {
 
   const bgCount   = Math.min(Math.max(parseInt(otherCount) || 10, 2), 50);
   const findN     = Math.min(Math.max(parseInt(findCount)  || 1,  1), 5);
-  const isPaid    = usePaidTier === true || usePaidTier === 'true';
+
 
   // ── Background art style mapping ──────────────────────────────────────────
   const BG_STYLES = {
@@ -932,17 +927,14 @@ app.post('/api/spot-char-generate', async (req, res) => {
                'The target character(s) must blend into the busy crowd but still be findable. Flat 2-D graphic novel quality.',
     },
     realistic: {
-      prefix:  'MIXED MEDIA: PHOTOREALISTIC BACKGROUND + CARTOON CHARACTERS — ',
-      suffix:  'BACKGROUND/ENVIRONMENT style: The scenery, buildings, streets, sky, foliage, water, and all non-character elements MUST be ' +
-               'STRICTLY HYPER-REALISTIC — rendered as a high-resolution photograph or cinematic 3D render. ' +
+      prefix:  'FULLY PHOTOREALISTIC — ',
+      suffix:  'Art style: EVERYTHING in this image must be STRICTLY HYPER-REALISTIC — rendered as a high-resolution photograph or cinematic 3D render. ' +
+               'This includes the background, environment, AND all characters (both background and target). ' +
                'Use cinematic lighting, volumetric fog, ray-traced global illumination, physical depth of field (bokeh), ' +
-               'real-world textures (brick, glass, wood, concrete, leaves, water reflections), atmospheric perspective, and natural shadows. ' +
-               'The environment should look like a real location photographed with a professional camera. ' +
-               'CHARACTER style: ALL characters (both background people and target characters) should be rendered in a bright, ' +
-               'colourful CARTOON / ANIME / ILLUSTRATED style — like 2D animated characters composited into a real photograph. ' +
-               'Characters should have exaggerated proportions, bold outlines, flat cel-shaded colours, and expressive cartoon faces. ' +
-               'Think "Who Framed Roger Rabbit" or "Space Jam" — cartoon characters living in a real-world environment. ' +
-               'The contrast between the photorealistic environment and the cartoon characters is the KEY visual effect.',
+               'real-world textures (skin, fur, fabric, brick, glass, wood, leaves, water reflections), atmospheric perspective, and natural shadows. ' +
+               'Characters must look like real animals, real people, or physically plausible 3D-rendered creatures — NOT cartoons, NOT illustrations, NOT anime. ' +
+               'The entire scene should look like a high-end nature documentary, wildlife photography, or cinematic CGI film frame. ' +
+               'NO cartoon outlines, NO flat colours, NO cel-shading, NO illustrated style anywhere in the image.',
     },
     stylistic: {
       prefix:  'BOLD STYLISTIC DIGITAL ILLUSTRATION — ',
@@ -991,7 +983,7 @@ app.post('/api/spot-char-generate', async (req, res) => {
   const styleKey   = (typeof bgStyle === 'string' && BG_STYLES[bgStyle]) ? bgStyle : 'kids';
   const styleData  = BG_STYLES[styleKey];
 
-  console.log(`[SpotChar] Model tier: ${isPaid ? 'PAID (Imagen 4)' : 'FREE (Gemini Flash Image)'} | Style: ${styleKey}`);
+  console.log(`[SpotChar] Model: FREE (Gemini Flash Image) | Style: ${styleKey}`);
 
     // ── Step 1: Generate landscape scene ──────────────────────────────────────
   // Style description comes FIRST (highest token weight) so the model commits
@@ -999,7 +991,7 @@ app.post('/api/spot-char-generate', async (req, res) => {
   // A style-aware quality closer at the end prevents illustration language from
   // overriding photorealistic or other non-cartoon styles.
   const styleQuality = {
-    realistic:  'CRITICAL: The BACKGROUND must be photorealistic (real photograph quality). The CHARACTERS must be cartoon/anime/illustrated. This mixed-media "Roger Rabbit" effect is mandatory — photorealistic scenery with cartoon characters placed inside it.',
+    realistic:  'CRITICAL: The ENTIRE image — background AND all characters — must be STRICTLY PHOTOREALISTIC. No cartoons, no illustrations, no anime. Everything must look like a real photograph or cinematic 3D render.',
     stylistic:  'Bold graphic design aesthetic throughout — intentional composition, curated colour palette, expressive silhouettes. No cartoons.',
     comic:      'Classic comic-book art throughout — bold ink outlines, halftone shading, flat primary colours. No photorealism, no soft gradients.',
     wally:      'Dense hand-drawn crowd illustration style throughout — hundreds of tiny characters, bold flat colours, packed with meticulous detail.',
@@ -1008,19 +1000,6 @@ app.post('/api/spot-char-generate', async (req, res) => {
     character:  `The ENTIRE image must faithfully replicate the art style of "${theme}"\'s original media. Every element — background, characters, props — should look like it was drawn/rendered by the original artists of "${theme}".`,
   }[styleKey] || 'High detail, colourful, crowded, joyful.';
 
-  // Build position hints — spread characters across distinct non-overlapping zones
-  // Each zone is defined as approximate (x%, y%) of the image to prevent clustering
-  const positionZones = [
-    { label: 'LEFT third (x ≈ 15–30%)', x: '15–30%' },
-    { label: 'CENTRE (x ≈ 45–55%)',     x: '45–55%' },
-    { label: 'RIGHT third (x ≈ 70–85%)', x: '70–85%' },
-    { label: 'UPPER-LEFT (x ≈ 20–35%, y ≈ 20–40%)', x: '20–35%' },
-    { label: 'LOWER-RIGHT (x ≈ 65–80%, y ≈ 60–80%)', x: '65–80%' },
-  ];
-  const positionList = Array.from({length: findN}, (_, i) =>
-    `  Character ${i+1}: place in the ${positionZones[i % positionZones.length].label}`
-  ).join('\n');
-
   const imagePrompt =
     // ① Full style description FIRST so model commits to it immediately
     `${styleData.suffix}\n` +
@@ -1028,35 +1007,33 @@ app.post('/api/spot-char-generate', async (req, res) => {
     // ② Orientation
     `HORIZONTAL WIDESCREEN LANDSCAPE IMAGE ONLY — 16:9 aspect ratio like a cinema screen. ` +
     `DO NOT generate a portrait or square image under any circumstances. ` +
-    // ③ Scene content (no style-conflicting language here)
+    // ③ Scene content
     `Draw an original, richly detailed background scene set in the world of "${scene}". ` +
-   `Fill this scene with ${bgCount} unique original characters whose visual design fits the world of "${scene}" — ` +
+    `Fill this scene with ${bgCount} unique original characters whose visual design fits the world of "${scene}" — ` +
     `each clearly different from one another, no two alike. ` +
     `ABSOLUTE RULE: NONE of these ${bgCount} background characters may look like, resemble, or be confused with "${theme}". ` +
     `Background characters must be COMPLETELY DIFFERENT species/types/shapes from "${theme}" — ` +
     `for example if "${theme}" is a butterfly, do NOT draw ANY other butterflies, moths, or winged insects anywhere in the scene. ` +
     `CRITICALLY IMPORTANT: draw EXACTLY ${findN} — and ABSOLUTELY NO MORE THAN ${findN} — CHARACTER(S) inspired by "${theme}". ` +
     `COUNT CAREFULLY: the total number of "${theme}"-like characters in the ENTIRE image must be PRECISELY ${findN}. ` +
-    `If you draw even one extra, the image is WRONG. Do NOT sneak extra "${theme}" characters into the background, edges, or sky. ` +
-    `SPREAD THEM FAR APART across the scene — they must NOT be near each other or in the same area.\n` +
-    `Place them at these SPECIFIC positions (mandatory):\n${positionList}\n` +
-    `NO-OVERLAP RULE: Each "${theme}" character must be in a COMPLETELY DIFFERENT region of the image. ` +
-    `The distance between any two "${theme}" characters must be at least 25% of the image width. ` +
-    `They must NEVER be adjacent, clustered, or within the same quadrant of the image. ` +
-    `If you are placing 3 characters, one goes LEFT, one goes CENTRE, one goes RIGHT — no exceptions.\n` +
-    `These "${theme}"-inspired characters MUST:\n` +
-    `- Be clearly recognisable and visible to a 9-year-old child\n` +
-    `- Be at least medium-sized (not tiny or partially hidden)\n` +
-    `- Look NOTICEABLY different in colour, shape, or costume from the "${scene}" background characters\n` +
-    `- NOT be obscured, blended into backgrounds, or hidden behind objects\n` +
-    `- Be placed in the FOREGROUND or MID-GROUND of the scene, NOT far in the background\n` +
-    `- Be ENTIRELY AND COMPLETELY INSIDE the image — NO character body parts cropped by the frame edge\n` +
-    `- Be placed at least 15% away from ALL four edges of the image (top, bottom, left, right)\n` +
-    `- NEVER be placed in a corner or along any image border\n` +
-    `- NEVER overlap or touch another "${theme}" character — keep at least 20% image-width apart\n` +
-    `Keep the top-left 15% of the image free of any "${theme}"-inspired characters (reserved for UI). ` +
+    `If you draw even one extra, the image is WRONG. Do NOT sneak extra "${theme}" characters into the background, edges, or sky.\n` +
+    // ④ Creative placement — spread apart but artistically varied
+    `PLACEMENT — be CREATIVE and VARIED with where you place the "${theme}" characters:\n` +
+    `- Spread them across DIFFERENT regions of the image (left/centre/right AND foreground/mid-ground/background)\n` +
+    `- Use DIFFERENT DEPTHS: one could be small and far away, another large and close, another at mid-distance\n` +
+    `- Use INTERESTING POSES: sitting, climbing, peeking from behind something, riding, hanging, looking out a window, on a rooftop, in a tree, on a vehicle, etc.\n` +
+    `- INTEGRATE them into the scene naturally — they should be DOING something, not just standing stiffly\n` +
+    `- Place them at VARIED heights: street level, elevated (balcony, roof, tree), or below (basement, water, hole)\n` +
+    `- Make each one a mini visual discovery — a child should feel clever for spotting them\n` +
+    `- Keep at least 20% of the image width between any two "${theme}" characters\n` +
+    `- Keep the top-left corner (15%) free (reserved for UI)\n` +
+    `KEY RULES for each "${theme}" character:\n` +
+    `- Must be clearly recognisable to a 9-year-old child\n` +
+    `- Must be ENTIRELY inside the image — no body parts cropped by the frame edge\n` +
+    `- Must stand out from generic "${scene}" background characters in colour or shape\n` +
+    `- Must NOT be fully hidden behind objects (partially peeking is fine)\n` +
     `No text, no labels, no watermarks.\n` +
-    // ④ After generating the image, output character positions
+    // ⑤ Request character positions as JSON
     `After generating the image, output a JSON array describing where you placed each "${theme}" character. ` +
     `Use the format: [{"box_2d":[ymin, xmin, ymax, xmax], "label":"${theme}"}] ` +
     `where each value is an integer from 0 to 1000 (0 = top/left edge, 1000 = bottom/right edge). ` +
@@ -1085,39 +1062,8 @@ app.post('/api/spot-char-generate', async (req, res) => {
 
   let imageBase64 = null, mimeType = 'image/png', bboxes = [];
   try {
-    if (isPaid) {
-      // ── Paid: Imagen 4 — /predict endpoint ────────────────────────────────────
-      const imgResp = await fetch(IMAGEN4_URL, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(120000),
-        body: JSON.stringify({
-          instances: [{ prompt: imagePrompt }],
-          parameters: { sampleCount: 1, aspectRatio: '16:9' },
-        }),
-      });
-      const imgData = await imgResp.json();
-      if (!imgResp.ok) {
-        const errMsg = imgData?.error?.message || 'Imagen 4 generation failed';
-        const friendly = errMsg.includes('PROHIBITED_CONTENT') || errMsg.includes('prohibited')
-          ? _buildProhibitedMsg(errMsg)
-          : errMsg;
-        return res.status(502).json({ error: friendly });
-      }
-      const prediction = imgData?.predictions?.[0];
-      if (!prediction?.bytesBase64Encoded) {
-        const rawReason = imgData?.error?.message || JSON.stringify(imgData).slice(0, 120);
-        const reason = rawReason.includes('PROHIBITED_CONTENT') || rawReason.includes('prohibited')
-          ? _buildProhibitedMsg(rawReason)
-          : `Imagen 4 returned no image: ${rawReason}`;
-        console.error('[SpotChar] Imagen 4: no image in response:', rawReason);
-        return res.status(502).json({ error: reason });
-      }
-      imageBase64 = prediction.bytesBase64Encoded;
-      mimeType    = prediction.mimeType || 'image/png';
-      console.log(`[SpotChar] ✅ Imagen 4 image generated (${Math.round(imageBase64.length/1024)}KB)`);
-
-    } else {
-      // ── Free: Gemini 3.1 Flash Image 🍌 — /generateContent endpoint ──────────
+    {
+      // ── Gemini 3.1 Flash Image 🍌 — /generateContent endpoint ──────────
       const imgResp = await fetch(GEMINI_IMAGE_GEN_URL, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         signal: AbortSignal.timeout(90000),
@@ -1155,22 +1101,55 @@ app.post('/api/spot-char-generate', async (req, res) => {
       mimeType    = imgPart.inlineData.mimeType || 'image/png';
       console.log(`[SpotChar] ✅ Gemini 3.1 Flash Image 🍌 generated (${Math.round(imageBase64.length/1024)}KB)`);
 
-      // NOTE: We intentionally do NOT extract bboxes from the generation model's text output.
-      // The image generation model is NOT a vision model and does not reliably output
-      // coordinates in the 0–1000 normalized format — its values can be in pixel space
-      // (e.g. xmax=1200 for a 1792px-wide image), causing severe hit-zone misalignment.
-      // The dedicated Gemini vision model (Step 2 below) is specifically trained for the
-      // 0–1000 format and always gives accurate, aspect-ratio-proportional results.
+      // ── Extract character bboxes from the generation model's text output ──
+      // The generation model was asked to report positions as JSON alongside the image.
+      // It KNOWS where it placed characters, so its positions are more reliable than
+      // a separate vision model guessing. We just need to handle code fences properly.
       const genTextPart = parts.find(p => p.text);
       if (genTextPart?.text) {
-        console.log(`[SpotChar] Generation text (ignored for bbox): ${genTextPart.text.slice(0, 200)}`);
+        console.log(`[SpotChar] Generation text: ${genTextPart.text.slice(0, 400)}`);
+        // Strip markdown code fences (```json ... ```)
+        const cleanGenText = genTextPart.text.replace(/```(?:json)?\s*/gi, '').trim();
+        const genArrMatch = cleanGenText.match(/\[[\s\S]*\]/);
+        if (genArrMatch) {
+          try {
+            const genParsed = JSON.parse(genArrMatch[0]);
+            console.log(`[SpotChar] Parsed ${genParsed.length} bbox(es) from generation text`);
+            const MARGIN = 0.12;
+            const genBboxes = genParsed
+              .filter(b => Array.isArray(b.box_2d) && b.box_2d.length >= 4)
+              .map(b => {
+                const [ymin, xmin, ymax, xmax] = b.box_2d;
+                console.log(`[SpotChar]   gen box_2d: [${ymin}, ${xmin}, ${ymax}, ${xmax}]`);
+                const x = xmin / 1000, y = ymin / 1000;
+                const w = Math.max(0.05, Math.min(0.45, (xmax - xmin) / 1000));
+                const h = Math.max(0.05, Math.min(0.45, (ymax - ymin) / 1000));
+                let cx = x + w / 2, cy = y + h / 2;
+                cx = Math.max(MARGIN, Math.min(1 - MARGIN, cx));
+                cy = Math.max(MARGIN, Math.min(1 - MARGIN, cy));
+                const fx = Math.max(0.01, Math.min(1 - w - 0.01, cx - w / 2));
+                const fy = Math.max(0.01, Math.min(1 - h - 0.01, cy - h / 2));
+                return { x: fx, y: fy, w, h };
+              })
+              .slice(0, findN);
+            if (genBboxes.length > 0) {
+              bboxes = genBboxes;
+              console.log(`[SpotChar] ✅ Using ${bboxes.length} bbox(es) from generation model:`, JSON.stringify(bboxes));
+            }
+          } catch (e) {
+            console.warn(`[SpotChar] Failed to parse generation bbox JSON:`, e.message);
+          }
+        }
       }
     }
   } catch (err) {
     return res.status(502).json({ error: `Image generation failed: ${err.message}` });
   }
 
-  // ── Step 2: Locate all findN theme characters via vision ──────────────────
+  // ── Step 2: Vision fallback — only if generation didn't provide bboxes ────
+  if (bboxes.length > 0) {
+    console.log(`[SpotChar] Skipping vision step — ${bboxes.length} bbox(es) from generation model`);
+  } else {
   // Always runs — the dedicated vision model uses Gemini's NATIVE bounding-box
   // format [ymin, xmin, ymax, xmax] on a 0–1000 integer scale, which maps
   // proportionally to the image regardless of aspect ratio.
@@ -1200,7 +1179,7 @@ app.post('/api/spot-char-generate', async (req, res) => {
           { inlineData: { mimeType, data: imageBase64 } },
           { text: visionPrompt },
         ]}],
-        generationConfig: { thinkingConfig: { thinkingBudget: 4096 }, maxOutputTokens: 1024 },
+        generationConfig: { thinkingConfig: { thinkingBudget: 4096 }, maxOutputTokens: 2048 },
       }),
     });
     const vData  = await vResp.json();
@@ -1220,8 +1199,12 @@ app.post('/api/spot-char-generate', async (req, res) => {
       })));
     }
 
-    // Use greedy regex to catch full JSON array (lazy regex can match just `[]`)
-    const arrMatch = rawText.match(/\[[\s\S]*\]/);
+    // Strip markdown code fences that Gemini sometimes wraps JSON in
+    const cleanText = rawText.replace(/```(?:json)?\s*/gi, '').trim();
+    console.log(`[SpotChar] Cleaned text: ${cleanText.slice(0, 300)}`);
+
+    // Match the JSON array
+    const arrMatch = cleanText.match(/\[[\s\S]*\]/);
     if (arrMatch) {
       const parsed = JSON.parse(arrMatch[0]);
       console.log(`[SpotChar] Parsed ${parsed.length} raw bbox(es) from vision`);
@@ -1277,6 +1260,7 @@ app.post('/api/spot-char-generate', async (req, res) => {
   } catch (err) {
     console.warn('[SpotChar] Vision bbox failed (non-fatal):', err.message, err.stack?.split('\n')[1]);
   }
+  } // end vision fallback else
 
   // Remove overlapping bboxes returned by the vision model
   if (bboxes.length > 1) {

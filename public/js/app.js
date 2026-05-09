@@ -11923,7 +11923,7 @@ function _buildStcReportRow(d, data, rowIdx, isAdmin) {
   const styleBadge = `<span style="font-size:0.68rem;font-weight:700;padding:2px 8px;border-radius:5px;background:${styleInfo.bg};color:${styleInfo.color};white-space:nowrap;">${styleInfo.label}</span>`;
 
   // Model badge
-  const modelLabel = data.usePaidTier ? '⚡ Imagen 4' : '🍌 Gemini Flash';
+  const modelLabel = data.usePaidTier ? '⚡ Imagen 4 (legacy)' : '🍌 Gemini Flash';
   const modelColor = data.usePaidTier ? '#c4b5fd' : '#fbbf24';
   const modelBg    = data.usePaidTier ? 'rgba(196,181,253,0.12)' : 'rgba(251,191,36,0.12)';
   const modelBadge = `<span style="font-size:0.65rem;font-weight:700;padding:2px 8px;border-radius:5px;background:${modelBg};color:${modelColor};white-space:nowrap;">${modelLabel}</span>`;
@@ -12001,7 +12001,7 @@ function _renderStcReportModal(data, docId, isAdminView) {
 
   // Style info
   const styleInfo = _STC_STYLE_MAP[data.bgStyle] || { label: data.bgStyle || '—', color: '#64748b' };
-  const modelLabel = data.usePaidTier ? '⚡ Imagen 4' : '🍌 Gemini Flash Image';
+  const modelLabel = data.usePaidTier ? '⚡ Imagen 4 (legacy)' : '🍌 Gemini Flash Image';
   const descVisBadge = data.describeVisually ? '<span style="color:#34d399;">✓ On</span>' : '<span style="color:#475569;">Off</span>';
   const descSceneBadge = data.describeSceneVisually ? '<span style="color:#34d399;">✓ On</span>' : '<span style="color:#475569;">Off</span>';
 

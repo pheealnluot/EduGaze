@@ -34,9 +34,9 @@ exports.spotCharGenerate = onRequest(
 
     const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
     const GEMINI_IMAGE_GEN_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent?key=${apiKey}`;
-    const IMAGEN4_URL = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`;
 
-    const { theme: rawTheme, scene: rawScene, otherCount = 10, findCount = 1, usePaidTier = false, bgStyle = 'kids', describeVisually = false, describeSceneVisually = false } = req.body || {};
+
+    const { theme: rawTheme, scene: rawScene, otherCount = 10, findCount = 1, bgStyle = 'kids', describeVisually = false, describeSceneVisually = false } = req.body || {};
     if (!rawTheme || !rawScene) return res.status(400).json({ error: 'theme and scene are required' });
 
     let theme = rawTheme, scene = rawScene;
@@ -74,7 +74,7 @@ exports.spotCharGenerate = onRequest(
 
     const bgCount = Math.min(Math.max(parseInt(otherCount) || 10, 2), 50);
     const findN = Math.min(Math.max(parseInt(findCount) || 1, 1), 5);
-    const isPaid = usePaidTier === true || usePaidTier === 'true';
+
 
     // Background art style mapping
     const BG_STYLES = {
@@ -83,8 +83,8 @@ exports.spotCharGenerate = onRequest(
         suffix: 'Art style: dense, meticulously detailed hand-drawn crowd illustration exactly like Martin Handford\'s Where\'s Wally books. Overhead or slightly elevated viewpoint over a massive, packed crowd scene. Hundreds of tiny characters fill every inch of the image with no empty space. Bold, flat colours with strong black outlines; cheerful, holiday-fair atmosphere; lots of props, stalls, tents, and activities. The target character(s) must blend into the busy crowd but still be findable. Flat 2-D graphic novel quality.',
       },
       realistic: {
-        prefix: 'MIXED MEDIA: PHOTOREALISTIC BACKGROUND + CARTOON CHARACTERS — ',
-        suffix: 'BACKGROUND/ENVIRONMENT style: The scenery, buildings, streets, sky, foliage, water, and all non-character elements MUST be STRICTLY HYPER-REALISTIC — rendered as a high-resolution photograph or cinematic 3D render. Use cinematic lighting, volumetric fog, ray-traced global illumination, physical depth of field (bokeh), real-world textures, atmospheric perspective, and natural shadows. CHARACTER style: ALL characters should be rendered in a bright, colourful CARTOON / ANIME / ILLUSTRATED style — like 2D animated characters composited into a real photograph. Think "Who Framed Roger Rabbit". The contrast between photorealistic environment and cartoon characters is the KEY visual effect.',
+        prefix: 'FULLY PHOTOREALISTIC — ',
+        suffix: 'Art style: EVERYTHING in this image must be STRICTLY HYPER-REALISTIC — rendered as a high-resolution photograph or cinematic 3D render. This includes the background, environment, AND all characters (both background and target). Use cinematic lighting, volumetric fog, ray-traced global illumination, physical depth of field (bokeh), real-world textures (skin, fur, fabric, brick, glass, wood, leaves, water reflections), atmospheric perspective, and natural shadows. Characters must look like real animals, real people, or physically plausible 3D-rendered creatures — NOT cartoons, NOT illustrations, NOT anime. The entire scene should look like a high-end nature documentary, wildlife photography, or cinematic CGI film frame. NO cartoon outlines, NO flat colours, NO cel-shading, NO illustrated style anywhere in the image.',
       },
       stylistic: {
         prefix: 'BOLD STYLISTIC DIGITAL ILLUSTRATION — ',
@@ -110,10 +110,10 @@ exports.spotCharGenerate = onRequest(
     const styleKey = (typeof bgStyle === 'string' && BG_STYLES[bgStyle]) ? bgStyle : 'kids';
     const styleData = BG_STYLES[styleKey];
 
-    console.log(`[SpotChar] Model: ${isPaid ? 'PAID (Imagen 4)' : 'FREE (Gemini Flash Image)'} | Style: ${styleKey}`);
+    console.log(`[SpotChar] Model: FREE (Gemini Flash Image) | Style: ${styleKey}`);
 
     const styleQuality = {
-      realistic: 'CRITICAL: The BACKGROUND must be photorealistic. The CHARACTERS must be cartoon/anime/illustrated. Mixed-media "Roger Rabbit" effect is mandatory.',
+      realistic: 'CRITICAL: The ENTIRE image — background AND all characters — must be STRICTLY PHOTOREALISTIC. No cartoons, no illustrations, no anime. Everything must look like a real photograph or cinematic 3D render.',
       stylistic: 'Bold graphic design aesthetic throughout — intentional composition, curated colour palette, expressive silhouettes.',
       comic: 'Classic comic-book art throughout — bold ink outlines, halftone shading, flat primary colours.',
       wally: 'Dense hand-drawn crowd illustration style throughout — hundreds of tiny characters, bold flat colours, packed with meticulous detail.',
@@ -180,89 +180,66 @@ exports.spotCharGenerate = onRequest(
 
     let imageBase64 = null, mimeType = 'image/png', bboxes = [];
     try {
-      if (isPaid) {
-        // Paid: Imagen 4
-        const imgResp = await fetch(IMAGEN4_URL, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          signal: AbortSignal.timeout(120000),
-          body: JSON.stringify({ instances: [{ prompt: imagePrompt }], parameters: { sampleCount: 1, aspectRatio: '16:9' } }),
-        });
-        const imgData = await imgResp.json();
-        if (!imgResp.ok) {
-          const errMsg = imgData?.error?.message || 'Imagen 4 generation failed';
-          return res.status(502).json({ error: errMsg.includes('PROHIBITED') ? _buildProhibitedMsg(errMsg) : errMsg });
-        }
-        const prediction = imgData?.predictions?.[0];
-        if (!prediction?.bytesBase64Encoded) {
-          const rawReason = imgData?.error?.message || JSON.stringify(imgData).slice(0, 120);
-          return res.status(502).json({ error: rawReason.includes('PROHIBITED') ? _buildProhibitedMsg(rawReason) : `Imagen 4 returned no image: ${rawReason}` });
-        }
-        imageBase64 = prediction.bytesBase64Encoded;
-        mimeType = prediction.mimeType || 'image/png';
-        console.log(`[SpotChar] ✅ Imagen 4 image generated (${Math.round(imageBase64.length/1024)}KB)`);
-      } else {
-        // Free: Gemini 3.1 Flash Image
-        const imgResp = await fetch(GEMINI_IMAGE_GEN_URL, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          signal: AbortSignal.timeout(90000),
-          body: JSON.stringify({
-            contents: [{ role: 'user', parts: [{ text: imagePrompt }] }],
-            generationConfig: {
-              responseModalities: ['IMAGE', 'TEXT'],
-              imageConfig: {
-                aspectRatio: '16:9',
-              },
-            },
-          }),
-        });
-        const imgData = await imgResp.json();
-        if (!imgResp.ok) {
-          const errMsg = imgData?.error?.message || 'Image generation failed';
-          return res.status(502).json({ error: errMsg.includes('PROHIBITED') ? _buildProhibitedMsg(errMsg) : errMsg });
-        }
-        const parts = imgData?.candidates?.[0]?.content?.parts || [];
-        const imgPart = parts.find(p => p.inlineData?.mimeType?.startsWith('image/'));
-        if (!imgPart) {
-          const textPart = parts.find(p => p.text);
-          const finishReason = imgData?.candidates?.[0]?.finishReason || '';
-          const rawReason = textPart?.text || finishReason || 'No image returned';
-          const isBlocked = rawReason.includes('PROHIBITED') || finishReason === 'SAFETY' || finishReason === 'OTHER';
-          const reason = isBlocked ? _buildProhibitedMsg(rawReason) : rawReason;
-          return res.status(502).json({ error: isBlocked ? reason : `Image not generated: ${reason}. Try different theme/scene names.` });
-        }
-        imageBase64 = imgPart.inlineData.data;
-        mimeType = imgPart.inlineData.mimeType || 'image/png';
-        console.log(`[SpotChar] ✅ Gemini Flash Image generated (${Math.round(imageBase64.length/1024)}KB)`);
+      // ── Gemini 3.1 Flash Image 🍌 — /generateContent endpoint ──────────
+      const imgResp = await fetch(GEMINI_IMAGE_GEN_URL, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(90000),
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: imagePrompt }] }],
+          generationConfig: {
+            responseModalities: ['IMAGE', 'TEXT'],
+            imageConfig: { aspectRatio: '16:9' },
+          },
+        }),
+      });
+      const imgData = await imgResp.json();
+      if (!imgResp.ok) {
+        const errMsg = imgData?.error?.message || 'Image generation failed';
+        return res.status(502).json({ error: errMsg.includes('PROHIBITED') ? _buildProhibitedMsg(errMsg) : errMsg });
+      }
+      const parts = imgData?.candidates?.[0]?.content?.parts || [];
+      const imgPart = parts.find(p => p.inlineData?.mimeType?.startsWith('image/'));
+      if (!imgPart) {
+        const textPart = parts.find(p => p.text);
+        const finishReason = imgData?.candidates?.[0]?.finishReason || '';
+        const rawReason = textPart?.text || finishReason || 'No image returned';
+        const isBlocked = rawReason.includes('PROHIBITED') || finishReason === 'SAFETY' || finishReason === 'OTHER';
+        const reason = isBlocked ? _buildProhibitedMsg(rawReason) : rawReason;
+        return res.status(502).json({ error: isBlocked ? reason : `Image not generated: ${reason}. Try different theme/scene names.` });
+      }
+      imageBase64 = imgPart.inlineData.data;
+      mimeType = imgPart.inlineData.mimeType || 'image/png';
+      console.log(`[SpotChar] ✅ Gemini Flash Image generated (${Math.round(imageBase64.length/1024)}KB)`);
 
-        // Try to extract bboxes from generation text
-        const genTextPart = parts.find(p => p.text);
-        if (genTextPart?.text) {
-          console.log(`[SpotChar] Generation text: ${genTextPart.text.slice(0, 300)}`);
-          const genArrMatch = genTextPart.text.match(/\[[\s\S]*?\]/);
-          if (genArrMatch) {
-            try {
-              const genParsed = JSON.parse(genArrMatch[0]);
-              const MARGIN = 0.12;
-              const genBboxes = genParsed
-                .filter(b => Array.isArray(b.box_2d) && b.box_2d.length >= 4)
-                .map(b => {
-                  const [ymin, xmin, ymax, xmax] = b.box_2d;
-                  const x = xmin/1000, y = ymin/1000;
-                  const w = Math.max(0.05, Math.min(0.45, (xmax-xmin)/1000));
-                  const h = Math.max(0.05, Math.min(0.45, (ymax-ymin)/1000));
-                  let cx = Math.max(MARGIN, Math.min(1-MARGIN, x+w/2));
-                  let cy = Math.max(MARGIN, Math.min(1-MARGIN, y+h/2));
-                  return { x: Math.max(0.01, Math.min(1-w-0.01, cx-w/2)), y: Math.max(0.01, Math.min(1-h-0.01, cy-h/2)), w, h, cx, cy };
-                })
-                .filter(b => b.cx >= MARGIN && b.cx <= 1-MARGIN && b.cy >= MARGIN && b.cy <= 1-MARGIN)
-                .slice(0, findN)
-                .map(({ x, y, w, h }) => ({ x, y, w, h }));
-              if (genBboxes.length > 0) {
-                bboxes = genBboxes;
-                console.log(`[SpotChar] ✅ Extracted ${bboxes.length} bbox(es) from generation text`);
-              }
-            } catch (e) { console.warn(`[SpotChar] Failed to parse generation bbox JSON:`, e.message); }
-          }
+      // Try to extract bboxes from generation text
+      const genTextPart = parts.find(p => p.text);
+      if (genTextPart?.text) {
+        console.log(`[SpotChar] Generation text: ${genTextPart.text.slice(0, 300)}`);
+        const cleanGenText = genTextPart.text.replace(/```(?:json)?\s*/gi, '').trim();
+        const genArrMatch = cleanGenText.match(/\[[\s\S]*?\]/);
+        if (genArrMatch) {
+          try {
+            const genParsed = JSON.parse(genArrMatch[0]);
+            const MARGIN = 0.12;
+            const genBboxes = genParsed
+              .filter(b => Array.isArray(b.box_2d) && b.box_2d.length >= 4)
+              .map(b => {
+                const [ymin, xmin, ymax, xmax] = b.box_2d;
+                const x = xmin/1000, y = ymin/1000;
+                const w = Math.max(0.05, Math.min(0.45, (xmax-xmin)/1000));
+                const h = Math.max(0.05, Math.min(0.45, (ymax-ymin)/1000));
+                let cx = Math.max(MARGIN, Math.min(1-MARGIN, x+w/2));
+                let cy = Math.max(MARGIN, Math.min(1-MARGIN, y+h/2));
+                return { x: Math.max(0.01, Math.min(1-w-0.01, cx-w/2)), y: Math.max(0.01, Math.min(1-h-0.01, cy-h/2)), w, h, cx, cy };
+              })
+              .filter(b => b.cx >= MARGIN && b.cx <= 1-MARGIN && b.cy >= MARGIN && b.cy <= 1-MARGIN)
+              .slice(0, findN)
+              .map(({ x, y, w, h }) => ({ x, y, w, h }));
+            if (genBboxes.length > 0) {
+              bboxes = genBboxes;
+              console.log(`[SpotChar] ✅ Extracted ${bboxes.length} bbox(es) from generation text`);
+            }
+          } catch (e) { console.warn(`[SpotChar] Failed to parse generation bbox JSON:`, e.message); }
         }
       }
     } catch (err) {

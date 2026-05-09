@@ -4,7 +4,7 @@ const STC_KEY_SCENE     = 'stc_library_scene';
 const STC_KEY_DWELL     = 'stc_dwell_ms';
 const STC_KEY_FIND      = 'stc_find_count';
 const STC_KEY_COUNT     = 'stc_other_count';
-const STC_KEY_PAID_TIER = 'stc_paid_tier'; // persisted checkbox
+
 const STC_KEY_BG_STYLE  = 'stc_bg_style';   // background art style
 const STC_KEY_DESCRIBE  = 'stc_describe_visually'; // translate franchise to visual description
 const STC_KEY_DESCRIBE_SCENE = 'stc_describe_scene_visually'; // translate scene to visual description
@@ -71,11 +71,7 @@ function _bindEvents() {
     _dwellMs = parseInt(v);
     localStorage.setItem(STC_KEY_DWELL, _dwellMs);
   });
-  // Paid tier checkbox — persist on change
-  const paidChk = _el('stc-paid-tier-chk');
-  if (paidChk) paidChk.addEventListener('change', () => {
-    localStorage.setItem(STC_KEY_PAID_TIER, paidChk.checked ? '1' : '0');
-  });
+
   // Describe visually checkboxes — persist on change
   const descChk = _el('stc-describe-chk');
   if (descChk) descChk.addEventListener('change', () => {
@@ -132,9 +128,7 @@ function _syncSliders() {
   const sd = _el('stc-dwell-slider'), vd = _el('stc-dwell-value');
   if (sd) { sd.value = _dwellMs; _grad(sd); }
   if (vd) vd.textContent = (_dwellMs/1000).toFixed(1)+'s';
-  // Paid tier checkbox
-  const paidChk = _el('stc-paid-tier-chk');
-  if (paidChk) paidChk.checked = localStorage.getItem(STC_KEY_PAID_TIER) === '1';
+
   // Describe visually checkboxes
   const descChk = _el('stc-describe-chk');
   if (descChk) descChk.checked = localStorage.getItem(STC_KEY_DESCRIBE) === '1';
@@ -243,7 +237,7 @@ async function _start() {
   const scene      = _el('stc-scene-input').value.trim();
   const count      = parseInt(_el('stc-count-slider').value) || 10;
   const findN      = parseInt(_el('stc-find-slider').value)  || 1;
-  const usePaidTier = _el('stc-paid-tier-chk')?.checked ?? false;
+
   const bgStyle    = localStorage.getItem(STC_KEY_BG_STYLE) || 'kids';
   const describeVisually = _el('stc-describe-chk')?.checked ?? false;
   const describeSceneVisually = _el('stc-describe-scene-chk')?.checked ?? false;
@@ -251,15 +245,15 @@ async function _start() {
   if (!scene) { _el('stc-scene-input').focus(); _err('Please describe a background scene!'); return; }
   _saveH(STC_KEY_THEME, theme); _saveH(STC_KEY_SCENE, scene);
   _theme = theme; _targets=[]; _foundCount=0; _attempts=0; _failedClicks=0; _allFound=false;
-  _lastReqBody = { theme, scene, otherCount: count, findCount: findN, usePaidTier, bgStyle, describeVisually, describeSceneVisually };
+  _lastReqBody = { theme, scene, otherCount: count, findCount: findN, bgStyle, describeVisually, describeSceneVisually };
   // ── Initialize Spot-the-Character Report Tracking ─────────────────────
   window.stcReport = {
     sessionType: 'spot-char',
     startedAt: new Date().toISOString(),
     theme, scene,
     findCount: findN, otherCount: count,
-    bgStyle, usePaidTier,
-    modelName: usePaidTier ? 'Imagen 4' : 'Gemini Flash Image',
+    bgStyle,
+    modelName: 'Gemini Flash Image',
     describeVisually, describeSceneVisually,
     dwellMs: _dwellMs,
     targets: [],
@@ -557,6 +551,21 @@ function _bindCanvas(canvas) {
   });
 
   canvas.addEventListener('mouseleave', () => _targets.forEach(t=>{ t.inBbox=false; _cancelDwell(t); }));
+
+  // Reposition hints and redraw canvas overlays when the container resizes
+  const wrap = canvas.parentElement;
+  if (wrap && typeof ResizeObserver !== 'undefined') {
+    const ro = new ResizeObserver(() => {
+      _redraw(canvas);
+      _repositionHints(canvas);
+    });
+    ro.observe(wrap);
+    // Also listen for window resize (covers edge cases like zoom changes)
+    window.addEventListener('resize', () => {
+      _redraw(canvas);
+      _repositionHints(canvas);
+    });
+  }
 }
 
 // _dispBbox — converts normalised image-space bbox to display-pixel hit zone.
@@ -687,39 +696,107 @@ function _onAllFound(canvas) {
 }
 
 // ── Hint ──────────────────────────────────────────────────────────────────────
+
+// Reposition ALL visible hint pulses from their stored fractional data.
+// Called on initial placement and on every resize.
+function _repositionHints(canvas) {
+  const wrap = canvas.parentElement;
+  if (!wrap) return;
+  const canvasRect = canvas.getBoundingClientRect();
+  const wrapRect   = wrap.getBoundingClientRect();
+  const offX = canvasRect.left - wrapRect.left;
+  const offY = canvasRect.top  - wrapRect.top;
+  const cw = canvasRect.width, ch = canvasRect.height;
+
+  wrap.querySelectorAll('.stc-hint-pulse').forEach(hint => {
+    const bx = parseFloat(hint.dataset.bboxX);
+    const by = parseFloat(hint.dataset.bboxY);
+    const bw = parseFloat(hint.dataset.bboxW);
+    const bh = parseFloat(hint.dataset.bboxH);
+    if (isNaN(bx)) return;
+    const idx = parseInt(hint.dataset.targetIdx, 10);
+
+    const cx = (bx + bw / 2) * cw;
+    const cy = (by + bh / 2) * ch;
+    const minHW = cw * STC_MIN_TARGET / 2;
+    const minHH = ch * STC_MIN_TARGET / 2;
+    const hw = Math.max((bw * cw * BBOX_PAD) / 2, minHW);
+    const hh = Math.max((bh * ch * BBOX_PAD) / 2, minHH);
+
+    hint.style.left   = `${offX + cx}px`;
+    hint.style.top    = `${offY + cy}px`;
+    hint.style.width  = `${hw * 2 + 20}px`;
+    hint.style.height = `${hh * 2 + 20}px`;
+  });
+}
+
 // Helper: place a pulsing hint overlay on a target
 function _placeHintEl(canvas, t, i) {
   const wrap=canvas.parentElement;
   // Don't add a second hint on the same target if one already exists
   if (wrap.querySelector(`.stc-hint-pulse[data-target-idx="${i}"]`)) return;
+  const b = _dispBbox(canvas, t, i);
+  if (!b) return;
+
   const canvasRect = canvas.getBoundingClientRect();
   const wrapRect   = wrap.getBoundingClientRect();
   const offX = canvasRect.left - wrapRect.left;
   const offY = canvasRect.top  - wrapRect.top;
-  const b=_dispBbox(canvas,t,i);
-  if (!b) return;
+
   const hint=document.createElement('div');
   hint.className='stc-hint-pulse';
   hint.dataset.targetIdx = i;
+  // Store fractional bbox data for resize recalculation
+  hint.dataset.bboxX = t.bbox.x;
+  hint.dataset.bboxY = t.bbox.y;
+  hint.dataset.bboxW = t.bbox.w;
+  hint.dataset.bboxH = t.bbox.h;
   hint.style.cssText=`left:${offX+b.cx}px;top:${offY+b.cy}px;width:${b.hw*2+20}px;height:${b.hh*2+20}px;transform:translate(-50%,-50%);border-color:${PROF_COLORS[i%PROF_COLORS.length]};`;
   wrap.appendChild(hint);
 }
 
-// Show hints for ALL remaining unfound targets (Hint button)
+// Show hints for ALL remaining unfound targets (Hint button).
+// Clears any existing hints, recalculates positions from current canvas size,
+// then auto-removes them after 3 seconds with a fade-out.
+let _hintRemoveTimer = null;
 function _showHints(canvas) {
-  _targets.forEach((t,i)=>{ if (!t.found && t.bbox) _placeHintEl(canvas, t, i); });
+  const wrap = canvas.parentElement;
+  // Clear existing hints and any pending removal timer
+  if (_hintRemoveTimer) { clearTimeout(_hintRemoveTimer); _hintRemoveTimer = null; }
+  wrap.querySelectorAll('.stc-hint-pulse').forEach(e => e.remove());
+  // Place fresh hints for each unfound target
+  _targets.forEach((t, i) => { if (!t.found && t.bbox) _placeHintEl(canvas, t, i); });
+  // Auto-remove after 3 seconds
+  _hintRemoveTimer = setTimeout(() => {
+    wrap.querySelectorAll('.stc-hint-pulse').forEach(el => {
+      el.style.animation = 'none';
+      el.style.opacity = '0';
+      el.style.transition = 'opacity 0.4s ease-out';
+      setTimeout(() => el.remove(), 400);
+    });
+    _hintRemoveTimer = null;
+  }, 3000);
 }
 
-// Show a hint on ONE unfound target that doesn't already have a hint
+// Show a hint on ONE unfound target (auto-hint from 10 failed clicks).
+// Also auto-removes after 3 seconds.
 function _showOneHint(canvas) {
   const unfound = _targets
     .map((t,i) => ({t,i}))
-    .filter(({t,i}) => !t.found && t.bbox &&
-      !canvas.parentElement.querySelector(`.stc-hint-pulse[data-target-idx="${i}"]`));
+    .filter(({t,i}) => !t.found && t.bbox);
   if (!unfound.length) return;
-  // Pick the first unfound target without a hint
-  const {t,i} = unfound[0];
+  const {t,i} = unfound[Math.floor(Math.random() * unfound.length)];
+  const wrap = canvas.parentElement;
+  wrap.querySelectorAll(`.stc-hint-pulse[data-target-idx="${i}"]`).forEach(e => e.remove());
   _placeHintEl(canvas, t, i);
+  setTimeout(() => {
+    wrap.querySelectorAll(`.stc-hint-pulse[data-target-idx="${i}"]`).forEach(el => {
+      el.style.animation = 'none';
+      el.style.opacity = '0';
+      el.style.transition = 'opacity 0.4s ease-out';
+      setTimeout(() => el.remove(), 400);
+    });
+  }, 3000);
 }
 
 // Hint button: show ALL remaining hints
