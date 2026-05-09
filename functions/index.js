@@ -1338,24 +1338,24 @@ exports.youtubeVideoSearch = onRequest(
     };
 
     // Step 1: Ask Gemini to generate 3 search query strings.
-    // When requireCaption is true, bias queries toward channels that are known
-    // to always publish with accurate captions (TED-Ed, National Geographic Kids,
-    // BBC Earth, SciShow Kids, Kurzgesagt, Khan Academy, Crash Course Kids).
-    // This dramatically increases the hit rate before the YouTube API even runs.
+    // Caption guidance is now subordinate — it suggests channel formats but NEVER overrides the topic.
     const captionGuidance = requireCaption
-      ? `IMPORTANT: Bias your queries toward channels that ALWAYS have captions/subtitles, such as:\n` +
-        `TED-Ed, National Geographic Kids, BBC Earth, SciShow Kids, Kurzgesagt, Khan Academy, Crash Course Kids, PBS Kids, DW Documentary, Vox.\n` +
-        `Include the channel name in the query where appropriate, e.g. "TED-Ed how volcanoes work" or "National Geographic kids ocean life".\n`
+      ? `For caption availability, prefer channels known for captioned videos (e.g. TED-Ed, SciShow Kids, Kurzgesagt, National Geographic Kids, Khan Academy) — but ONLY if they have content matching the topic above. Do NOT pick a different topic just to use these channels.\n`
       : '';
 
-    const subjectNote = subject ? ` about "${subject}"` : '';
+    // Build the prompt — topic is the #1 constraint, stated first and reinforced last.
+    const topicConstraint = subject
+      ? `TOPIC (MANDATORY): Every single query MUST be about "${subject}". Do not generate queries about any other topic.\n`
+      : '';
+    const subjectNote = subject ? ` specifically about "${subject}"` : '';
+
     const queryPrompt =
       `You are an educational content curator for ${educationLevel} students.\n` +
+      topicConstraint +
       `Generate 5 different YouTube search queries that would find great educational videos${subjectNote}.\n` +
-      `The videos should teach something interesting (science, animals, nature, space, history, ` +
-      `art, geography, how everyday things work), and be suitable for children.\n` +
+      `Suitable for children. Keep queries varied (e.g. facts, documentary, for kids, explained, how it works).\n` +
       `${captionGuidance}` +
-      `Each query should be 3-6 words, specific, and likely to find quality content on YouTube.\n` +
+      `Each query should be 3-6 words, specific.${subject ? ` All queries must include or relate to "${subject}".` : ''}\n` +
       `Return ONLY valid JSON (no markdown):\n` +
       `{"queries": ["query one here", "query two here", "query three here", "query four here", "query five here"]}`;
 
@@ -1371,19 +1371,29 @@ exports.youtubeVideoSearch = onRequest(
       console.warn('[ytVideoSearch] Query generation failed:', err.message);
     }
 
-    // Hardcoded fallbacks if Gemini fails
+    // Fallback: keyword-aware if subject is set, generic otherwise
     if (!queries.length) {
-      queries = requireCaption
-        ? [
-            'TED-Ed science explained kids',
-            'National Geographic Kids animals nature',
-            'Kurzgesagt how things work',
-          ]
-        : [
-            'educational science for kids',
-            'nature animals documentary children',
-            'how things work kids educational',
-          ];
+      if (subject) {
+        queries = [
+          `${subject} for kids educational`,
+          `${subject} explained children`,
+          `${subject} documentary kids`,
+          `learn about ${subject} children`,
+          `${subject} facts science`,
+        ];
+      } else {
+        queries = requireCaption
+          ? [
+              'TED-Ed science explained kids',
+              'National Geographic Kids animals nature',
+              'Kurzgesagt how things work',
+            ]
+          : [
+              'educational science for kids',
+              'nature animals documentary children',
+              'how things work kids educational',
+            ];
+      }
     }
     console.log(`[ytVideoSearch] Search queries (requireCaption=${requireCaption}):`, queries);
 
