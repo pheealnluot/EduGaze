@@ -1304,7 +1304,7 @@ app.post('/api/spot-char-generate', async (req, res) => {
                 cy = Math.max(MARGIN, Math.min(1 - MARGIN, cy));
                 const fx = Math.max(0.01, Math.min(1 - w - 0.01, cx - w / 2));
                 const fy = Math.max(0.01, Math.min(1 - h - 0.01, cy - h / 2));
-                return { x: fx, y: fy, w, h, confidence: 1.0 };
+                return { x: fx, y: fy, w, h, confidence: 1.0, label: b.label || rawTheme, description: b.description || '' };
               })
               .slice(0, findN);
             if (genBboxes.length > 0) {
@@ -1408,7 +1408,7 @@ app.post('/api/spot-char-generate', async (req, res) => {
         let cy = Math.max(MARGIN, Math.min(1-MARGIN, y + h/2));
         x = Math.max(0.01, Math.min(1-w-0.01, cx - w/2));
         y = Math.max(0.01, Math.min(1-h-0.01, cy - h/2));
-        return { x, y, w, h, confidence: b.confidence };
+        return { x, y, w, h, confidence: b.confidence, label: b.label || rawTheme, description: b.description || '' };
       })
       .filter(b => {
         const cx = b.x + b.w/2, cy = b.y + b.h/2;

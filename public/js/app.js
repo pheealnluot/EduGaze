@@ -1,4 +1,4 @@
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-app.js';
+﻿import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-app.js';
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, linkWithCredential, EmailAuthProvider, updatePassword, reauthenticateWithCredential, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-auth.js';
 import { getFirestore, doc, getDoc, setDoc, updateDoc, arrayUnion, collection, getDocs, serverTimestamp, addDoc } from 'https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore.js';
 
@@ -17,6 +17,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+window.db = db; // expose for cross-module access (e.g. spot-char.js)
 
 // Gemini API helper (direct REST, no extra SDK needed)
 const GEMINI_MODEL = 'gemini-2.5-flash';
@@ -1901,6 +1902,7 @@ function _saveQuizPrefsToFirestore() {
         compTimeLimitSec:      _qsTimeLimitSec || 0,
         compRequireTranscript: _qsRequireTranscript,
         compFindTopic:         (() => { const el = document.getElementById('qs-find-topic'); return el ? el.value : ''; })(),
+        compKeywords:          window._qsTopicKeywords || [],
       };
       await _upd(_doc(db, 'users', user.uid), { quizPrefs: prefs });
     } catch (e) { /* non-critical */ }
@@ -1918,11 +1920,113 @@ function saveCompPrefs() {
     existing.compTimeLimitSec      = _qsTimeLimitSec || 0;
     existing.compRequireTranscript = _qsRequireTranscript;
     existing.compFindTopic         = (() => { const el = document.getElementById('qs-find-topic'); return el ? el.value : ''; })();
+    existing.compKeywords          = window._qsTopicKeywords || [];
     localStorage.setItem('quizSettings_v2', JSON.stringify(existing));
   } catch {}
   _saveQuizPrefsToFirestore();
 }
 
+// ── Topic / Keyword list management ─────────────────────────────────────────
+// Stores a user-curated list of keywords for the comprehension search field.
+// Persists across sessions via localStorage and Firestore (compKeywords array).
+window._qsTopicKeywords = (() => {
+  try { return JSON.parse(localStorage.getItem('qs_topic_keywords') || '[]'); } catch { return []; }
+})();
+
+const _QS_TOPIC_KEY = 'qs_topic_keywords';
+function _qsTopicSave() {
+  try { localStorage.setItem(_QS_TOPIC_KEY, JSON.stringify(window._qsTopicKeywords)); } catch {}
+  saveCompPrefs();
+}
+window._qsTopicAddKeyword = () => {
+  const inp = document.getElementById('qs-find-topic');
+  const val = (inp?.value || '').trim();
+  if (!val) { inp?.focus(); return; }
+  if (!window._qsTopicKeywords.includes(val)) {
+    window._qsTopicKeywords = [val, ...window._qsTopicKeywords].slice(0, 30);
+    _qsTopicSave();
+    window._qsTopicDropdownRender();
+    // Brief visual feedback
+    const btn = document.getElementById('qs-topic-add-btn');
+    if (btn) { btn.textContent = '✓'; setTimeout(() => { btn.textContent = '+'; }, 900); }
+  } else {
+    showToast('Keyword already in the list', 'info');
+  }
+};
+window._qsTopicClear = () => {
+  const inp = document.getElementById('qs-find-topic');
+  if (inp) { inp.value = ''; quizSettings._compFindTopic = ''; saveCompPrefs(); }
+  window._qsTopicDropdownHide();
+};
+window._qsTopicDropdownShow = () => {
+  window._qsTopicDropdownRender();
+  const dd = document.getElementById('qs-topic-dropdown');
+  if (dd && window._qsTopicKeywords.length > 0) dd.style.display = 'block';
+};
+window._qsTopicDropdownHide = () => {
+  const dd = document.getElementById('qs-topic-dropdown');
+  if (dd) dd.style.display = 'none';
+};
+window._qsTopicDropdownFilter = () => {
+  const inp = document.getElementById('qs-find-topic');
+  const val = (inp?.value || '').toLowerCase();
+  quizSettings._compFindTopic = inp?.value || '';
+  saveCompPrefs();
+  const dd = document.getElementById('qs-topic-dropdown');
+  if (!dd) return;
+  const filtered = val
+    ? window._qsTopicKeywords.filter(k => k.toLowerCase().includes(val))
+    : window._qsTopicKeywords;
+  if (filtered.length === 0) { dd.style.display = 'none'; return; }
+  _qsTopicRenderItems(dd, filtered);
+  dd.style.display = 'block';
+};
+window._qsTopicDropdownRender = () => {
+  const dd = document.getElementById('qs-topic-dropdown');
+  if (!dd) return;
+  _qsTopicRenderItems(dd, window._qsTopicKeywords);
+};
+function _qsTopicRenderItems(dd, items) {
+  if (!dd || !items.length) { if (dd) dd.style.display = 'none'; return; }
+  const inp = document.getElementById('qs-find-topic');
+  const current = (inp?.value || '').trim();
+  dd.innerHTML = `
+    <div style="padding:8px 12px 6px;font-size:0.6rem;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.1em;border-bottom:1px solid rgba(139,92,246,0.1);">
+      Saved Keywords — click to use, × to remove
+    </div>
+    ${items.map(kw => `
+      <div style="display:flex;align-items:center;gap:0;border-bottom:1px solid rgba(255,255,255,0.04);" class="qs-topic-kw-row">
+        <button style="flex:1;text-align:left;background:none;border:none;padding:9px 12px;font-size:0.78rem;font-weight:600;color:${kw===current?'#a78bfa':'#cbd5e1'};cursor:pointer;transition:color 0.15s;"
+          onmouseenter="this.style.color='#a78bfa'"
+          onmouseleave="this.style.color='${kw===current?'#a78bfa':'#cbd5e1'}'"
+          onclick="window._qsTopicSelectKeyword(${JSON.stringify(kw)})">
+          ${kw===current?'✓ ':''}${kw.replace(/</g,'&lt;')}
+        </button>
+        <button style="flex-shrink:0;background:none;border:none;padding:8px 10px;color:#475569;font-size:0.85rem;cursor:pointer;transition:color 0.15s;"
+          onmouseenter="this.style.color='#f87171'"
+          onmouseleave="this.style.color='#475569'"
+          onclick="window._qsTopicRemoveKeyword(${JSON.stringify(kw)})">×</button>
+      </div>`).join('')}
+  `;
+}
+window._qsTopicSelectKeyword = (kw) => {
+  const inp = document.getElementById('qs-find-topic');
+  if (inp) { inp.value = kw; quizSettings._compFindTopic = kw; saveCompPrefs(); }
+  window._qsTopicDropdownHide();
+};
+window._qsTopicRemoveKeyword = (kw) => {
+  window._qsTopicKeywords = window._qsTopicKeywords.filter(k => k !== kw);
+  _qsTopicSave();
+  if (window._qsTopicKeywords.length === 0) { window._qsTopicDropdownHide(); }
+  else { window._qsTopicDropdownFilter(); }
+};
+// Close keyword dropdown when clicking outside
+document.addEventListener('click', (e) => {
+  const row = document.getElementById('qs-topic-input-row');
+  const dd  = document.getElementById('qs-topic-dropdown');
+  if (!row || !dd) return;
+  if (!row.contains(e.target) && !dd.contains(e.target)) window._qsTopicDropdownHide();
+}, true);
 // Hydrate quiz settings + comp prefs from a Firestore user doc's quizPrefs field.
 // Called by registerUserInFirestore after the snap is read.
 function loadQuizPrefsFromFirestore(data) {
@@ -1946,6 +2050,7 @@ function loadQuizPrefsFromFirestore(data) {
   if (prefs.compTimeLimitSec !== undefined) _qsTimeLimitSec = prefs.compTimeLimitSec;
   if (prefs.compRequireTranscript !== undefined) _qsRequireTranscript = prefs.compRequireTranscript;
   if (prefs.compFindTopic !== undefined) quizSettings._compFindTopic = prefs.compFindTopic;
+  if (Array.isArray(prefs.compKeywords)) { window._qsTopicKeywords = prefs.compKeywords; try { localStorage.setItem('qs_topic_keywords', JSON.stringify(prefs.compKeywords)); } catch {} }
   // Mirror URL history to localStorage so _qsHistoryLoad() picks it up
   if (Array.isArray(prefs.compUrlHistory) && prefs.compUrlHistory.length) {
     try { localStorage.setItem(_COMP_HISTORY_KEY, JSON.stringify(prefs.compUrlHistory)); } catch {}
@@ -1972,6 +2077,7 @@ function saveQuizSettings() {
       compTimeLimitSec:      _qsTimeLimitSec != null ? _qsTimeLimitSec : (existing.compTimeLimitSec || 0),
       compRequireTranscript: _qsRequireTranscript,
       compFindTopic:         (() => { const el = document.getElementById('qs-find-topic'); return el ? el.value : (existing.compFindTopic || ''); })(),
+      compKeywords:          window._qsTopicKeywords || [],
     };
     localStorage.setItem('quizSettings_v2', JSON.stringify(payload));
   } catch { }
@@ -1990,6 +2096,7 @@ function loadQuizSettings() {
     if (parsed.compRequireTranscript !== undefined) _qsRequireTranscript = parsed.compRequireTranscript;
     if (parsed.compUrl)          parsed._compUrl  = parsed.compUrl;
     if (parsed.compFindTopic !== undefined) parsed._compFindTopic = parsed.compFindTopic;
+    if (Array.isArray(parsed.compKeywords)) { window._qsTopicKeywords = parsed.compKeywords; }
     if (Array.isArray(parsed.compUrlHistory) && parsed.compUrlHistory.length) {
       try { localStorage.setItem(_COMP_HISTORY_KEY, JSON.stringify(parsed.compUrlHistory)); } catch {}
     }
@@ -4510,7 +4617,7 @@ function renderQuizBoard() {
   }
 
   const fontSizeClass = `quiz-font-${quizSettings.fontSize || 'medium'}`;
-  questionEl.className = `quiz-question-text ${fontSizeClass}`;
+  questionEl.className = `flex-1 text-xl sm:text-2xl md:text-3xl font-bold text-center text-slate-100 tracking-tight leading-snug quiz-question-text ${fontSizeClass}`;
   prepareHighlightableText(questionEl, q.question);
   questionEl.dataset.prepared = 'true';
 
@@ -4663,6 +4770,8 @@ function renderQuizBoard() {
   }
   grid.innerHTML = '';
   // Clean up any leftover aRead bar/hint from the previous question
+  const _oldABarWrap = document.getElementById('quiz-aread-wrap');
+  if (_oldABarWrap) _oldABarWrap.remove();
   const _oldABar = document.getElementById('quiz-aread-bar');
   if (_oldABar) _oldABar.remove();
   const _oldAHint = document.getElementById('quiz-aread-hint');
@@ -4944,6 +5053,9 @@ function renderQuizBoard() {
       if (window.speechSynthesis?.speaking) {
         // Question TTS still running — defer answers until it ends naturally
         window._quizQReadAnswerPending = _capturedGen;
+      } else if (quizSettings.voiceOver && !_answersSpoken) {
+        _answersSpoken = true;
+        _speakAnswers(q, _capturedGen);
       }
       _attachVoOverHoverBar(questionContainer, q, currentGen);
     };
@@ -5530,25 +5642,12 @@ function renderQuizBoard() {
     // ─ Bar wrapper: thin strip between question and grid ──────────────────
     // Inserted before the grid in the same flex-column parent (#view-quiz)
     const aBarOuter = document.createElement('div');
-    aBarOuter.id = 'quiz-aread-bar';
-    aBarOuter.style.cssText = [
-      'width:100%',
-      'height:3px',           // same height as qRead bar
-      'position:relative',
-      'flex-shrink:0',        // never squash when flex parent is tight
-      'border-radius:2px',
-      'overflow:hidden',
-      'background:rgba(255,255,255,0.07)',
-      'margin-bottom:4px',    // small gap before the answer grid
-    ].join(';');
+    aBarOuter.id = 'quiz-aread-wrap';
+    aBarOuter.style.cssText = 'width:100%;flex-shrink:0;padding:4px 0 6px;box-sizing:border-box;position:relative;';
+    
     const aBarInner = document.createElement('div');
-    aBarInner.style.cssText = [
-      'height:100%',
-      'width:0%',
-      'background:linear-gradient(90deg,#10b981,#06b6d4)',
-      'border-radius:2px',
-      'transition:background 0.4s',
-    ].join(';');
+    aBarInner.id = 'quiz-aread-bar';
+    aBarInner.style.cssText = 'height:4px;background:linear-gradient(90deg,#10b981,#06b6d4);width:0%;border-radius:4px;transition:background 0.4s;';
     aBarOuter.appendChild(aBarInner);
 
     // Insert the bar BEFORE the grid in the flex container
@@ -5562,13 +5661,12 @@ function renderQuizBoard() {
     aBarHint.style.cssText = [
       'position:absolute', 'inset:0',
       'display:flex', 'align-items:center', 'justify-content:center',
-      'font-size:0.5rem', 'font-weight:800',
+      'font-size:0.6rem', 'font-weight:800',
       'color:rgba(16,185,129,0.9)',
       'letter-spacing:0.12em',
       'text-transform:uppercase',
       'white-space:nowrap',
       'pointer-events:none',
-      'overflow:visible',
       'opacity:0',
       'transition:opacity 0.3s',
     ].join(';');
@@ -5619,13 +5717,8 @@ function renderQuizBoard() {
       aHovering = true; aBarHint.style.opacity = '0'; 
       if (quizSettings.voiceOver && !_aReadVoTriggered) {
         _aReadVoTriggered = true;
-        // Read question THEN chain answers
-        _questionSpoken = true;
-        quizSpeak(q.question, {
-          rate: 0.88,
-          targetElement: questionEl,
-          onEnd: () => _speakAnswers(q, currentGen)
-        });
+        quizSpeakCancel(); // Stop anything playing
+        _speakAnswers(q, currentGen);
       }
     }
     const _onGridLeave = () => { aHovering = false; aLastT = null; };
@@ -8236,12 +8329,40 @@ window.startComprehensionFromQuizSettings = () => {
         <button id="cqv-skip-btn" disabled style="padding:7px 16px;border:1px solid rgba(100,116,139,0.35);border-radius:8px;background:rgba(100,116,139,0.08);color:#64748b;font-size:0.8rem;font-weight:700;cursor:not-allowed;transition:all 0.3s;">⏳ Generating questions…</button>
       </div>
     </div>
-    <iframe src="${ytSrc}" allow="autoplay; fullscreen; encrypted-media" allowfullscreen style="flex:1;border:none;"></iframe>
+    <iframe id="cqv-yt-iframe" src="${ytSrc}" allow="autoplay; fullscreen; encrypted-media" allowfullscreen style="flex:1;border:none;"></iframe>
   `;
   document.body.appendChild(videoOv);
 
+  // -- Robust YT API polling -- sends 'listening' every 500ms until API responds
+  // YouTube's postMessage API requires the page to first send a 'listening'
+  // event to the iframe before it starts dispatching state-change messages.
+  // Without this, onStateChange=0 (video ended) may never arrive.
+  let _ytApiReady = false;
+  const _ytApiPoll = setInterval(() => {
+    if (_ytApiReady || proceedCalled) { clearInterval(_ytApiPoll); return; }
+    const iframe = document.getElementById('cqv-yt-iframe');
+    if (iframe?.contentWindow) {
+      try { iframe.contentWindow.postMessage(JSON.stringify({ event: 'listening' }), '*'); } catch { /* cross-origin ok */ }
+    }
+  }, 500);
+  // Stop polling once we get any message from YT (API is active)
+  const _ytApiReadyListener = (e) => {
+    if (typeof e.data !== 'string') return;
+    try {
+      const d = JSON.parse(e.data);
+      if (d.event === 'infoDelivery' || d.event === 'onStateChange' || d.event === 'initialDelivery') {
+        _ytApiReady = true;
+        clearInterval(_ytApiPoll);
+        window.removeEventListener('message', _ytApiReadyListener);
+      }
+    } catch {}
+  };
+  window.addEventListener('message', _ytApiReadyListener);
+
   // Wire Cancel
   document.getElementById('cqv-cancel-btn').addEventListener('click', () => {
+    clearInterval(_ytApiPoll);
+    window.removeEventListener('message', _ytApiReadyListener);
     window.removeEventListener('message', _ytMsgHandler);
     _removeCompVideoOverlay();
     window.openQuizSettings();
@@ -12097,44 +12218,167 @@ function _renderStcReportModal(data, docId, isAdminView) {
       ${pc('Dwell Time', data.dwellMs ? `${(data.dwellMs/1000).toFixed(1)}s` : '—')}
       ${pc('Describe Character', descVisBadge)}
       ${pc('Describe Scene', descSceneBadge)}
+      ${pc('Location Source', `<span style="color:${(data.aiSource || 'generation') === 'generation' ? '#10b981' : '#f59e0b'};">${(data.aiSource || 'generation') === 'generation' ? 'Generation' : 'Vision'}</span>`)}
       ${pc('Total Attempts', data.totalAttempts || 0)}
       ${pc('Failed Clicks', data.totalFailedClicks || 0)}
       ${pc('All Found', data.allFound ? '<span style="color:#34d399;">✓ Yes</span>' : '<span style="color:#f59e0b;">No</span>')}
+      ${data.keepLookingCount ? pc('Keep Looking', `<span style="color:#06b6d4;font-weight:700;">${data.keepLookingCount}×</span>`) : ''}
+      ${data.allFoundDurationMs ? pc('All Found At', `<span style="color:#fbbf24;">${(data.allFoundDurationMs / 1000).toFixed(1)}s</span>`) : ''}
       ${isAdminView ? pc('User', `<span style="font-size:0.62rem;font-family:monospace;color:#94a3b8;">${data.userId}</span>`) : ''}
     </div>`;
 
-  // Image preview
+  // Image preview with annotated bounding boxes
   if (data.thumbnailDataUrl) {
+    // Build overlay divs for each target
+    const COLORS = ['#06b6d4','#8b5cf6','#f59e0b','#10b981','#f87171','#ec4899','#3b82f6','#84cc16'];
+    let overlayDivs = '';
+    targets.forEach((t, i) => {
+      if (!t || !t.bbox) return;
+      const b = t.bbox;
+      const color = COLORS[i % COLORS.length];
+      const isManual = t.source === 'manual';
+      const borderStyle = isManual ? 'dashed' : 'solid';
+      const labelText = isManual ? `📌 #${i+1}` : `#${i+1}`;
+      const statusIcon = t.found ? '✓' : '✗';
+      overlayDivs += `<div style="position:absolute;left:${(b.x*100).toFixed(2)}%;top:${(b.y*100).toFixed(2)}%;width:${(b.w*100).toFixed(2)}%;height:${(b.h*100).toFixed(2)}%;border:2.5px ${borderStyle} ${color};border-radius:4px;box-sizing:border-box;pointer-events:none;" class="stc-report-bbox">` +
+        `<span style="position:absolute;top:-18px;left:-1px;background:${color};color:#fff;font-size:0.55rem;font-weight:800;padding:1px 5px;border-radius:3px;white-space:nowrap;line-height:1.3;">${labelText} ${statusIcon}</span>` +
+        `</div>`;
+    });
+    // Also overlay initialTargets that may not be in the found targets array (original AI positions)
+    const initTargets = Array.isArray(data.initialTargets) ? data.initialTargets : [];
+
     html += `
       <div style="margin-bottom:18px;background:rgba(6,182,212,0.05);border:1px solid rgba(6,182,212,0.2);border-radius:14px;padding:14px 16px;">
-        <div style="font-size:0.62rem;color:#06b6d4;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">🖼 Generated Scene</div>
-        <img src="${data.thumbnailDataUrl}" style="width:100%;max-height:400px;object-fit:contain;border-radius:10px;display:block;background:#070d1a;" onerror="this.style.display='none'">
-        <div style="display:flex;align-items:center;gap:6px;margin-top:10px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+          <div style="font-size:0.62rem;color:#06b6d4;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;">🖼 Generated Scene</div>
+          <button id="stc-toggle-bbox-${docId}" onclick="(function(){var w=document.getElementById('stc-bbox-overlay-${docId}');var b=document.getElementById('stc-toggle-bbox-${docId}');if(w.style.display==='none'){w.style.display='';b.textContent='🔲 Hide Targets';}else{w.style.display='none';b.textContent='🔲 Show Targets';}})();" style="padding:3px 10px;border-radius:6px;background:rgba(6,182,212,0.12);border:1px solid rgba(6,182,212,0.3);color:#06b6d4;font-size:0.65rem;font-weight:700;cursor:pointer;">🔲 Hide Targets</button>
+        </div>
+        <div style="position:relative;display:inline-block;width:100%;">
+          <img src="${data.thumbnailDataUrl}" style="width:100%;max-height:600px;object-fit:contain;border-radius:10px;display:block;background:#070d1a;" onerror="this.style.display='none'">
+          <div id="stc-bbox-overlay-${docId}" style="position:absolute;inset:0;pointer-events:none;">
+            ${overlayDivs}
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:10px;flex-wrap:wrap;">
           <span style="font-size:0.6rem;color:#475569;">Image Quality?</span>
           ${_rBtn(1,  '👍')}
           ${_rBtn(0,  '😐')}
           ${_rBtn(-1, '👎')}
+          <span style="margin-left:auto;font-size:0.55rem;color:#334155;">
+            <span style="border:2px solid #06b6d4;display:inline-block;width:10px;height:10px;border-radius:2px;vertical-align:middle;margin-right:2px;"></span>AI
+            <span style="border:2px dashed #fbbf24;display:inline-block;width:10px;height:10px;border-radius:2px;vertical-align:middle;margin-left:8px;margin-right:2px;"></span>Manual
+          </span>
         </div>
       </div>`;
   }
 
+  // ── AI Detection Info panel ──────────────────────────────────────────
+  const aiSrc = data.aiSource || 'generation';
+  const aiSrcLabel = aiSrc === 'generation'
+    ? '<span style="color:#10b981;">Image Generation Model</span> <span style="color:#475569;font-size:0.68rem;">(Suggested at creation)</span>'
+    : '<span style="color:#f59e0b;">Vision Fallback Model</span> <span style="color:#475569;font-size:0.68rem;">(Scanned after creation)</span>';
+  html += `
+    <div style="margin-bottom:18px;background:rgba(139,92,246,0.05);border:1px solid rgba(139,92,246,0.2);border-radius:14px;padding:14px 16px;">
+      <div style="font-size:0.62rem;color:#a78bfa;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">ℹ️ AI Detection Info</div>
+      <div style="font-size:0.78rem;color:#f1f5f9;margin-bottom:6px;"><strong>Location Source:</strong> ${aiSrcLabel}</div>`;
+  if (aiSrc === 'vision' && Array.isArray(data.visionConfidence)) {
+    html += `<div style="font-size:0.72rem;color:#e2e8f0;font-weight:600;margin-top:8px;margin-bottom:4px;">Vision Confidence:</div>`;
+    data.visionConfidence.forEach(vc => {
+      const conf = typeof vc.confidence === 'number' ? (vc.confidence * 100).toFixed(1) + '%' : 'N/A';
+      const confColor = typeof vc.confidence === 'number'
+        ? (vc.confidence >= 0.7 ? '#34d399' : vc.confidence >= 0.4 ? '#fbbf24' : '#f87171')
+        : '#475569';
+      html += `<div style="margin-left:8px;font-size:0.72rem;color:#94a3b8;">Target #${vc.target}: <span style="color:${confColor};font-weight:700;">${conf}</span></div>`;
+    });
+  } else if (aiSrc === 'generation') {
+    html += `<div style="font-size:0.72rem;color:#94a3b8;margin-top:4px;">The generation model reported its intended locations directly. Confidence scores are not applicable.</div>`;
+  }
+  html += `</div>`;
+
+  // ── Interactions Log (mark/remove events) ──────────────────────────────
+  const interactions = Array.isArray(data.interactions) ? data.interactions : [];
+  if (interactions.length > 0) {
+    const markCount = interactions.filter(e => e.action === 'mark').length;
+    const removeCount = interactions.filter(e => e.action === 'remove').length;
+    const keepLookingCount = interactions.filter(e => e.action === 'keep-looking').length;
+    html += `
+    <div style="margin-bottom:18px;background:rgba(251,191,36,0.05);border:1px solid rgba(251,191,36,0.2);border-radius:14px;padding:14px 16px;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+        <div style="font-size:0.62rem;color:#fbbf24;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;">📌 Game Interactions</div>
+        <span style="font-size:0.6rem;color:#475569;">${markCount} added · ${removeCount} removed${keepLookingCount ? ` · ${keepLookingCount} extended` : ''}</span>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:0.75rem;">
+        <thead>
+          <tr style="border-bottom:1px solid rgba(255,255,255,0.08);">
+            <th style="text-align:left;padding:6px 10px;color:#64748b;font-size:0.6rem;font-weight:700;text-transform:uppercase;">Action</th>
+            <th style="text-align:left;padding:6px 10px;color:#64748b;font-size:0.6rem;font-weight:700;text-transform:uppercase;">Target</th>
+            <th style="text-align:left;padding:6px 10px;color:#64748b;font-size:0.6rem;font-weight:700;text-transform:uppercase;">Time</th>
+            <th style="text-align:left;padding:6px 10px;color:#64748b;font-size:0.6rem;font-weight:700;text-transform:uppercase;">Details</th>
+          </tr>
+        </thead>
+        <tbody>`;
+    interactions.forEach((ev, i) => {
+      const elapsed = ev.elapsedMs != null ? `${(ev.elapsedMs / 1000).toFixed(1)}s` : '—';
+      const rowBg = i % 2 === 0 ? 'background:rgba(255,255,255,0.02);' : '';
+
+      if (ev.action === 'keep-looking') {
+        // Full-width highlighted row for game extension
+        html += `
+          <tr style="background:rgba(6,182,212,0.08);border-bottom:1px solid rgba(6,182,212,0.15);">
+            <td style="padding:6px 10px;"><span style="color:#06b6d4;font-weight:700;">👁 Keep Looking</span></td>
+            <td style="padding:6px 10px;color:#94a3b8;font-size:0.68rem;">${ev.foundAtMoment || '—'}/${ev.targetsAtMoment || '—'} found</td>
+            <td style="padding:6px 10px;color:#06b6d4;font-weight:600;">${elapsed}</td>
+            <td style="padding:6px 10px;color:#64748b;font-size:0.68rem;">Game extended</td>
+          </tr>`;
+        return;
+      }
+
+      const isAdd = ev.action === 'mark';
+      const actionHtml = isAdd
+        ? '<span style="color:#fbbf24;font-weight:700;">📌 Added</span>'
+        : '<span style="color:#f87171;font-weight:700;">🗑 Removed</span>';
+      const tIdx = (ev.targetIdx != null) ? `#${ev.targetIdx + 1}` : '—';
+      const pos = ev.bbox
+        ? `<span style="font-family:monospace;color:#94a3b8;font-size:0.68rem;">(${(ev.bbox.x + (ev.bbox.w || 0) / 2).toFixed(2)}, ${(ev.bbox.y + (ev.bbox.h || 0) / 2).toFixed(2)})</span>`
+        : '<span style="color:#475569;">—</span>';
+      html += `
+          <tr style="${rowBg}border-bottom:1px solid rgba(255,255,255,0.04);">
+            <td style="padding:6px 10px;">${actionHtml}</td>
+            <td style="padding:6px 10px;color:#e2e8f0;">${tIdx}</td>
+            <td style="padding:6px 10px;color:#fbbf24;font-weight:600;">${elapsed}</td>
+            <td style="padding:6px 10px;">${pos}</td>
+          </tr>`;
+    });
+    html += `
+        </tbody>
+      </table>
+    </div>`;
+  }
+
   // Per-character breakdown table
+  const COLORS = ['#06b6d4','#8b5cf6','#f59e0b','#10b981','#f87171','#ec4899','#3b82f6','#84cc16'];
   html += `
     <div style="margin-bottom:18px;">
       <div style="font-size:0.72rem;font-weight:700;color:#e2e8f0;margin-bottom:10px;">📊 Per-Character Breakdown</div>
       <table style="width:100%;border-collapse:collapse;font-size:0.78rem;">
         <thead>
           <tr style="border-bottom:1px solid rgba(255,255,255,0.08);">
-            <th style="text-align:left;padding:8px 12px;color:#64748b;font-size:0.65rem;font-weight:700;text-transform:uppercase;">Character</th>
-            <th style="text-align:left;padding:8px 12px;color:#64748b;font-size:0.65rem;font-weight:700;text-transform:uppercase;">Status</th>
-            <th style="text-align:left;padding:8px 12px;color:#64748b;font-size:0.65rem;font-weight:700;text-transform:uppercase;">Time to Find</th>
-            <th style="text-align:left;padding:8px 12px;color:#64748b;font-size:0.65rem;font-weight:700;text-transform:uppercase;">Position (Center)</th>
+            <th style="text-align:left;padding:8px 10px;color:#64748b;font-size:0.6rem;font-weight:700;text-transform:uppercase;">Target</th>
+            <th style="text-align:left;padding:8px 10px;color:#64748b;font-size:0.6rem;font-weight:700;text-transform:uppercase;">Source</th>
+            <th style="text-align:left;padding:8px 10px;color:#64748b;font-size:0.6rem;font-weight:700;text-transform:uppercase;">Status</th>
+            <th style="text-align:left;padding:8px 10px;color:#64748b;font-size:0.6rem;font-weight:700;text-transform:uppercase;">Time</th>
+            <th style="text-align:left;padding:8px 10px;color:#64748b;font-size:0.6rem;font-weight:700;text-transform:uppercase;">Position</th>
           </tr>
         </thead>
         <tbody>`;
 
   targets.forEach((t, i) => {
     if (!t) return;
+    const color = COLORS[i % COLORS.length];
+    const isManual = t.source === 'manual';
+    const sourceBadge = isManual
+      ? '<span style="background:rgba(251,191,36,0.15);color:#fbbf24;padding:2px 6px;border-radius:4px;font-size:0.6rem;font-weight:700;">📌 Manual</span>'
+      : '<span style="background:rgba(6,182,212,0.12);color:#06b6d4;padding:2px 6px;border-radius:4px;font-size:0.6rem;font-weight:700;">🤖 AI</span>';
     const statusHtml = t.found
       ? '<span style="color:#34d399;font-weight:700;">✓ Found</span>'
       : '<span style="color:#f87171;font-weight:700;">✗ Not Found</span>';
@@ -12142,15 +12386,27 @@ function _renderStcReportModal(data, docId, isAdminView) {
       ? `<span style="color:#fbbf24;font-weight:600;">${(t.foundAtMs / 1000).toFixed(1)}s</span>`
       : '<span style="color:#475569;">—</span>';
     const posStr = t.bbox
-      ? `<span style="color:#94a3b8;font-family:monospace;font-size:0.7rem;">(${(t.bbox.x + (t.bbox.w||0)/2).toFixed(2)}, ${(t.bbox.y + (t.bbox.h||0)/2).toFixed(2)})</span>`
+      ? `<span style="color:#94a3b8;font-family:monospace;font-size:0.68rem;">(${(t.bbox.x + (t.bbox.w||0)/2).toFixed(2)}, ${(t.bbox.y + (t.bbox.h||0)/2).toFixed(2)})</span>`
       : '<span style="color:#475569;">—</span>';
+    const labelStr = t.label || data.theme || '';
+    const descStr = t.description ? `<div style="font-size:0.62rem;color:#64748b;margin-top:2px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(t.description||'').replace(/"/g,'&quot;')}">${t.description}</div>` : '';
     const rowBg = i % 2 === 0 ? 'background:rgba(255,255,255,0.02);' : '';
     html += `
           <tr style="${rowBg}border-bottom:1px solid rgba(255,255,255,0.04);">
-            <td style="padding:8px 12px;"><span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:10px;height:10px;border-radius:50%;background:${'#06b6d4,#8b5cf6,#f59e0b,#10b981,#f87171'.split(',')[i % 5]};display:inline-block;"></span> #${i + 1}</span></td>
-            <td style="padding:8px 12px;">${statusHtml}</td>
-            <td style="padding:8px 12px;">${timeStr}</td>
-            <td style="padding:8px 12px;">${posStr}</td>
+            <td style="padding:8px 10px;">
+              <span style="display:inline-flex;align-items:center;gap:6px;">
+                <span style="width:10px;height:10px;border-radius:50%;background:${color};display:inline-block;flex-shrink:0;"></span>
+                <span>
+                  <span style="font-weight:600;color:#e2e8f0;">#${i + 1}</span>
+                  ${labelStr ? `<span style="color:#94a3b8;font-size:0.68rem;margin-left:4px;">${labelStr}</span>` : ''}
+                  ${descStr}
+                </span>
+              </span>
+            </td>
+            <td style="padding:8px 10px;">${sourceBadge}</td>
+            <td style="padding:8px 10px;">${statusHtml}</td>
+            <td style="padding:8px 10px;">${timeStr}</td>
+            <td style="padding:8px 10px;">${posStr}</td>
           </tr>`;
   });
 
@@ -12158,6 +12414,48 @@ function _renderStcReportModal(data, docId, isAdminView) {
         </tbody>
       </table>
     </div>`;
+
+  // ── Initial AI Targets (original positions before any manual changes) ──
+  const initTargets = Array.isArray(data.initialTargets) ? data.initialTargets : [];
+  if (initTargets.length > 0) {
+    html += `
+    <div style="margin-bottom:18px;background:rgba(16,185,129,0.04);border:1px solid rgba(16,185,129,0.15);border-radius:14px;padding:14px 16px;">
+      <div style="font-size:0.62rem;color:#10b981;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">🤖 Initial AI Target Positions</div>
+      <div style="font-size:0.62rem;color:#475569;margin-bottom:8px;">Original positions identified by AI before any manual adjustments</div>
+      <table style="width:100%;border-collapse:collapse;font-size:0.75rem;">
+        <thead>
+          <tr style="border-bottom:1px solid rgba(255,255,255,0.06);">
+            <th style="text-align:left;padding:6px 10px;color:#64748b;font-size:0.58rem;font-weight:700;text-transform:uppercase;">Target</th>
+            <th style="text-align:left;padding:6px 10px;color:#64748b;font-size:0.58rem;font-weight:700;text-transform:uppercase;">Label</th>
+            <th style="text-align:left;padding:6px 10px;color:#64748b;font-size:0.58rem;font-weight:700;text-transform:uppercase;">Description</th>
+            <th style="text-align:left;padding:6px 10px;color:#64748b;font-size:0.58rem;font-weight:700;text-transform:uppercase;">Confidence</th>
+            <th style="text-align:left;padding:6px 10px;color:#64748b;font-size:0.58rem;font-weight:700;text-transform:uppercase;">Position</th>
+          </tr>
+        </thead>
+        <tbody>`;
+    initTargets.forEach((it, i) => {
+      const conf = typeof it.confidence === 'number' ? (it.confidence * 100).toFixed(0) + '%' : 'N/A';
+      const confColor = typeof it.confidence === 'number'
+        ? (it.confidence >= 0.7 ? '#34d399' : it.confidence >= 0.4 ? '#fbbf24' : '#f87171')
+        : '#475569';
+      const pos = it.bbox
+        ? `<span style="font-family:monospace;color:#94a3b8;font-size:0.65rem;">(${(it.bbox.x + (it.bbox.w||0)/2).toFixed(2)}, ${(it.bbox.y + (it.bbox.h||0)/2).toFixed(2)})</span>`
+        : '—';
+      const rowBg = i % 2 === 0 ? 'background:rgba(255,255,255,0.02);' : '';
+      html += `
+          <tr style="${rowBg}border-bottom:1px solid rgba(255,255,255,0.03);">
+            <td style="padding:6px 10px;color:#e2e8f0;font-weight:600;">#${it.index + 1}</td>
+            <td style="padding:6px 10px;color:#94a3b8;">${it.label || '—'}</td>
+            <td style="padding:6px 10px;color:#64748b;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.68rem;" title="${(it.description||'').replace(/"/g,'&quot;')}">${it.description || '—'}</td>
+            <td style="padding:6px 10px;"><span style="color:${confColor};font-weight:700;">${conf}</span></td>
+            <td style="padding:6px 10px;">${pos}</td>
+          </tr>`;
+    });
+    html += `
+        </tbody>
+      </table>
+    </div>`;
+  }
 
   body.innerHTML = html;
   modal.style.display = 'flex';

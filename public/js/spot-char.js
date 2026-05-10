@@ -465,7 +465,9 @@ async function _start() {
     totalFailedClicks: 0,
     allFound: false,
     thumbnailDataUrl: null,
-    userId: window.user?.uid || null,
+    userId: window.currentUser?.uid || null,
+    aiSource: null,       // filled after generation ('generation' or 'vision')
+    interactions: [],     // log of mark/remove events
   };
   if (window.stcPersist) window.stcPersist.save();
   await _generate(_lastReqBody);
@@ -542,6 +544,25 @@ async function _generate(body) {
     _theme   = d.theme || body.theme;
     _requestedFindN = body.findCount || 3;
     _markMode = false;
+    // Save AI source + per-target details into the report
+    if (window.stcReport) {
+      window.stcReport.aiSource = _aiSource;
+      // Save initial AI-placed targets with full metadata
+      window.stcReport.initialTargets = (d.bboxes || []).map((b, i) => ({
+        index: i,
+        label: b.label || _theme || '—',
+        description: b.description || '',
+        confidence: typeof b.confidence === 'number' ? b.confidence : null,
+        bbox: { x: b.x, y: b.y, w: b.w, h: b.h },
+        source: _aiSource,
+      }));
+      if (_aiSource === 'vision') {
+        window.stcReport.visionConfidence = (d.bboxes || []).map((b, i) => ({
+          target: i + 1,
+          confidence: typeof b.confidence === 'number' ? b.confidence : null,
+        }));
+      }
+    }
     await _showGame(d.imageData, _mimeType);
     // Show Mark + Remove buttons — always available for manual target management
     const markBtn = _el('stc-mark-btn');
@@ -661,14 +682,14 @@ async function _showGame(imageData, mime) {
   _gameStartMs = Date.now();
   try {
     const thumbCanvas = document.createElement('canvas');
-    const THUMB_W = 400;
+    const THUMB_W = 1024;
     const aspect = _origImg.naturalHeight / _origImg.naturalWidth;
     thumbCanvas.width = THUMB_W;
     thumbCanvas.height = Math.round(THUMB_W * aspect);
     const tCtx = thumbCanvas.getContext('2d');
     tCtx.drawImage(_origImg, 0, 0, thumbCanvas.width, thumbCanvas.height);
     if (window.stcReport) {
-      window.stcReport.thumbnailDataUrl = thumbCanvas.toDataURL('image/jpeg', 0.65);
+      window.stcReport.thumbnailDataUrl = thumbCanvas.toDataURL('image/jpeg', 0.85);
     }
   } catch (e) { console.warn('[STC Report] Thumbnail generation failed:', e.message); }
 
@@ -687,7 +708,7 @@ function _redraw(canvas) {
   _targets.forEach((t, i) => {
     if (!t.bbox) return;
     if (t.found) {
-      _drawFoundRing(ctx, canvas, t.bbox, i);
+      if (!t.hideFoundRing) _drawFoundRing(ctx, canvas, t.bbox, i);
     } else {
       // Subtle crosshair at character center
       const {x, y, w, h} = t.bbox;
@@ -863,6 +884,16 @@ function _bindCanvas(canvas) {
       canvas.style.cursor = '';
       _redraw(canvas);
       _playTagSound();
+      // ── Log mark event in report ──
+      if (window.stcReport && window.stcReport.interactions) {
+        window.stcReport.interactions.push({
+          action: 'mark',
+          targetIdx: idx,
+          bbox: { x: bbox.x, y: bbox.y, w: bbox.w, h: bbox.h },
+          timestamp: new Date().toISOString(),
+          elapsedMs: _gameStartMs > 0 ? Date.now() - _gameStartMs : 0,
+        });
+      }
       _toast(`📌 Target #${idx + 1} placed! Click or hover to find it.`);
       return;
     }
@@ -887,6 +918,17 @@ function _bindCanvas(canvas) {
       if (closestIdx >= 0) {
         const removed = _targets[closestIdx];
         _cancelDwell(removed);
+        // ── Log remove event in report ──
+        if (window.stcReport && window.stcReport.interactions) {
+          window.stcReport.interactions.push({
+            action: 'remove',
+            targetIdx: closestIdx,
+            wasFound: !!removed.found,
+            bbox: removed.bbox ? { x: removed.bbox.x, y: removed.bbox.y, w: removed.bbox.w, h: removed.bbox.h } : null,
+            timestamp: new Date().toISOString(),
+            elapsedMs: _gameStartMs > 0 ? Date.now() - _gameStartMs : 0,
+          });
+        }
         if (removed.found) _foundCount = Math.max(0, _foundCount - 1);
         _targets.splice(closestIdx, 1);
         // Remove any hint pulses for this or higher indices
@@ -898,6 +940,9 @@ function _bindCanvas(canvas) {
         _redraw(canvas);
         _playBinSound();
         _toast(`🗑 Target #${closestIdx + 1} removed! (${_targets.length} remaining)`);
+        if (_targets.length > 0 && _foundCount >= _targets.length && !_allFound) {
+          _onAllFound(canvas);
+        }
       } else {
         _playBuzzerSound();
         _toast('❌ No target under click — try clicking closer to a marked area.');
@@ -1039,6 +1084,9 @@ function _onFound(canvas, t, idx) {
       bbox: t.bbox ? { x: t.bbox.x, y: t.bbox.y, w: t.bbox.w, h: t.bbox.h } : null,
       found: true,
       foundAtMs,
+      label: t.bbox?.label || _theme || '',
+      description: t.bbox?.description || '',
+      source: t.bbox?.label ? 'ai' : 'manual',  // AI targets have labels, manual ones don't
     };
   }
 
@@ -1061,8 +1109,24 @@ function _onAllFound(canvas) {
   _launchConfetti();
   if (window.playSuccessSound) window.playSuccessSound();
 
-  // ── Finalize and save Spot-the-Character report ────────────────────────
-  _finalizeStcReport(true);
+  // ── Snapshot report state (don't save yet — user may "Keep Looking") ────
+  if (window.stcReport && !window.stcReport._saved) {
+    window.stcReport.allFound = true;
+    window.stcReport.totalAttempts = _attempts;
+    window.stcReport.totalFailedClicks = _failedClicks;
+    window.stcReport.allFoundAt = new Date().toISOString();
+    window.stcReport.allFoundDurationMs = _gameStartMs > 0 ? Date.now() - _gameStartMs : 0;
+    // Fill in target data at the moment of all-found
+    _targets.forEach((t, i) => {
+      if (!window.stcReport.targets[i]) {
+        window.stcReport.targets[i] = {
+          bbox: t.bbox ? { x: t.bbox.x, y: t.bbox.y, w: t.bbox.w, h: t.bbox.h } : null,
+          found: !!t.found,
+          foundAtMs: null,
+        };
+      }
+    });
+  }
 
   // Show celebration banner (not fullscreen — user can still observe)
   const wrap = canvas.parentElement;
@@ -1073,9 +1137,38 @@ function _onAllFound(canvas) {
     <div style="font-size:1.8rem;font-weight:900;color:#34d399;margin-bottom:8px">All Found!</div>
     <div style="color:#94a3b8;font-size:0.9rem;margin-bottom:20px">Amazing work! ${_attempts} attempt${_attempts!==1?'s':''} total.</div>
     <button onclick="window.stcPlayAgain()" style="padding:12px 28px;background:linear-gradient(135deg,#06b6d4,#6366f1);border:none;border-radius:12px;color:#fff;font-weight:900;font-size:1rem;cursor:pointer;margin-right:8px;">🔄 Play Again</button>
-    <button onclick="document.getElementById('stc-all-found-banner').remove()" style="padding:12px 24px;background:transparent;border:1px solid rgba(255,255,255,0.15);border-radius:12px;color:#64748b;font-weight:700;font-size:1rem;cursor:pointer;">👁 Keep Looking</button>`;
+    <button onclick="window.stcKeepLooking()" style="padding:12px 24px;background:transparent;border:1px solid rgba(255,255,255,0.15);border-radius:12px;color:#64748b;font-weight:700;font-size:1rem;cursor:pointer;">👁 Keep Looking</button>`;
   wrap.appendChild(banner);
 }
+
+window.stcKeepLooking = () => {
+  const banner = document.getElementById('stc-all-found-banner');
+  if (banner) banner.remove();
+  _allFound = false;
+  
+  // ── Log "Keep Looking" event in report ──
+  if (window.stcReport && window.stcReport.interactions) {
+    window.stcReport.interactions.push({
+      action: 'keep-looking',
+      timestamp: new Date().toISOString(),
+      elapsedMs: _gameStartMs > 0 ? Date.now() - _gameStartMs : 0,
+      targetsAtMoment: _targets.length,
+      foundAtMoment: _foundCount,
+    });
+    // Track how many times the game was extended
+    window.stcReport.keepLookingCount = (window.stcReport.keepLookingCount || 0) + 1;
+  }
+
+  _targets.forEach(t => {
+    if (t.found) t.hideFoundRing = true;
+  });
+
+  const canvas = document.getElementById('stc-game-canvas');
+  if (canvas) {
+    _redraw(canvas);
+    _resetAutoHintTimer(canvas);
+  }
+};
 
 // ── Hint ──────────────────────────────────────────────────────────────────────
 
@@ -1231,6 +1324,9 @@ function _finalizeStcReport(allFoundFlag) {
         bbox: t.bbox ? { x: t.bbox.x, y: t.bbox.y, w: t.bbox.w, h: t.bbox.h } : null,
         found: !!t.found,
         foundAtMs: null,
+        label: t.bbox?.label || _theme || '',
+        description: t.bbox?.description || '',
+        source: t.bbox?.label ? 'ai' : 'manual',
       };
     }
   });
@@ -1254,7 +1350,7 @@ window.saveStcReportNow = async function () {
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 window.stcOpenSettings = () => { _finalizeStcReport(false); _targets.forEach(t=>_cancelDwell(t)); const w=_el('stc-canvas-wrap'); if(w) w.querySelectorAll('.stc-result-overlay,.stc-hint-pulse,.stc-dwell-ring,#stc-all-found-banner').forEach(e=>e.remove()); _showSettings(); };
-window.stcPlayAgain    = () => { _targets.forEach(t=>_cancelDwell(t)); const w=_el('stc-canvas-wrap'); if(w) w.querySelectorAll('.stc-result-overlay,.stc-hint-pulse,.stc-dwell-ring,#stc-all-found-banner').forEach(e=>e.remove()); _showSettings(); };
+window.stcPlayAgain    = () => { _finalizeStcReport(_foundCount >= _targets.length); _targets.forEach(t=>_cancelDwell(t)); const w=_el('stc-canvas-wrap'); if(w) w.querySelectorAll('.stc-result-overlay,.stc-hint-pulse,.stc-dwell-ring,#stc-all-found-banner').forEach(e=>e.remove()); _showSettings(); };
 window.stcGoHome       = () => { _finalizeStcReport(false); _markMode=false; _removeMode=false; _targets.forEach(t=>_cancelDwell(t)); if(window.setMode) window.setMode('landing'); };
 
 // ── Mark Target Toggle ───────────────────────────────────────────────────────

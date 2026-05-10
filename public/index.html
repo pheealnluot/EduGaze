@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -1325,13 +1325,36 @@
             <!-- ── Find a Video / Find a Picture buttons ── -->
             <div style="display:flex;flex-direction:column;gap:8px;">
               <!-- Topic / Keyword field -->
-              <div style="display:flex;align-items:center;gap:8px;background:#1e293b;border-radius:0.85rem;border:1.5px solid rgba(139,92,246,0.2);padding:6px 10px;">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;opacity:0.8;">
-                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                </svg>
-                <input type="text" id="qs-find-topic" placeholder="Topic or keyword (optional) — e.g. space, ocean, rainforest…"
-                  style="flex:1;background:transparent;border:none;outline:none;font-size:0.72rem;font-weight:600;color:#e2e8f0;"
-                  autocomplete="off" spellcheck="false">
+              <div style="position:relative;">
+                <div id="qs-topic-input-row" style="display:flex;align-items:center;gap:8px;background:#1e293b;border-radius:0.85rem;border:1.5px solid rgba(139,92,246,0.2);padding:6px 10px;transition:border-color 0.2s;" onfocuswithin="this.style.borderColor='rgba(139,92,246,0.5)'" onfocusout="this.style.borderColor='rgba(139,92,246,0.2)'">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;opacity:0.8;">
+                    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                  </svg>
+                  <input type="text" id="qs-find-topic" placeholder="Topic or keyword (optional) — e.g. space, ocean, rainforest…"
+                    style="flex:1;background:transparent;border:none;outline:none;font-size:0.72rem;font-weight:600;color:#e2e8f0;min-width:0;"
+                    autocomplete="off" spellcheck="false"
+                    onfocus="window._qsTopicDropdownShow()"
+                    oninput="window._qsTopicDropdownFilter()">
+                  <!-- Add keyword button -->
+                  <button id="qs-topic-add-btn" onclick="window._qsTopicAddKeyword()" title="Save keyword to list"
+                    style="flex-shrink:0;display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;border:1.5px solid rgba(139,92,246,0.35);background:rgba(139,92,246,0.1);color:#8b5cf6;font-size:1rem;line-height:1;cursor:pointer;transition:all 0.2s;padding:0;"
+                    onmouseenter="this.style.background='rgba(139,92,246,0.25)';this.style.borderColor='rgba(139,92,246,0.7)'"
+                    onmouseleave="this.style.background='rgba(139,92,246,0.1)';this.style.borderColor='rgba(139,92,246,0.35)'"
+                    title="Add current keyword to saved list">+</button>
+                  <!-- Clear button -->
+                  <button id="qs-topic-clear-btn" onclick="window._qsTopicClear()" title="Clear keyword"
+                    style="flex-shrink:0;display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;border:1.5px solid rgba(248,113,113,0.25);background:rgba(248,113,113,0.06);color:#94a3b8;font-size:0.85rem;line-height:1;cursor:pointer;transition:all 0.2s;padding:0;"
+                    onmouseenter="this.style.color='#f87171';this.style.borderColor='rgba(248,113,113,0.6)';this.style.background='rgba(248,113,113,0.12)'"
+                    onmouseleave="this.style.color='#94a3b8';this.style.borderColor='rgba(248,113,113,0.25)';this.style.background='rgba(248,113,113,0.06)'">&#x2715;</button>
+                </div>
+                <!-- Keyword saved-list dropdown -->
+                <div id="qs-topic-dropdown" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:9999;
+                     background:linear-gradient(145deg,#1e293b,#0f172a);
+                     border:1.5px solid rgba(139,92,246,0.25);border-radius:0.85rem;
+                     box-shadow:0 12px 32px rgba(0,0,0,0.5);overflow:hidden;max-height:260px;overflow-y:auto;
+                     scrollbar-width:thin;scrollbar-color:rgba(139,92,246,0.3) transparent;">
+                  <!-- filled by JS -->
+                </div>
               </div>
               <div style="display:flex;gap:8px;">
                 <button id="qs-find-video-btn" onclick="window._qsFindVideo()" style="flex:1;display:flex;align-items:center;justify-content:center;gap:7px;
@@ -2301,9 +2324,9 @@
 
   <!-- comp-settings-overlay removed — entry is now via Knowledge Explorer → Comprehension tab -->
 
-  <script type="module" src="js/app.js?v=41"></script>
+  <script type="module" src="js/app.js?v=45"></script>
   <script type="module" src="js/comprehension.js?v=9"></script>
-  <script type="module" src="js/spot-char.js?v=3"></script>
+  <script type="module" src="js/spot-char.js?v=6"></script>
   <script type="module" src="js/spot-char-persist.js?v=1"></script>
 </body>
 
